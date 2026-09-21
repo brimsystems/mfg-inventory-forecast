@@ -1,0 +1,27 @@
+supplier_id,supplier_name,supplier_type,payment_terms,status
+SUP-001,"Rodriguez, Figueroa and Sanchez",Distributor,2/10 Net 30,ACTIVE
+SUP-002,Doyle Ltd,Material,Net 30,ACTIVE
+SUP-003,"Mcclain, Miller and Henderson",Outside Service,Net 45,ACTIVE
+SUP-004,Davis and Sons,Outside Service,Net 30,ACTIVE
+SUP-005,"Guzman, Hoffman and Baldwin",Distributor,Net 45,ACTIVE
+SUP-006,"Gardner, Robinson and Lawrence",Distributor,Net 30,ACTIVE
+SUP-007,Blake and Sons,Tooling,Net 60,ACTIVE
+SUP-008,"Henderson, Ramirez and Lewis",Outside Service,Net 60,ACTIVE
+SUP-009,Garcia-James,Distributor,Net 30,ACTIVE
+SUP-010,Abbott-Munoz,Fasteners,Net 30,ACTIVE
+SUP-011,Blair PLC,Tooling,Net 30,ACTIVE
+SUP-012,Dudley Group,Outside Service,2/10 Net 30,ACTIVE
+SUP-013,Arnold Ltd,Tooling,Net 60,ACTIVE
+SUP-014,"Mcclure, Ward and Lee",Material,Net 45,ACTIVE
+SUP-015,Williams and Sons,Fasteners,2/10 Net 30,ACTIVE
+SUP-016,Galloway-Wyatt,Fasteners,Net 45,ACTIVE
+SUP-017,James Group,Fasteners,Net 45,ACTIVE
+SUP-018,"Flowers, Martin and Kelly",Fasteners,2/10 Net 30,ACTIVE
+SUP-019,"Adams, Zuniga and Wong",Outside Service,Net 30,ACTIVE
+SUP-020,"Reid, Ferguson and Sanchez",Fasteners,Net 60,ACTIVE
+SUP-021,Gray-Mayo,Outside Service,Net 60,ACTIVE
+SUP-022,"Watts, Robinson and Nguyen",Material,Net 45,ACTIVE
+SUP-023,Perez Inc,Material,Net 30,ACTIVE
+SUP-024,Morales-Jones,Distributor,Net 30,ACTIVE
+SUP-025,DOYLE LTD,Material,Net 30,ACTIVE
+SUP-025,Doyle Metals,Material,Net 45,ACTIVE

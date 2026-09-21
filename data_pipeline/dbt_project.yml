@@ -1,0 +1,42 @@
+name: 'inventory_forecast'
+version: '1.0.0'
+profile: 'inventory_forecast'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # Observation window and reference date — keep in sync with the data generator.
+  start_date: '2023-04-01'
+  end_date: '2026-08-31'
+  as_of_date: '2026-08-31'
+  # ABC segmentation cut points (cumulative share of annual consumption value).
+  abc_a_cum: 0.80
+  abc_b_cum: 0.95
+  # Detection thresholds for the data-quality models, documented in the audit.
+  stale_lead_gap_days: 5          # actual lead exceeds master by at least this
+  uom_price_ratio: 8              # purchase price this many times unit cost = box buy
+  phantom_variance: 0.10          # count vs system variance that flags phantom stock
+
+models:
+  inventory_forecast:
+    staging:
+      +materialized: view
+    data_quality:
+      +materialized: table
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  inventory_forecast:
+    +quote_columns: false

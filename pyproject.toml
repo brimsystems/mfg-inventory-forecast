@@ -1,0 +1,33 @@
+[project]
+name = "mfg-inventory-forecast"
+version = "0.1.0"
+description = "Inventory demand forecasting and ERP data quality for a precision machining shop."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "faker>=20.0",
+    "duckdb>=0.10",
+    "dbt-core>=1.8",
+    "dbt-duckdb>=1.8",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "optuna>=3.0",
+    "mlflow>=2.12",
+    "shap>=0.45",
+    "evidently>=0.7",
+    "prefect>=3.0",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "statsmodels>=0.14",
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["data_source"]
