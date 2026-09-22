@@ -645,89 +645,40 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     W2 = [4, 19, 40, 16, 21]          # #, Error, Description, ERP table, Scale
     W3 = [4, 19, 42, 18, 17]          # #, Error, Remediation, Evidence, Remediated
     OPCOST = {
-        "Dead Records Never Deactivated":
-            "Dead records clutter every report and search, trigger purchase suggestions for material nobody "
-            "needs wherever a reorder point is still set, and consume count effort on items that never move.",
-        "Stale Lead Times":
-            "A lead time that reads two weeks when the supplier now takes four means every reorder is placed "
-            "too late. The result is a line stop waiting on material, and expedite freight to recover.",
-        "Stale Reorder Points":
-            "Reorder points set for old volumes are wrong in both directions: too low on the fast movers, "
-            "which stock out, and too high on the slow movers, which accumulate on the shelf.",
-        "Duplicate Item Records":
-            "With demand split across two or more numbers, neither history is forecastable, and each record "
-            "carries its own reorder point, so the shop can hold stock under one number while the other "
-            "triggers a purchase.",
-        "UOM Mismatch":
-            "A box received is counted as one each, so on-hand and demand are inflated in the system and the "
-            "true stock position cannot be known without a physical count.",
-        "Missing and Placeholder Fields":
-            "A blank cost, supplier or reorder point stops the process that needs it. The item cannot be "
-            "planned, costed or reported until someone fills the gap by hand.",
-        "BOM Omissions":
-            "Because backflush never subtracts the omitted components, they are used on the floor but stay on "
-            "the books as phantom on-hand, and the usage only surfaces later as write-offs at the count.",
-        "Supplier Fragmentation":
-            "One vendor's spend and lead-time history is split across several records, so its true volume "
-            "and delivery performance are understated in every report and every negotiation.",
-        "Unrecorded Consumption":
-            "Balances drift upward until the annual count, so the shop believes it holds material it does "
-            "not, and the shortfall arrives all at once as a run of write-offs.",
-        "Wrong References":
-            "The consumption is real but charged to the wrong part and the wrong job, so one item looks "
-            "short, another looks long, and the job cost lands in the wrong place.",
-        "Quantity and Unit Errors":
-            "A single keystroke, an extra zero or a box entered as an each, distorts an item's demand and "
-            "on-hand by ten times or more until someone notices.",
-        "Duplicate Postings":
-            "A movement counted twice overstates or understates the balance until it is caught, and a "
-            "doubled receipt can turn into a doubled payable.",
-        "Adjustments as a Catch-All":
-            "When every discrepancy is fixed through an adjustment with no reason code, the cause of a "
-            "movement is unknowable and the write-offs hide the real problems behind them.",
-        "Free-Text Purchases":
-            "A stocked item bought under a generic code loses that demand from its history, so its forecast "
-            "and reorder point are understated, and the spend cannot be traced back to a part.",
-        "Batched and Backdated Postings":
-            "Receipts posted days after they arrive make computed lead times read longer than they are, "
-            "which biases every reorder decision built on them.",
-        "Open Documents Never Closed":
-            "An open PO line the ERP still believes is inbound leads the buyer to hold back a real order, so "
-            "the shop stocks out waiting for material that never comes; open jobs keep consuming on paper.",
+        "Dead Records Never Deactivated": "Clutter every report and trigger purchase suggestions for material nobody needs.",
+        "Stale Lead Times": "Reorders are placed too late, causing line stops and expedites.",
+        "Stale Reorder Points": "Fast movers stock out while slow movers pile up.",
+        "Duplicate Item Records": "Split demand history makes neither record forecastable, and each carries its own reorder point.",
+        "UOM Mismatch": "On-hand and demand are misstated, so the true stock position is unknown without a count.",
+        "Missing and Placeholder Fields": "The item cannot be planned, costed or reported until the blank is filled by hand.",
+        "BOM Omissions": "Omitted components are consumed but never subtracted, leaving phantom on-hand.",
+        "Supplier Fragmentation": "A vendor's spend and delivery performance are understated in every report.",
+        "Unrecorded Consumption": "Balances drift upward until the count, then arrive as a run of write-offs.",
+        "Wrong References": "One item looks short and another long, and job costs land in the wrong place.",
+        "Quantity and Unit Errors": "A single keystroke distorts an item's demand and on-hand by ten times or more.",
+        "Duplicate Postings": "The balance is misstated by the doubled movement until it is caught.",
+        "Adjustments as a Catch-All": "The cause of a movement is unknowable, so write-offs hide the real problems.",
+        "Free-Text Purchases": "The item's demand history is understated, so its forecast and reorder point are too low.",
+        "Batched and Backdated Postings": "Computed lead times read longer than they are, biasing reorder decisions.",
+        "Open Documents Never Closed": "The buyer holds back real orders believing material is inbound, and the shop stocks out.",
     }
     FINCOST = {
-        "Dead Records Never Deactivated":
-            "Cash and accounts payable, if a false purchase suggestion is acted on; count labor expensed. Negative.",
-        "Stale Lead Times":
-            "Expedite freight expense; delayed revenue from line stops; cash tied up in safety stock set on the wrong lead time. Negative.",
-        "Stale Reorder Points":
-            "Inventory and cash overstated on slow movers (carrying cost); expedite expense and delayed revenue on fast movers. Negative.",
-        "Duplicate Item Records":
-            "Excess inventory and cash when stock is held under one number while the other triggers a purchase. Negative.",
-        "UOM Mismatch":
-            "Inventory value overstated; purchase quantities wrong, so cash and payables for material not needed. Negative.",
-        "Missing and Placeholder Fields":
-            "Inventory and cost of goods sold misvalued where the blank is a standard cost; otherwise no direct financial impact.",
-        "BOM Omissions":
-            "Inventory overstated until written off; the write-down hits cost of goods sold, and product cost is understated in the meantime. Negative.",
-        "Supplier Fragmentation":
-            "No direct financial impact; spend by vendor is understated, which weakens pricing leverage.",
-        "Unrecorded Consumption":
-            "Inventory overstated on the balance sheet until the count; the correction is a write-down to cost of goods sold. Negative.",
-        "Wrong References":
-            "Nets to zero at the total; inventory and job cost misallocated between items and jobs.",
-        "Quantity and Unit Errors":
-            "Inventory overstated until counted, or an over-purchase hitting cash and payables. Negative.",
-        "Duplicate Postings":
-            "Inventory misstated by the doubled movement; a doubled receipt can create a duplicate payable. Negative.",
-        "Adjustments as a Catch-All":
-            "Write-offs reach cost of goods sold with no traceable cause; the loss is real, its reason is lost. Negative.",
-        "Free-Text Purchases":
-            "Cash and payables are real and correct; the spend and the received inventory are unattributed to the item. Misattribution, not a loss.",
-        "Batched and Backdated Postings":
-            "No net financial impact; receipts posted across a month-end misstate inventory and payables between periods.",
-        "Open Documents Never Closed":
-            "On-order commitments overstated; expedite expense and delayed revenue from the stockouts; open jobs hold work in process open. Negative.",
+        "Dead Records Never Deactivated": "No direct cost, unless a false purchase suggestion is acted upon.",
+        "Stale Lead Times": "Expedite freight, to recover from late reorders.",
+        "Stale Reorder Points": "Cash tied up in excess stock on slow movers; expedites on fast movers.",
+        "Duplicate Item Records": "Excess inventory, when stock is held under one number while the other triggers a purchase.",
+        "UOM Mismatch": "Inventory misvalued, since a box and an each are counted alike.",
+        "Missing and Placeholder Fields": "No direct cost, unless the blank is a standard cost, which misvalues inventory.",
+        "BOM Omissions": "Inventory overstated until the phantom on-hand is written off.",
+        "Supplier Fragmentation": "No direct cost; weaker pricing leverage from understated vendor spend.",
+        "Unrecorded Consumption": "Inventory overstated until the count, then written off to cost of goods sold.",
+        "Wrong References": "No net cost; inventory and job cost are misallocated between items and jobs.",
+        "Quantity and Unit Errors": "Inventory misstated by the keyed quantity, or cash spent on an over-purchase.",
+        "Duplicate Postings": "Inventory misstated by the doubled movement; a doubled receipt can create a duplicate payable.",
+        "Adjustments as a Catch-All": "Write-offs to cost of goods sold with no traceable cause.",
+        "Free-Text Purchases": "No net cost; the spend is real but unattributed to the item.",
+        "Batched and Backdated Postings": "No net cost; receipts across a month-end shift inventory and payables between periods.",
+        "Open Documents Never Closed": "Expedites and stockouts while waiting on material that never arrives.",
     }
     hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
     master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
