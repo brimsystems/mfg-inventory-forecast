@@ -561,9 +561,76 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     hdr = ["Error", "Description", "ERP table", "Scale (rows affected)"]
     master_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[])
     txn_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[])
-    tests_table = B.data_table(
-        ["Error", "Test", "What counts as a finding"],
-        [[f"#{i} {n}", t, f] for i, (n, _d, _l, _s, t, f, _c) in enumerate(MASTER_ERRORS + TXN_ERRORS, 1)], right=[])
+    def rem_of(n, total):
+        return f"{n:,} of {total:,} ({n / total * 100:.0f}%)" if total else f"{n:,}"
+
+    # (remediation: what was done, how, and whose input it needed; evidence; rows remediated)
+    ERP = "ERP records only"
+    REM_MASTER = [
+        (f"Deactivated in the item master after a line-by-line review. The purchasing manager and the service "
+         f"parts coordinator kept {d['dead_kept']} as seasonal or safety-critical spares and held {d['dead_held']} "
+         f"for a later decision; the rest were deactivated.",
+         ERP, rem_of(d["dead_deactivated"], d["n_dead"])),
+        ("Recomputed per item from receipt history using the median and a trimmed 80th percentile, then written "
+         "to the master. Mechanical, with no judgment needed; the tracked items were checked against the buyer's "
+         "spreadsheet.",
+         "ERP purchase history, checked against the buyer's spreadsheet", rem_of(d["n_lead_off"], d["n_lead_off"])),
+        ("Recomputed from actual usage over the corrected lead time at the ABC service level and loaded; the "
+         "purchasing manager reviewed the A-class values before they went live.",
+         "ERP purchase and issue history, checked against the buyer's spreadsheet", rem_of(d["params_changed"], d["params_changed"])),
+        (f"Missing components added back to the product and subassembly BOMs ({d['bom_changes']} change-log "
+         f"entries), each confirmed by the engineering manager from engineering review or by the assembly "
+         f"supervisor from floor observation.",
+         "Expected vs actual consumption (jobs &times; BOM against issues) and floor observation",
+         rem_of(d["bom_changes"], d["omit_items"])),
+        (f"Candidate pairs scored, then merged to one surviving number through a crosswalk. The buyer and the "
+         f"stockroom lead reviewed every pair: {d['dup_merged']} records retired to a survivor, {d['dup_rejected']} "
+         f"pairs rejected as genuinely different parts.",
+         "ERP records, every pair reviewed by the buyer", rem_of(d["dup_merged"], d["dup_records"])),
+        ("A purchase-to-stock conversion factor added to each item, taken from the pack size on its receipts and "
+         "confirmed by the stockroom lead; on-hand restated in stock units.",
+         "ERP records and the pack sizes on receipts", rem_of(d["uom_items"], d["uom_items"])),
+        (f"Alias records mapped to one canonical supplier through a crosswalk ({d['sup_fragments']} vendors, "
+         f"{d['sup_records']} records); the buyer confirmed each grouping, and new orders book to the canonical record.",
+         ERP, rem_of(d["sup_records"] - d["sup_fragments"], d["sup_records"])),
+        ("Blocking blanks filled from the ordering history (cost from the last price paid, supplier from the "
+         "ordering record) and from the reorder-point recomputation; MISC items reclassified by the buyer; "
+         "required fields enforced from week 6.",
+         ERP, rem_of(d["n_blank"], d["n_blank"])),
+    ]
+    REM_TXN = [
+        (f"Traced to its cause through the chronic-adjustment analysis ({d['chronic_items']} items assigned to "
+         f"BOM omission, floor practice, receiving error or count error) and fixed at the source: the BOM "
+         f"corrections stop the leak, and the cycle-count program corrected each balance as it was counted.",
+         "ERP on-hand vs cycle counts; expected vs actual consumption",
+         f"0 of {d['n_unrec_adj_rows']:,} (fixed at source)"),
+        ("Historic adjustments left as posted but classified by the chronic-adjustment analysis; reason codes made "
+         "mandatory by configuration change in week 5, so the share falls toward the run-rate target.",
+         ERP, f"0 of {d['n_adj_blank_rows']:,} (controlled at source)"),
+        (f"Lines matched to stocked items by description similarity; the buyer settled every candidate "
+         f"({d['ft_confirmed']:,} confirmed, {d['ft_rejected']:,} rejected as genuine non-stock buys) and the "
+         f"confirmed demand was attributed back to the item; generic codes restricted from week 7.",
+         "ERP records, every candidate reviewed by the buyer", rem_of(d["ft_confirmed"], d["n_ft_lines"])),
+        ("Not corrected line by line, because the true dates are not recoverable. The lead-time computation was "
+         "made robust to it instead, and receiving moved to same-day posting under the new individual logins.",
+         ERP, f"0 of {d['n_batch_rows']:,} (method made robust)"),
+        ("Each open line and finished job closed on confirmation: receiving records, the buyer or a supplier "
+         "statement for PO lines, production confirmation for jobs.",
+         "ERP records, receiving records and supplier statements",
+         f"{d['closed_po']:,} of {d['open_po_lines']:,} PO lines; {d['closed_jobs']:,} of {d['n_open_jobs']:,} jobs"),
+        ("Each issue re-pointed to the item the job's BOM calls for, after the stockroom lead reviewed the list.",
+         "Expected vs actual consumption (the job's BOM) and stockroom review", rem_of(d["t6_count"], d["t6_count"])),
+        ("Each outlier corrected to the true quantity after the stockroom lead reviewed the list; box/each keying "
+         "closed off by the UOM conversions.",
+         "ERP records and stockroom review", rem_of(d["t7_count"], d["t7_count"])),
+        ("The second posting reversed for every pair.",
+         ERP, rem_of(d["t8_count"], d["t8_count"])),
+    ]
+    rem_hdr = ["Error", "Remediation", "Evidence", "Remediated (rows)"]
+    rem_master_table = B.data_table(rem_hdr, [[f"#{i} {e[0]}", r, ev, rows]
+        for i, (e, (r, ev, rows)) in enumerate(zip(MASTER_ERRORS, REM_MASTER), 1)], right=[])
+    rem_txn_table = B.data_table(rem_hdr, [[f"#{i} {e[0]}", r, ev, rows]
+        for i, (e, (r, ev, rows)) in enumerate(zip(TXN_ERRORS, REM_TXN), len(MASTER_ERRORS) + 1)], right=[])
 
     found = f"""
 {B.section("found", "Section 2", "What we found")}
@@ -606,43 +673,9 @@ anything specific, we profiled every component of the ERP plainly: row counts by
 of every column, the distinct values in every code field, and the date ranges. That pass is what
 surfaced the blank cost and supplier fields and the MISC item class before any test was written,
 and it set the baseline every later comparison is measured against. Only then did we run one test
-per error type, the sixteen in the table below. Every test was written as a query against the
+per error type, the sixteen in the tables below. Every test was written as a query against the
 extracted tables, and the query and its output were kept, so each finding traces to a stated rule
 and the shop can rerun it later.</p>
-
-<p><strong>Three kinds of evidence.</strong> Most of the master-level errors, and several of the
-transaction-level ones, could be found inside the ERP alone, because the record contradicts itself
-or its own history: an item flagged active with no issue or receipt in two years; a master lead time
-that disagrees with the median of that item's own purchase-order receipts; two item numbers whose
-normalized descriptions match within the same class; a purchase unit that differs from the stock
-unit with no conversion on file; a supplier name that normalizes to another supplier's; a required
-field left blank; an adjustment with no reason code; a purchase line under a generic code; two
-postings of the same item and quantity minutes apart. The second kind needed evidence from outside
-the ERP, because the record is internally consistent and simply wrong about the shelf. Three
-reconciliations did that work: the ERP's on-hand balance against the physical cycle counts, item by
-item, which is what exposes phantom inventory; the ERP against the purchasing manager's spreadsheet
-for the {d['spreadsheet_rows']} line-stopping components she tracks, comparing on-hand, lead time
-and reorder timing, where every disagreement is a finding and the spreadsheet was usually right
-({d['recon_buyer_right']} of {d['recon_disagree']} disagreements); and expected against actual
-consumption, multiplying completed jobs by the BOM quantities and comparing with what was actually
-issued, where a large gap means a BOM omission or an unrecorded issue. The third kind read the
-transaction history against the master: the items with three or more downward adjustments in a
-year that appear on no bill of materials are the BOM gaps, seen from the ledger side.</p>
-
-<p><strong>Confirmed and probable.</strong> Some findings are facts the test settles on its own: a
-record with no movement in two years, a blank cost, a supplier ID that is a spelling of another
-supplier. We report those as confirmed. Others are inferences: a description similarity score, a
-quantity that is an outlier for its item, a free-text line that probably means a stocked part, an
-adjustment pattern that probably means unrecorded consumption. Those carry a confidence score and
-are reported as probable until a person settles them. That review was done with the shop's own
-people rather than by us: the buyer confirmed or rejected the free-text attributions
-({d['ft_confirmed']:,} confirmed, {d['ft_rejected']:,} rejected) and the duplicate candidate pairs
-({d['dup_merged']} merged, {d['dup_rejected']} rejected as genuinely different parts); the
-purchasing manager and the service parts coordinator reviewed the dead-item list and rescued
-{d['dead_kept']} items as seasonal or safety-critical spares; the engineering manager and the
-assembly floor confirmed the BOM additions; the stockroom lead ran the counts; the controller set
-the write-down values. Where a probable finding was not reviewed it stays probable, is flagged, and
-is not applied: {d['ft_unreviewed']:,} free-text attributions are still in that state.</p>
 
 <p><strong>Where precision has a floor.</strong> Two tests were built to be robust to the errors
 they sit on top of. Actual lead times were computed from receipt history using the median and a
@@ -657,10 +690,15 @@ supplier, with a sample of candidate pairs checked by hand.</p>
 <p>Nothing in the source data was overwritten by any of this. Every finding, every review decision
 and every correction was recorded in a reference table (the dead-item dispositions, the duplicate
 and supplier crosswalks, the UOM conversions, the lead-time computations, the chronic-adjustment
-list, the BOM change log, the document closures, the spreadsheet reconciliation and the free-text
-attribution), so each one is auditable and reversible. The table below lists each test and what
-counted as a finding.</p>
-{tests_table}
+list, the BOM change log, the document closures, the spreadsheet reconciliation, the free-text
+attribution and the posting corrections), so each one is auditable and reversible. The tables below give, for each error, how it was
+remediated and whose input that took, the evidence it rested on, and how many of the affected
+rows were remediated.</p>
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
+{rem_master_table}
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
+{rem_txn_table}
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">The remediation</p>
 <p>The remediation ran over ten weeks. Nothing in the source data was overwritten;
@@ -677,7 +715,7 @@ made by the shop's own people, and not everything was resolved.</p>
         ["UOM conversions", f"{d['uom_added']} box/spool/length conversions added"],
         ["Open document closure", f"{d['closed_po']:,} PO lines and {d['closed_jobs']:,} jobs closed on confirmation"],
         ["Spreadsheet reconciliation", f"120 tracked items reconciled; ERP and spreadsheet disagreed on {d['recon_disagree']}, the spreadsheet was closer on {d['recon_buyer_right']}"],
-        ["Free-text attribution", f"{d['ft_confirmed']:,} lines attributed to a stocked item and confirmed, {d['ft_rejected']:,} rejected, {d['ft_unreviewed']:,} left unreviewed"],
+        ["Free-text attribution", f"{d['ft_confirmed']:,} lines attributed to a stocked item and confirmed by the buyer, {d['ft_rejected']:,} rejected as genuine non-stock buys"],
         ["Cycle-count program", "Weekly counts from week 2, unreliable items first, balances corrected as counted"],
         ["System configuration", "Reason codes required, required fields enforced, generic codes restricted, negative on-hand blocked, individual logins issued"],
     ], right=[])}
@@ -735,10 +773,9 @@ made in the system during the engagement; the rest need an owner and a cadence.<
 {B.section("remains", "Section 7", "What remains")}
 <p>Not everything was resolved, and it would be dishonest to imply otherwise.</p>
 <ul class="limitation-list">
-  <li><strong>Probable findings not yet reviewed.</strong> {d['ft_unreviewed']:,} free-text attributions are
-      still awaiting buyer confirmation; they are flagged, not applied.</li>
   <li><strong>Items still unreliable.</strong> {d['rel_after']['unreliable']['pct']:.0f}% of live items still
-      carry a balance we would not trust, mostly phantom-inventory items awaiting their first cycle count.</li>
+      carry a balance we would not trust: phantom-inventory items whose first count is scheduled in the
+      continuing cycle-count program, each with its reason recorded.</li>
   <li><strong>Lead-time precision floor.</strong> Because receipts were batched to Mondays and month-end,
       computed lead times carry a few days of irreducible noise; the recommended values use a trimmed
       high percentile to stay safe rather than precise.</li>
@@ -753,8 +790,8 @@ made in the system during the engagement; the rest need an owner and a cadence.<
 item master, and produced a reference table for each remediation activity (dead-item
 dispositions, duplicate and supplier crosswalks, UOM conversions, lead-time
 computations, parameter recommendations, the chronic-adjustment list, the BOM
-change log, open-document closures, the spreadsheet reconciliation, and the
-free-text attribution). Dollar figures for working capital, expedites and carrying
+change log, open-document closures, the spreadsheet reconciliation, the
+free-text attribution, and the posting corrections). Dollar figures for working capital, expedites and carrying
 cost are estimates on stated assumptions: an expedite fee of {_money(EXPEDITE_FEE)} per event
 and a {CARRYING_RATE*100:.0f}% annual carrying rate, with service held constant when comparing
 inventory levels. Defect types and rates reflect patterns commonly documented in

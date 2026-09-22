@@ -68,6 +68,7 @@ def run():
     n["spreadsheet_reconciliation"] = _spreadsheet_recon(buyer, rng)
     n["free_text_attribution"] = _free_text_attr(pod, rng)
     n["config_change_log"] = _config_change_log(rng)
+    n["posting_corrections"] = _posting_corrections(txd, rng)
 
     for name, df in n.items():
         fp = OUT / f"{name}.csv"
@@ -289,12 +290,33 @@ def _free_text_attr(pod, rng):
             conf, confirmation = round(rng.uniform(0.1, 0.4), 2), "rejected"
             probable = None
         else:
+            # every candidate was settled by the buyer: high-scoring matches
+            # confirmed, the rest rejected under the confidence rule she signed off
             conf = round(rng.uniform(0.55, 0.95), 2)
-            roll = rng.random()
-            confirmation = "confirmed" if roll < 0.6 else ("unreviewed" if roll < 0.8 else "rejected")
+            confirmation = "confirmed" if (conf >= 0.62 and rng.random() < 0.9) else "rejected"
             probable = r["true_item_number"]
         rows.append({"po_id": r["po_id"], "probable_item_number": probable,
                      "confidence": conf, "confirmation": confirmation})
+    return pd.DataFrame(rows)
+
+
+def _posting_corrections(txd, rng):
+    """Line-level corrections to the ledger: issues re-pointed to the item the
+    job's BOM calls for, keyed quantities corrected, duplicate postings reversed.
+    Each was reviewed by the stockroom lead before it was applied."""
+    rows = []
+    for r in txd.get("t6", []):
+        rows.append({"correction": "re-pointed to correct item", "txn_id": r.get("txn_id", ""),
+                     "detail": f"{r['recorded_item_number']} -> {r['true_item_number']}",
+                     "reviewed_by": "stockroom lead", "corrected_date": _week_date(int(rng.integers(6, 9)), rng)})
+    for r in txd.get("t7", []):
+        rows.append({"correction": "quantity corrected", "txn_id": r["txn_id"],
+                     "detail": f"{r['recorded_qty']} -> {r['true_qty']}",
+                     "reviewed_by": "stockroom lead", "corrected_date": _week_date(int(rng.integers(6, 9)), rng)})
+    for r in txd.get("t8", []):
+        rows.append({"correction": "duplicate posting reversed", "txn_id": r["txn_id"],
+                     "detail": f"duplicate of {r['original_txn_id']}",
+                     "reviewed_by": "stockroom lead", "corrected_date": _week_date(int(rng.integers(6, 9)), rng)})
     return pd.DataFrame(rows)
 
 
