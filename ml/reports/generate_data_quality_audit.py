@@ -587,9 +587,65 @@ inventory and the BOM gaps are the same problem.</p>
 
     did = f"""
 {B.section("did", "Section 3", "What we did")}
-<p>The audit ran one test for each of the sixteen error types against the item master, the bill
-of materials, the supplier master and the transaction history. The table gives each test and what
-counted as a finding. The queries and their output were kept, so the shop can rerun them.</p>
+<p><strong>How the tests were run.</strong> The work ran in a fixed order. Before looking for
+anything specific, we profiled every component of the ERP plainly: row counts by year, the fill rate
+of every column, the distinct values in every code field, and the date ranges. That pass is what
+surfaced the blank cost and supplier fields and the MISC item class before any test was written,
+and it set the baseline every later comparison is measured against. Only then did we run one test
+per error type, the sixteen in the table below. Every test was written as a query against the
+extracted tables, and the query and its output were kept, so each finding traces to a stated rule
+and the shop can rerun it later.</p>
+
+<p><strong>Three kinds of evidence.</strong> Most of the master-level errors, and several of the
+transaction-level ones, could be found inside the ERP alone, because the record contradicts itself
+or its own history: an item flagged active with no issue or receipt in two years; a master lead time
+that disagrees with the median of that item's own purchase-order receipts; two item numbers whose
+normalized descriptions match within the same class; a purchase unit that differs from the stock
+unit with no conversion on file; a supplier name that normalizes to another supplier's; a required
+field left blank; an adjustment with no reason code; a purchase line under a generic code; two
+postings of the same item and quantity minutes apart. The second kind needed evidence from outside
+the ERP, because the record is internally consistent and simply wrong about the shelf. Three
+reconciliations did that work: the ERP's on-hand balance against the physical cycle counts, item by
+item, which is what exposes phantom inventory; the ERP against the purchasing manager's spreadsheet
+for the {d['spreadsheet_rows']} line-stopping components she tracks, comparing on-hand, lead time
+and reorder timing, where every disagreement is a finding and the spreadsheet was usually right
+({d['recon_buyer_right']} of {d['recon_disagree']} disagreements); and expected against actual
+consumption, multiplying completed jobs by the BOM quantities and comparing with what was actually
+issued, where a large gap means a BOM omission or an unrecorded issue. The third kind read the
+transaction history against the master: the items with three or more downward adjustments in a
+year that appear on no bill of materials are the BOM gaps, seen from the ledger side.</p>
+
+<p><strong>Confirmed and probable.</strong> Some findings are facts the test settles on its own: a
+record with no movement in two years, a blank cost, a supplier ID that is a spelling of another
+supplier. We report those as confirmed. Others are inferences: a description similarity score, a
+quantity that is an outlier for its item, a free-text line that probably means a stocked part, an
+adjustment pattern that probably means unrecorded consumption. Those carry a confidence score and
+are reported as probable until a person settles them. That review was done with the shop's own
+people rather than by us: the buyer confirmed or rejected the free-text attributions
+({d['ft_confirmed']:,} confirmed, {d['ft_rejected']:,} rejected) and the duplicate candidate pairs
+({d['dup_merged']} merged, {d['dup_rejected']} rejected as genuinely different parts); the
+purchasing manager and the service parts coordinator reviewed the dead-item list and rescued
+{d['dead_kept']} items as seasonal or safety-critical spares; the engineering manager and the
+assembly floor confirmed the BOM additions; the stockroom lead ran the counts; the controller set
+the write-down values. Where a probable finding was not reviewed it stays probable, is flagged, and
+is not applied: {d['ft_unreviewed']:,} free-text attributions are still in that state.</p>
+
+<p><strong>Where precision has a floor.</strong> Two tests were built to be robust to the errors
+they sit on top of. Actual lead times were computed from receipt history using the median and a
+trimmed 80th percentile rather than the mean, because receipts are batched to Mondays and
+month-end, and that posting lag puts a floor of a few days on how precisely any lead time can be
+known. Quantity errors were found as per-item outliers against each item's own median and spread
+rather than against averages, so a genuinely lumpy item is not flagged for being lumpy. Duplicate
+detection normalized descriptions (case, punctuation, fraction and decimal forms, unit tokens),
+compared only within an item class, and scored on description similarity, cost proximity and shared
+supplier, with a sample of candidate pairs checked by hand.</p>
+
+<p>Nothing in the source data was overwritten by any of this. Every finding, every review decision
+and every correction was recorded in a reference table (the dead-item dispositions, the duplicate
+and supplier crosswalks, the UOM conversions, the lead-time computations, the chronic-adjustment
+list, the BOM change log, the document closures, the spreadsheet reconciliation and the free-text
+attribution), so each one is auditable and reversible. The table below lists each test and what
+counted as a finding.</p>
 {tests_table}
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">The remediation</p>
