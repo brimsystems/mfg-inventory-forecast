@@ -219,6 +219,36 @@ def gather():
     open_jobs = prod[(prod["status"] == "OPEN") & (pd.to_datetime(prod["due_date"]) < pd.Timestamp("2026-03-31"))]
     d["n_open_jobs"] = int(len(open_jobs))
 
+    # ── rows carrying at least one error, per ERP table (errors overlap, so
+    #    each row is counted once) ────────────────────────────────────────────
+    dup_members = set()
+    for cl in cross["duplicate_clusters"].values():
+        dup_members.update(cl["records"])
+    stale_lead_nums = set(diff[diff > 3].index)
+    stale_rop_nums = set(params.loc[changed, "item_number"])
+    uom_nums = set(live.loc[live["purchase_uom"] != live["uom"], "item_number"])
+    blank_nums = set(live.loc[live[["standard_cost", "reorder_point", "primary_supplier_id"]].isna().any(axis=1), "item_number"])
+    im_err = dead_nums | dup_members | stale_lead_nums | stale_rop_nums | uom_nums | blank_nums
+    t78_ids = {r["txn_id"] for r in txn.get("t7", [])} | {r["txn_id"] for r in txn.get("t8", [])}
+    blank_mask = (tx["type"] == "ADJUST") & (tx["reason_code"].isna() |
+                  tx["reason_code"].astype(str).isin(["", "nan", "ADJ", "VAR", "MISC", "COUNT"]))
+    unrec_mask = (tx["type"] == "ADJUST") & (tx["qty"] < 0) & tx["item_number"].isin(t1_nums)
+    ledger_err = int((blank_mask | unrec_mask | tx["txn_id"].isin(t78_ids)).sum()) + d["t6_count"]
+    t4_keys = {(r["po_id"], int(r["line"])) for r in pod.get("t4", [])}
+    t4_mask = pd.Series([k in t4_keys for k in zip(po["po_id"], po["line"].astype(int))], index=po.index)
+    po_err = int((t4_mask | po["item_number"].isin(["NONSTOCK", "MISC", "SHOPSUPPLY"]) | (po["status"] == "OPEN")).sum())
+    tc_map = dict(txn_comp)
+    d["table_rates"] = [
+        ("Item master", len(im_err), n_master),
+        ("Bill of materials", d["omit_items"], d["n_bom_rows"] + d["omit_items"]),
+        ("Supplier master", d["sup_records"], d["n_sup_rows"]),
+        ("Inventory ledger", ledger_err, d["n_tx"]),
+        ("Purchase orders", po_err, d["n_po"]),
+        ("Production orders", d["n_open_jobs"], d["n_prod"]),
+        ("Service orders", 0, tc_map["Service order lines"]),
+        ("Cycle counts", 0, tc_map["Cycle counts"]),
+    ]
+
     # residual
     d["still_unreliable_pct"] = d["rel_after"]["unreliable"]["pct"] / 100
     d["probable_unreviewed"] = d["ft_unreviewed"]
@@ -392,6 +422,28 @@ def _widths(table_html, widths):
     cols = "".join(f'<col style="width:{w}%;">' for w in widths)
     return table_html.replace('<table class="data-table">',
                               f'<table class="data-table" style="table-layout:fixed;"><colgroup>{cols}</colgroup>', 1)
+
+
+def chart_error_rates(d):
+    """Horizontal bars: share of each ERP table's rows carrying at least one error."""
+    rates = d["table_rates"]
+    fig, ax = B.make_fig(4.2)
+    names = [r[0] for r in rates][::-1]
+    pct = [r[1] / r[2] * 100 if r[2] else 0 for r in rates][::-1]
+    labels = [f"{r[1] / r[2] * 100:.1f}%  ({r[1]:,} of {r[2]:,})" if r[2] else "" for r in rates][::-1]
+    bars = ax.barh(names, pct, color=B.DARK_BLUE, height=0.62)
+    for b, lab in zip(bars, labels):
+        ax.text(b.get_width() + 1.2, b.get_y() + b.get_height() / 2, lab, va="center", fontsize=9.5)
+    ax.set_xlim(0, max(pct) * 1.45 if max(pct) else 10)
+    ax.set_xlabel("Rows with at least one error (%)")
+    ax.xaxis.grid(True, color=B.LIGHT_GREY, linewidth=0.8)
+    ax.yaxis.grid(False)
+    ax.set_axisbelow(True)
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+    ax.spines["left"].set_color(B.LIGHT_GREY)
+    ax.spines["bottom"].set_color(B.LIGHT_GREY)
+    return B.b64(fig)
 
 
 # ── report ───────────────────────────────────────────────────────────────────
@@ -584,6 +636,91 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     TXN_ERRORS.sort(key=lambda e: ORDER_T.index(e[0]))
     W2 = [4, 19, 40, 16, 21]          # #, Error, Description, ERP table, Scale
     W3 = [4, 19, 42, 18, 17]          # #, Error, Remediation, Evidence, Remediated
+    OPCOST = {
+        "Dead Records Never Deactivated":
+            "Dead records clutter every report and search, trigger purchase suggestions for material nobody "
+            "needs wherever a reorder point is still set, and consume count effort on items that never move.",
+        "Stale Lead Times":
+            "A lead time that reads two weeks when the supplier now takes four means every reorder is placed "
+            "too late. The result is a line stop waiting on material, and expedite freight to recover.",
+        "Stale Reorder Points":
+            "Reorder points set for old volumes are wrong in both directions: too low on the fast movers, "
+            "which stock out, and too high on the slow movers, which accumulate on the shelf.",
+        "Duplicate Item Records":
+            "With demand split across two or more numbers, neither history is forecastable, and each record "
+            "carries its own reorder point, so the shop can hold stock under one number while the other "
+            "triggers a purchase.",
+        "UOM Mismatch":
+            "A box received is counted as one each, so on-hand and demand are inflated in the system and the "
+            "true stock position cannot be known without a physical count.",
+        "Missing and Placeholder Fields":
+            "A blank cost, supplier or reorder point stops the process that needs it. The item cannot be "
+            "planned, costed or reported until someone fills the gap by hand.",
+        "BOM Omissions":
+            "Because backflush never subtracts the omitted components, they are used on the floor but stay on "
+            "the books as phantom on-hand, and the usage only surfaces later as write-offs at the count.",
+        "Supplier Fragmentation":
+            "One vendor's spend and lead-time history is split across several records, so its true volume "
+            "and delivery performance are understated in every report and every negotiation.",
+        "Unrecorded Consumption":
+            "Balances drift upward until the annual count, so the shop believes it holds material it does "
+            "not, and the shortfall arrives all at once as a run of write-offs.",
+        "Wrong References":
+            "The consumption is real but charged to the wrong part and the wrong job, so one item looks "
+            "short, another looks long, and the job cost lands in the wrong place.",
+        "Quantity and Unit Errors":
+            "A single keystroke, an extra zero or a box entered as an each, distorts an item's demand and "
+            "on-hand by ten times or more until someone notices.",
+        "Duplicate Postings":
+            "A movement counted twice overstates or understates the balance until it is caught, and a "
+            "doubled receipt can turn into a doubled payable.",
+        "Adjustments as a Catch-All":
+            "When every discrepancy is fixed through an adjustment with no reason code, the cause of a "
+            "movement is unknowable and the write-offs hide the real problems behind them.",
+        "Free-Text Purchases":
+            "A stocked item bought under a generic code loses that demand from its history, so its forecast "
+            "and reorder point are understated, and the spend cannot be traced back to a part.",
+        "Batched and Backdated Postings":
+            "Receipts posted days after they arrive make computed lead times read longer than they are, "
+            "which biases every reorder decision built on them.",
+        "Open Documents Never Closed":
+            "An open PO line the ERP still believes is inbound leads the buyer to hold back a real order, so "
+            "the shop stocks out waiting for material that never comes; open jobs keep consuming on paper.",
+    }
+    FINCOST = {
+        "Dead Records Never Deactivated":
+            "Cash and accounts payable, if a false purchase suggestion is acted on; count labor expensed. Negative.",
+        "Stale Lead Times":
+            "Expedite freight expense; delayed revenue from line stops; cash tied up in safety stock set on the wrong lead time. Negative.",
+        "Stale Reorder Points":
+            "Inventory and cash overstated on slow movers (carrying cost); expedite expense and delayed revenue on fast movers. Negative.",
+        "Duplicate Item Records":
+            "Excess inventory and cash when stock is held under one number while the other triggers a purchase. Negative.",
+        "UOM Mismatch":
+            "Inventory value overstated; purchase quantities wrong, so cash and payables for material not needed. Negative.",
+        "Missing and Placeholder Fields":
+            "Inventory and cost of goods sold misvalued where the blank is a standard cost; otherwise no direct financial impact.",
+        "BOM Omissions":
+            "Inventory overstated until written off; the write-down hits cost of goods sold, and product cost is understated in the meantime. Negative.",
+        "Supplier Fragmentation":
+            "No direct financial impact; spend by vendor is understated, which weakens pricing leverage.",
+        "Unrecorded Consumption":
+            "Inventory overstated on the balance sheet until the count; the correction is a write-down to cost of goods sold. Negative.",
+        "Wrong References":
+            "Nets to zero at the total; inventory and job cost misallocated between items and jobs.",
+        "Quantity and Unit Errors":
+            "Inventory overstated until counted, or an over-purchase hitting cash and payables. Negative.",
+        "Duplicate Postings":
+            "Inventory misstated by the doubled movement; a doubled receipt can create a duplicate payable. Negative.",
+        "Adjustments as a Catch-All":
+            "Write-offs reach cost of goods sold with no traceable cause; the loss is real, its reason is lost. Negative.",
+        "Free-Text Purchases":
+            "Cash and payables are real and correct; the spend and the received inventory are unattributed to the item. Misattribution, not a loss.",
+        "Batched and Backdated Postings":
+            "No net financial impact; receipts posted across a month-end misstate inventory and payables between periods.",
+        "Open Documents Never Closed":
+            "On-order commitments overstated; expedite expense and delayed revenue from the stockouts; open jobs hold work in process open. Negative.",
+    }
     hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
     master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
     txn_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W2)
@@ -659,6 +796,9 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         for i, e in enumerate(MASTER_ERRORS, 1)], right=[]), W3)
     rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_TXN[e[0]]]
         for i, e in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W3)
+    cost_table = _widths(B.data_table(["", "Error", "Operational cost", "Financial cost"],
+        [[numcell(i), e[0], OPCOST[e[0]], FINCOST[e[0]]]
+         for i, e in enumerate(MASTER_ERRORS + TXN_ERRORS, 1)], right=[]), [4, 19, 45, 32])
 
     found = f"""
 {B.section("found", "Section 2", "What we found")}
@@ -688,10 +828,24 @@ the affected rows are the write-off adjustments that stand in for the issues tha
 for BOM omissions they are the component rows missing from the bill of materials, counted against
 the complete bill.</p>
 
-<p>Of the {d['chronic_items']:,} items with three or more downward adjustments in the last year,
-{d['chronic_on_bom']*100:.0f}% are BOM-omitted components: the adjustments are the shop absorbing usage
-the BOM never recorded. That overlap is the strongest single piece of evidence that the phantom
-inventory and the BOM gaps are the same problem.</p>
+{B.chart("Share of rows with at least one error, by ERP table", chart_error_rates(d))}
+
+<p>These errors cost the shop in two ways. Operationally, they turn into line stops and expedites on
+the components that matter, into write-offs at the annual count, and into buyers who work around
+the system rather than through it: in the twelve-month simulation of the current policy the modeled
+items stocked out {int(d['policy']['current']['stockouts']):,} times and {_money(d['policy']['current']['expedite'])}
+went to expedite freight, while {_money(d['open_po_value'])} of on-order value existed only on paper.
+Financially, the same errors misstate the balance sheet and the cost of goods sold:
+{d['rel_before']['unreliable']['val']/d['inv_value_total']*100:.0f}% of inventory value
+({_money(d['rel_before']['unreliable']['val'])}) sat on balances no one could trust, phantom on-hand
+was carried as an asset until it was written off, and safety stock set on wrong lead times tied up
+the cash the corrected policy later releases ({_money(d['wc_released'])} at the same service level).
+The table below gives, for each error, what it does to the operation and which financial line items
+it touches. Not every error is a loss: a few are misattributions or timing errors that net to zero at
+the total and only distort where the cost sits, and those are marked as such.</p>
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Operational and financial cost</p>
+{cost_table}
 """
 
     did = f"""
