@@ -265,7 +265,9 @@ def _master_row(num, desc, created, iid, base, rng):
         "description":           desc,
         "uom":                   base["uom"],
         "purchase_uom":          base["purchase_uom"],
-        "uom_conversion":        base["uom_conversion"],
+        # The ERP holds no conversion between purchase and stock UOM; that
+        # absence is the error (M5). The true factor lives in item_meta / truth.
+        "uom_conversion":        np.nan,
         "item_class":            base["item_class"],
         "standard_cost":         np.nan if field == "cost" else base["cost"],
         "reorder_point":         np.nan if field == "rop" else base["rop"],

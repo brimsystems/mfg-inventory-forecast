@@ -243,6 +243,8 @@ def _write_truth(plan, dup_map, item_meta, supplier_truth, sup_frag, defects, ab
         "m3_affected_products":     affected_products,
         "n_products":               n_products,
         "m5_items":                 sorted(int(i) for i in defects["m5_items"]),
+        "m5_conversions":           {n: int(m["uom_conv"]) for n, m in item_meta.items()
+                                     if m["uom_conv"] and m["uom_conv"] > 1},
         "m7_blank_items":           sorted(int(i) for i in defects["m7_blank"]),
         "abc_by_item":              {str(k): v for k, v in abc.items()},
     }

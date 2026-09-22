@@ -60,11 +60,28 @@ def gather():
     uomc = pd.read_csv(REM / "uom_conversions.csv")
     config = pd.read_csv(REM / "config_change_log.csv")
     interviews = pd.read_csv(REM / "interview_log.csv")
+    sup = pd.read_csv(RAW / "erp" / "supplier_master.csv", low_memory=False)
+    bom = pd.read_csv(RAW / "erp" / "bill_of_materials.csv", low_memory=False)
 
     dead_nums = set(dead_disp["item_number"])
     n_master = len(im)
     n_dead = len(dead_nums)
     n_live = n_master - n_dead
+
+    # ── scope: the ERP components examined ──────────────────────────────────
+    def _rows(p):
+        with open(p, encoding="utf-8") as f:
+            return sum(1 for _ in f) - 1
+    master_comp = [("Item master", len(im)), ("Bill of materials", len(bom)), ("Supplier master", len(sup))]
+    txn_comp = [("Inventory ledger", len(tx)), ("Purchase order lines", len(po)),
+                ("Service order lines", _rows(RAW / "erp" / "service_orders.csv")),
+                ("Production orders", _rows(RAW / "erp" / "production_orders.csv")),
+                ("Cycle counts", _rows(RAW / "wms" / "cycle_counts.csv"))]
+    d["master_comp"], d["txn_comp"] = master_comp, txn_comp
+    d["master_rows"] = sum(n for _, n in master_comp)
+    d["txn_rows"] = sum(n for _, n in txn_comp)
+    d["spreadsheet_rows"] = _rows(RAW / "purchasing" / "buyer_spreadsheet.csv")
+    d["total_rows"] = d["master_rows"] + d["txn_rows"] + d["spreadsheet_rows"]
 
     # ── reliability (headline) ──────────────────────────────────────────────
     def rdist(col):
@@ -174,10 +191,114 @@ def gather():
     d["interviews"] = interviews
     d["chronic_root"] = chronic["root_cause"].value_counts().to_dict() if len(chronic) else {}
 
+    # batched postings: share of receipts landing on the peak weekday
+    rec = tx[tx["type"] == "RECEIPT"].copy()
+    rec["wd"] = pd.to_datetime(rec["txn_date"]).dt.weekday
+    d["peak_wd_share"] = float(rec["wd"].value_counts(normalize=True).max())
+    d["peak_wd_name"] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][
+        int(rec["wd"].value_counts().idxmax())]
+
     # residual
     d["still_unreliable_pct"] = d["rel_after"]["unreliable"]["pct"] / 100
     d["probable_unreviewed"] = d["ft_unreviewed"]
+
+    d["samples"] = _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
     return d
+
+
+def _blank(v):
+    return "(blank)" if (v is None or (isinstance(v, float) and np.isnan(v)) or str(v).strip() in ("", "nan")) else v
+
+
+def _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums):
+    """One or two real records illustrating each error type."""
+    s = {}
+    live_im = im[~im["item_number"].isin(dead_nums)]
+
+    dead = im[im["item_number"].isin(dead_nums) & im["reorder_point"].notna()].head(1)
+    s["dead"] = (["Item", "Description", "Status", "Reorder point", "Created", "Last issue or receipt"],
+                 [[r.item_number, r.description, r.status, int(r.reorder_point), r.created_date,
+                   "none in 24+ months"] for r in dead.itertuples(index=False)])
+
+    lt = lead.assign(gap=lead["median_actual"] - lead["master_lead_time"]).sort_values("gap", ascending=False).head(2)
+    s["lead"] = (["Item", "Supplier", "Master lead time (days)", "Median actual (days)", "Receipts sampled"],
+                 [[r.item_number, r.supplier_id, int(r.master_lead_time), f"{r.median_actual:.0f}", int(r.sample_size)]
+                  for r in lt.itertuples(index=False)])
+
+    pr = params.dropna(subset=["old_reorder_point"])
+    pr = pr.assign(chg=(pr["new_reorder_point"] - pr["old_reorder_point"]).abs()).sort_values("chg", ascending=False).head(2)
+    s["rop"] = (["Item", "ABC", "Reorder point in ERP", "Reorder point from actual usage and lead time"],
+                [[r.item_number, r.abc_class, int(r.old_reorder_point), int(r.new_reorder_point)]
+                 for r in pr.itertuples(index=False)])
+
+    bo = chronic[chronic["on_bom"]].sort_values("adj_count_12m", ascending=False).head(2)
+    s["bom"] = (["Item", "Downward adjustments (12 mo)", "Net quantity written off", "On any recorded BOM"],
+                [[r.item_number, int(r.adj_count_12m), int(r.net_qty), "No"] for r in bo.itertuples(index=False)])
+
+    cl = next(iter(cross["duplicate_clusters"].values()))
+    dup = im[im["item_number"].isin(cl["records"])]
+    s["dup"] = (["Item", "Description", "Created", "Created by"],
+                [[r.item_number, r.description, r.created_date, r.created_by] for r in dup.itertuples(index=False)])
+
+    u = live_im[(live_im["purchase_uom"] != live_im["uom"]) & live_im["uom_conversion"].isna()].head(2)
+    s["uom"] = (["Item", "Description", "Stock UOM", "Purchase UOM", "Conversion factor"],
+                [[r.item_number, r.description, r.uom, r.purchase_uom, "(blank)"] for r in u.itertuples(index=False)])
+
+    frag = cross["supplier_fragments"][0]
+    fs = sup[sup["supplier_id"].isin([frag["canonical"]] + frag["aliases"])]
+    s["sup"] = (["Supplier ID", "Supplier name", "Type"],
+                [[r.supplier_id, r.supplier_name, r.supplier_type] for r in fs.itertuples(index=False)])
+
+    mf = live_im[live_im["standard_cost"].isna() | live_im["primary_supplier_id"].isna() | live_im["reorder_point"].isna()].head(2)
+    s["missing"] = (["Item", "Description", "Standard cost", "Supplier", "Reorder point"],
+                    [[r.item_number, r.description, _blank(r.standard_cost), _blank(r.primary_supplier_id),
+                      _blank(r.reorder_point)] for r in mf.itertuples(index=False)])
+
+    top = chronic.sort_values("adj_count_12m", ascending=False).iloc[0]["item_number"]
+    ar = tx[(tx["item_number"] == top) & (tx["type"] == "ADJUST") & (tx["qty"] < 0)].sort_values("txn_date").tail(2)
+    s["unrec"] = (["Transaction", "Item", "Date", "Type", "Qty", "Reason code"],
+                  [[r.txn_id, r.item_number, r.txn_date, r.type, int(r.qty), _blank(r.reason_code)]
+                   for r in ar.itertuples(index=False)])
+
+    ab = tx[(tx["type"] == "ADJUST") & (tx["reason_code"].isna() | (tx["reason_code"].astype(str).str.strip() == ""))].head(2)
+    s["adjshare"] = (["Transaction", "Item", "Date", "Type", "Qty", "Reason code"],
+                     [[r.txn_id, r.item_number, r.txn_date, r.type, int(r.qty), "(blank)"] for r in ab.itertuples(index=False)])
+
+    ft = po[po["item_number"].isin(["NONSTOCK", "MISC", "SHOPSUPPLY"]) & po["description_text"].notna()].head(2)
+    s["ft"] = (["PO", "Item code", "Typed description", "Supplier", "Qty"],
+               [[r.po_id, r.item_number, r.description_text, r.supplier_id, int(r.qty_ordered)] for r in ft.itertuples(index=False)])
+
+    wdn = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    s["batch"] = (["PO", "Line", "Actual arrival", "Posted receipt date", "Posted on"],
+                  [[r["po_id"], r["line"], r["true_received_date"], r["recorded_received_date"],
+                    wdn[pd.Timestamp(r["recorded_received_date"]).weekday()]] for r in pod["t4"][:2]])
+
+    op = po[po["status"] == "OPEN"].copy()
+    op["od"] = pd.to_datetime(op["order_date"])
+    op = op[op["od"] < pd.Timestamp("2026-03-31") - pd.Timedelta(days=90)].sort_values("od").head(2)
+    s["open"] = (["PO", "Item", "Order date", "Ordered", "Received", "Status"],
+                 [[r.po_id, r.item_number, r.order_date, int(r.qty_ordered), int(r.qty_received), r.status]
+                  for r in op.itertuples(index=False)])
+
+    s["wrong"] = (["Issue posted against", "Item the job's BOM actually calls for"],
+                  [[r["recorded_item_number"], r["true_item_number"]] for r in txn.get("t6", [])[:2]])
+
+    txl = tx.set_index("txn_id")
+    q_rows = []
+    for r in txn.get("t7", [])[:2]:
+        if r["txn_id"] in txl.index:
+            row = txl.loc[r["txn_id"]]
+            q_rows.append([r["txn_id"], row["item_number"], row["txn_date"], int(r["recorded_qty"]), int(r["true_qty"])])
+    s["qty"] = (["Transaction", "Item", "Date", "Recorded qty", "Actual qty"], q_rows)
+
+    d_rows = []
+    for r in txn.get("t8", [])[:1]:
+        for tid in (r["original_txn_id"], r["txn_id"]):
+            if tid in txl.index:
+                row = txl.loc[tid]
+                d_rows.append([tid, row["item_number"], row["txn_date"], row["txn_time"], row["type"], int(row["qty"])])
+    s["dupost"] = (["Transaction", "Item", "Date", "Time", "Type", "Qty"], d_rows)
+    return s
 
 
 # ── charts ───────────────────────────────────────────────────────────────────
@@ -230,6 +351,25 @@ def chart_policy(d):
     ax.set_ylim(0, max(inv) * 1.2)
     B.chart_style(ax)
     return B.b64(fig)
+
+
+def _err_block(name, what, scale, test, cost, headers, rows):
+    """One error type, broken out visually: name, a plain sentence on what it is,
+    then Scale / Test / Operational cost, then a record or two that shows it."""
+    lbl = (f'style="color:{B.MED_GREY};font-weight:700;font-size:12px;text-transform:uppercase;'
+           f'letter-spacing:.5px;display:inline-block;width:150px;vertical-align:top;"')
+    sample = ""
+    if rows:
+        sample = (f'<div style="font-size:11px;color:{B.MED_GREY};font-weight:700;text-transform:uppercase;'
+                  f'letter-spacing:.5px;margin:12px 0 -6px;">Sample records</div>'
+                  + B.data_table(headers, rows))
+    return (f'<div style="margin:24px 0 28px;">'
+            f'<div style="font-size:16px;margin-bottom:6px;"><strong><u>{name}</u></strong></div>'
+            f'<div style="margin-bottom:10px;">{what}</div>'
+            f'<div style="margin-bottom:5px;"><span {lbl}>Scale</span><span>{scale}</span></div>'
+            f'<div style="margin-bottom:5px;"><span {lbl}>Test</span><span>{test}</span></div>'
+            f'<div style="margin-bottom:5px;"><span {lbl}>Operational cost</span><span>{cost}</span></div>'
+            f'{sample}</div>')
 
 
 # ── report ───────────────────────────────────────────────────────────────────
@@ -289,37 +429,131 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     f"the expedites on it stop.")}
 """
 
+    S = d["samples"]
+    mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
+    tc = ", ".join(f"{n} ({r:,})" for n, r in d["txn_comp"])
     found = f"""
 {B.section("found", "Section 2", "What we found")}
-<p>The problems fall in two tiers. Master-level defects are few records that many
-transactions depend on; transaction-level defects are many individually wrong
-lines. We report confirmed findings separately from probable ones, and give the
-count, the evidence, and the operational cost for each.</p>
+<p>This audit examined one company's ERP system end to end. On the master side, the records that
+define what the shop buys and builds: the {mc}. On the transaction side, the history those masters
+govern: the {tc}. That is {len(d['master_comp'])} master-level components holding
+{d['master_rows']:,} records and {len(d['txn_comp'])} transaction-level components holding
+{d['txn_rows']:,} records: {d['total_rows']:,} records in all across 36 months, plus the purchasing
+manager's spreadsheet of the {d['spreadsheet_rows']} line-stopping components she tracks outside
+the system.</p>
 
-<p><strong>Master-level.</strong></p>
-{B.data_table(
-    ["Defect", "Scale", "Evidence", "Operational cost"],
-    [
-        ["Dead records never deactivated", f"{d['dead_pct']*100:.0f}% of the master ({d['n_dead']:,} items), {d['dead_with_rop']:,} still carrying a reorder point", "No movement in 24+ months", "Clutter, false reorder signals, wasted counts"],
-        ["Stale parameters", f"{d['drift_gt3']*100:.0f}% of live items off by more than 3 days on lead time, {d['drift_gt7']*100:.0f}% off by more than 7", "Master lead time vs receipt history", "Under-set reorder points, stockouts, expedites"],
-        ["BOM omissions", f"{d['omit_items']:,} components missing from BOMs, across {d['omit_products']} of {d['n_products']} products", "Backflush never consumed them", "Phantom on-hand; usage escapes as adjustments"],
-        ["Duplicate item records", f"{d['dup_clusters']} clusters ({d['dup_records']} records)", "Same physical item, alternate numbers", "Split demand history; unforecastable halves"],
-        ["UOM mismatch", f"{d['uom_items']} items", "Purchase UOM differs from stock, no conversion", "Inflated on-hand and demand"],
-        ["Supplier fragmentation", f"{d['sup_fragments']} vendors under {d['sup_records']} records", "Same vendor, alternate names/ids", "Fragmented spend and lead-time history"],
-        ["Missing / placeholder fields", f"{d['blank_pct']*100:.0f}% with a blocking blank, {d['misc_pct']*100:.0f}% classed MISC", "Blank cost/supplier/reorder point", "Blocks planning and reporting"],
-    ], right=[])}
+{B.kpi_row(
+    B.kpi_card(f"{len(d['master_comp'])}", "Master-level components", f"{d['master_rows']:,} records"),
+    B.kpi_card(f"{len(d['txn_comp'])}", "Transaction-level components", f"{d['txn_rows']:,} records"),
+    B.kpi_card(f"{d['total_rows']:,}", "Records examined", "36 months of history"),
+    B.kpi_card("16", "Error types tested", "8 master-level, 8 transaction-level"),
+)}
 
-<p><strong>Transaction-level.</strong></p>
-{B.data_table(
-    ["Defect", "Scale", "Nature"],
-    [
-        ["Unrecorded consumption", f"{d['t1_items']:,} items, ~{d['t1_volume']:,} units/yr", "BOM-omitted usage leaves with no record; chronic downward adjustments follow"],
-        ["Adjustments as catch-all", f"{d['adj_share']*100:.0f}% of quantity moved, {d['adj_blank_share']*100:.0f}% blank/generic reason", "ADJUST used for unrecorded issues, mis-receipts, scrap"],
-        ["Free-text / non-stock PO lines", f"{d['ft_pct']*100:.0f}% of PO lines; {d['ft_stocked']}/{d['ft_total']} match a stocked item", "Generic codes with typed descriptions"],
-        ["Batched / backdated postings", "50&ndash;65% of receipts displaced", "Receipts snapped to Mondays and month-end; biases computed lead time"],
-        ["Open documents never closed", f"{d['open_po_lines']:,} open PO lines ({_money(d['open_po_value'])} phantom on-order)", "Partial receipts left open; completed jobs left open"],
-        ["Wrong references / keying / duplicates", f"{d['t6_count']}+{d['t7_count']}+{d['t8_count']} confirmed", "Issues to a similar item; unit errors; postings twice"],
-    ], right=[])}
+<p>The errors fall in two tiers. Master-level errors are few records that many transactions depend
+on; transaction-level errors are many individually wrong lines. For each we say what it is, give
+the scale, the test that found it and the operational cost, and show a record or two from the
+system.</p>
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
+
+{_err_block("Dead records never deactivated",
+    "Parts the shop no longer uses are still marked active. Nobody deletes them, because deleting feels risky and nobody owns the task.",
+    f"{d['dead_pct']*100:.0f}% of the item master ({d['n_dead']:,} items), {d['dead_with_rop']:,} of them still carrying a reorder point",
+    "Active items with no issue or receipt in 24+ months",
+    "Clutter, false reorder signals, wasted count effort", *S["dead"])}
+
+{_err_block("Stale lead times",
+    "The lead time on the item record was set at go-live and never revisited. The only true value is what actually happened on past purchase orders.",
+    f"{d['drift_gt3']*100:.0f}% of live items off by more than 3 days, {d['drift_gt7']*100:.0f}% by more than 7; one supplier's actual lead time roughly doubled over the history",
+    "Master lead time vs median actual from PO history, per item",
+    "Under-set reorder points, line stops, expedite freight", *S["lead"])}
+
+{_err_block("Stale reorder points",
+    "Reorder points and safety stocks set for the volumes and lead times of years ago, and never recomputed as usage changed.",
+    f"{d['params_changed']:,} of {d['n_live']:,} live items' reorder points moved materially when recomputed from actual usage and lead time",
+    "Reorder point vs recent usage over actual lead time",
+    "Stockouts on the fast movers, excess stock on the slow ones", *S["rop"])}
+
+{_err_block("BOM omissions",
+    "The bill of materials is the recipe for a product. When it is missing the screws and washers, they get used on the floor but never subtracted.",
+    f"{d['omit_items']:,} components missing from BOMs, across {d['omit_products']} of {d['n_products']} products",
+    "Items with chronic negative adjustments that appear on no BOM",
+    "Backflush never consumes them: phantom on-hand, and the usage escapes as write-offs", *S["bom"])}
+
+{_err_block("Duplicate item records",
+    "The same physical part exists under two or more item numbers, created when someone could not find the existing record or used a different naming convention.",
+    f"{d['dup_clusters']} clusters ({d['dup_records']} records), concentrated in hardware, fittings, bearings and electrical",
+    "Normalize descriptions, compare within item class, score similarity",
+    "Demand history split across records; neither half is forecastable; two reorder points for one part", *S["dup"])}
+
+{_err_block("UOM mismatch",
+    "The unit a part is bought in does not match the unit it is used in, and the ERP has no conversion: bought by the box of 100, issued by the each.",
+    f"{d['uom_items']} items bought by the box, spool, length or gallon and stocked by the each, foot or ounce",
+    "Purchase UOM differs from stock UOM with no conversion factor",
+    "Inflated on-hand and demand; a box received is counted as one each", *S["uom"])}
+
+{_err_block("Supplier fragmentation",
+    "One supplier exists under several names or IDs, so its spend and lead-time history are split across them.",
+    f"{d['sup_fragments']} vendors carried under {d['sup_records']} supplier records",
+    "Normalize supplier names, group",
+    "Spend and lead-time history fragmented across records", *S["sup"])}
+
+{_err_block("Missing and placeholder fields",
+    "Required fields left blank because the ERP did not force them, or filled with placeholders such as an item class of MISC.",
+    f"{d['blank_pct']*100:.0f}% of live items with a blocking blank (cost, supplier or reorder point); {d['misc_pct']*100:.0f}% classed MISC",
+    "Fill rates by column, from the profiling pass",
+    "Blocks planning, costing and reporting", *S["missing"])}
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
+
+{_err_block("Unrecorded consumption",
+    "Material leaves the shelf and nobody records it. The ERP still thinks it is there.",
+    f"{d['t1_items']:,} items, roughly {d['t1_volume']:,} units a year leaving with no record",
+    "Adjustment frequency and direction per item",
+    "Balances drift until the annual count; the shortfall shows up as chronic write-offs", *S["unrec"])}
+
+{_err_block("Adjustments as a catch-all",
+    "The adjustment exists to correct genuine count errors. Here it became the way everything got fixed: unrecorded issues, mis-receipts, returns, scrap and mistakes, usually with no reason code.",
+    f"{d['adj_share']*100:.0f}% of all quantity moved flows through adjustments; {d['adj_blank_share']*100:.0f}% carry a blank or generic reason code",
+    "Adjustment quantity as share of all movement",
+    "The cause of a movement is unknowable; write-offs hide the real problems", *S["adjshare"])}
+
+{_err_block("Free-text purchases",
+    "A buyer needing something quickly could not find the part, so ordered it under a generic code like NONSTOCK and typed a description.",
+    f"{d['ft_pct']*100:.0f}% of PO lines; {d['ft_stocked']} of {d['ft_total']} correspond to an item already in the master",
+    "Generic item codes on PO lines; match descriptions to master",
+    "Demand for stocked items lost to the forecast; spend untraceable to a part", *S["ft"])}
+
+{_err_block("Batched and backdated postings",
+    "Transactions entered later than they happened: Friday's deliveries posted on Monday, job reporting done at the end of the week.",
+    f"{d['peak_wd_share']*100:.0f}% of receipts posted on a {d['peak_wd_name']} (an even spread would be about 20%)",
+    "Day-of-week distribution of receipt dates",
+    "Computed lead times biased upward by the posting lag", *S["batch"])}
+
+{_err_block("Open documents never closed",
+    "A purchase order partly received with the balance never coming, or a finished job never closed, so the ERP still believes material is inbound.",
+    f"{d['open_po_lines']:,} PO lines open past 90 days, {_money(d['open_po_value'])} of on-order that will never arrive",
+    "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
+    "The buyer holds back real orders believing material is inbound, and stocks out", *S["open"])}
+
+{_err_block("Wrong references",
+    "The transaction is real but points at the wrong thing: a similar part number, or the wrong job.",
+    f"{d['t6_count']} confirmed issues posted against a similar item or the wrong job",
+    "Issues to jobs whose BOM doesn't include the item",
+    "Consumption charged to the wrong part and the wrong job", *S["wrong"])}
+
+{_err_block("Quantity and unit errors",
+    "A quantity keyed with an extra zero, a box entered as an each, a decimal in the wrong place.",
+    f"{d['t7_count']} confirmed order-of-magnitude and box/each keying errors, concentrated on the UOM-mismatch items",
+    "Per-item outliers using median and spread, not averages",
+    "Single keystrokes that distort an item's demand and on-hand by 10&times; or more", *S["qty"])}
+
+{_err_block("Duplicate postings",
+    "The same receipt or issue entered twice, usually within minutes, often because a screen froze and someone clicked again.",
+    f"{d['t8_count']} confirmed transactions posted twice",
+    "Same item, qty, date within minutes",
+    "Movement double-counted", *S["dupost"])}
+
 <p>Of the {d['chronic_items']:,} items with three or more downward adjustments in the last year,
 {d['chronic_on_bom']*100:.0f}% are BOM-omitted components: the adjustments are the shop absorbing usage
 the BOM never recorded. That overlap is the strongest single piece of evidence that the phantom
@@ -440,6 +674,8 @@ def run():
     html = B.page("Data Quality Audit: Purchasing & Inventory",
                   "Post-remediation report to the operations manager and controller",
                   toc, body)
+    for a, b in [("defects", "errors"), ("Defects", "Errors"), ("defect", "error"), ("Defect", "Error")]:
+        html = html.replace(a, b)
     OUT.write_text(html, encoding="utf-8")
     print(f"Data quality audit written to {OUT}  ({len(html)//1024} KB)")
 

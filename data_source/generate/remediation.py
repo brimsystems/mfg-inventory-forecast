@@ -159,7 +159,10 @@ def _uom_conversions(cross, im, rng):
     for r in imm[imm["_iid"].isin(m5)].itertuples(index=False):
         pu = r.purchase_uom if isinstance(r.purchase_uom, str) else "BOX"
         su = r.uom if isinstance(r.uom, str) else "EA"
-        conv = r.uom_conversion if not pd.isna(r.uom_conversion) else int(rng.choice([25, 50, 100]))
+        # the true factor comes from the ground truth; the master itself holds none
+        conv = cross.get("m5_conversions", {}).get(r.item_number)
+        if conv is None:
+            conv = r.uom_conversion if not pd.isna(r.uom_conversion) else int(rng.choice([25, 50, 100]))
         rows.append({"item_number": r.item_number, "purchase_uom": pu, "stock_uom": su,
                      "conversion": int(conv), "added_date": _week_date(int(rng.integers(5, 8)), rng)})
     return pd.DataFrame(rows).drop_duplicates("item_number")
