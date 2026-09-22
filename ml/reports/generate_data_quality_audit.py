@@ -448,7 +448,8 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     tc = ", ".join(f"{n} ({r:,})" for n, r in d["txn_comp"])
 
     def rows_of(n, total):
-        return f"{n:,} of {total:,} ({n / total * 100:.1f}%)" if total else f"{n:,}"
+        # count on the first line, share in italics on the second
+        return f"{n:,} of {total:,}<br><em>({n / total * 100:.1f}%)</em>" if total else f"{n:,}"
 
     # (name, one-sentence description, ERP table, scale as rows affected, test,
     #  what counts as a finding, operational cost). The ERP table is the table the
@@ -534,7 +535,8 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         ("Open Documents Never Closed",
          "Purchase order lines and jobs left open after they were effectively complete.",
          f"{PO}; {PROD.lower()}",
-         rows_of(d["open_po_lines"], d["n_po"]) + "; " + rows_of(d["n_open_jobs"], d["n_prod"]),
+         (f"{d['open_po_lines']:,} of {d['n_po']:,}; {d['n_open_jobs']:,} of {d['n_prod']:,}<br>"
+          f"<em>({d['open_po_lines'] / d['n_po'] * 100:.1f}%; {d['n_open_jobs'] / d['n_prod'] * 100:.1f}%)</em>"),
          "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
          "Count and on-order value",
          "Phantom on-order; stockouts"),
@@ -558,7 +560,7 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
          "Movement double-counted"),
     ]
     d["op_cost"] = {n: c for n, _d, _l, _s, _t, _f, c in MASTER_ERRORS + TXN_ERRORS}   # reserved for Results
-    hdr = ["Error", "Description", "ERP table", "Scale (rows affected)"]
+    hdr = ["Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
     master_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[])
     txn_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[])
     def rem_of(n, total):
