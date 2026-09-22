@@ -184,6 +184,46 @@ LOCATIONS       = ["MAIN", "FLOOR", "CRIB"]
 # Cycle counting covers part of the catalog each period (an ABC-weighted cadence).
 CYCLE_COUNT_ANNUAL_COVERAGE = 0.85   # share of items counted at least once a year
 
+# ── Transaction-level defects (addendum T1-T7) ──────────────────────────────
+# These are created by people keying transactions day to day. They hide in the
+# ledger and purchase orders and each needs its own detection method. Rates are
+# parameterized so they can be tuned at the validation checkpoint. The master
+# defects D1-D6 above are unchanged.
+
+# T1 Free-text / non-stock lines. Consumption for affected items is diverted to
+# generic item codes with a typed description, so demand is understated until the
+# free text is attributed back. A share of the free-text lines are genuine
+# one-offs that must NOT be attributed (held back as true negatives).
+GENERIC_ITEM_CODES     = ["NONSTOCK", "MISC", "SHOPSUPPLY"]
+T1_AFFECTED_ITEMS      = 70       # real items whose demand is partly diverted
+T1_DIVERTED_SHARE      = 0.14     # share of an affected item's issues diverted to free text
+T1_ONEOFF_RATIO        = 0.55     # genuine one-off free-text lines as a multiple of diverted lines
+
+# T2 Quantity keying errors: order-of-magnitude (x10) and box-as-each (xN) errors,
+# weighted toward the D3 unit-of-measure items.
+T2_TXN_SHARE           = 0.008    # share of issue/receipt lines with a keying error
+T2_D3_WEIGHT           = 4.0      # relative over-weighting of D3 items
+
+# T3 Issues posted to the wrong item, within the same family or duplicate cluster.
+T3_ISSUE_SHARE         = 0.015    # share of issue lines misposted to a similar item
+
+# T4 Unrecorded consumption written off through negative adjustments (chronic).
+T4_ITEMS               = 25       # items with a persistent negative adjustment pattern
+T4_MONTHLY_ADJ_PROB    = 0.55     # probability of a write-off adjustment in a given month
+T4_UNRECORDED_SHARE    = 0.30     # share of the item's true usage that escapes as adjustments
+
+# T5 Receipt-date batching: postings cluster on Mondays and month-end, displaced
+# 1-4 days from actual arrival, biasing computed lead times upward.
+T5_BATCH_SHARE         = 0.30     # share of receipts displaced
+T5_MAX_DISPLACEMENT    = 4        # days
+
+# T6 Purchase orders never closed: partial receipt, balance never received, line
+# left open, inflating on-order quantity (phantom inbound).
+T6_OPEN_SHARE          = 0.05     # share of PO lines older than 90 days left open
+
+# T7 Duplicate transaction postings: the same line posted twice.
+T7_DUP_SHARE           = 0.003    # share of transactions posted a second time
+
 
 def month_starts(start: date = START_DATE, end: date = END_DATE):
     """Return the first day of every month in the window, inclusive."""

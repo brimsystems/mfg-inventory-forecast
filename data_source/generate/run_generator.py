@@ -19,6 +19,7 @@ from .generators.item_master import build_item_master
 from .generators.purchase_orders import build_purchase_orders
 from .generators.inventory_transactions import build_inventory_transactions
 from .generators.cycle_counts import build_cycle_counts
+from .generators.transaction_defects import apply as apply_transaction_defects
 
 TRUTH_DIR = C.REPO_ROOT / "data_source" / "truth"
 
@@ -69,6 +70,9 @@ def run():
         plan, demand, item_master, item_meta, dup_map, supplier_truth, d5, rng)
     print("[4/5] Inventory ledger   (ERP) - this step takes a moment")
     transactions = build_inventory_transactions(demand, dup_map, item_meta, purchase_orders, rng)
+    print("      Injecting transaction-level defects T1-T7")
+    purchase_orders, transactions, txn_truth = apply_transaction_defects(
+        item_master, plan, item_meta, dup_map, purchase_orders, transactions, rng)
     print("[5/5] Cycle counts       (WMS)")
     cycle_counts = build_cycle_counts(
         item_master, item_meta, annual_by_item, abc_by_item, dup_map, defects, rng)
@@ -88,8 +92,12 @@ def run():
         _save(df.head(C.SAMPLE_SIZE), name, C.SAMPLES_DIR, sample=True)
 
     _write_truth(plan, dup_map, item_meta, supplier_truth, d5, defects, abc_by_item, drift_supplier_id)
+    TRUTH_DIR.mkdir(parents=True, exist_ok=True)
+    (TRUTH_DIR / "txn_defects.json").write_text(json.dumps(txn_truth, indent=2, default=str))
+    print(f"Transaction-defect truth -> {TRUTH_DIR / 'txn_defects.json'}")
     _summary(plan, demand, item_master, purchase_orders, transactions, cycle_counts,
              dup_map, defects, drift_supplier_id, d5)
+    _txn_summary(txn_truth, purchase_orders, transactions)
 
 
 def _write_truth(plan, dup_map, item_meta, supplier_truth, d5, defects, abc, drift_supplier_id):
@@ -151,6 +159,29 @@ def _summary(plan, demand, item_master, po, tx, cc, dup_map, defects, drift_supp
 
     print(f"\nRow counts   item_master {len(item_master):,}   POs {len(po):,}"
           f"   transactions {len(tx):,}   cycle_counts {len(cc):,}")
+    print("=" * 72 + "\n")
+
+
+def _txn_summary(txn, po, tx):
+    print("\n" + "=" * 72)
+    print("TRANSACTION-LEVEL DEFECT SUMMARY (T1-T7)")
+    print("=" * 72)
+    n_tx, n_po = len(tx), len(po)
+    t1_div = sum(1 for r in txn["t1"] if not r["is_oneoff"])
+    t1_one = sum(1 for r in txn["t1"] if r["is_oneoff"])
+    print(f"  T1 free-text lines     {len(txn['t1'])}  ({t1_div} attributable, {t1_one} genuine one-offs)"
+          f"  = {len(txn['t1'])/n_tx*100:.1f}% of ledger lines")
+    print(f"  T2 keying errors       {len(txn['t2'])}  = {len(txn['t2'])/n_tx*100:.2f}% of lines")
+    print(f"  T3 wrong-item issues   {len(txn['t3'])}  = {len(txn['t3'])/n_tx*100:.2f}% of lines")
+    print(f"  T4 unrecorded items    {len(txn['t4'])}  items with chronic write-offs")
+    print(f"  T5 batched receipts    {len(txn['t5'])}  = {len(txn['t5'])/max(1,po['received_date'].notna().sum())*100:.0f}% of receipts")
+    print(f"  T6 never-closed POs    {len(txn['t6'])}  = {len(txn['t6'])/n_po*100:.1f}% of PO lines")
+    print(f"  T7 duplicate postings  {len(txn['t7'])}  = {len(txn['t7'])/n_tx*100:.2f}% of lines")
+    # T5 lead-time displacement
+    if txn["t5"]:
+        disp = [(pd.to_datetime(r["recorded_received_date"]) - pd.to_datetime(r["true_received_date"])).days
+                for r in txn["t5"]]
+        print(f"  T5 median displacement {np.median(disp):.0f} days (biases computed lead time upward)")
     print("=" * 72 + "\n")
 
 
