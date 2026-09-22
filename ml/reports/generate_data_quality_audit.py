@@ -811,32 +811,22 @@ the total and only distort where the cost sits, and those are marked as such.</p
     did = f"""
 {B.section("did", "Section 3", "Actions")}
 {B.section("remediation", "Section 3.1", "Error Remediation")}
-<p><strong>How the tests were run.</strong> The work ran in a fixed order. Before looking for
-anything specific, we profiled every component of the ERP plainly: row counts by year, the fill rate
-of every column, the distinct values in every code field, and the date ranges. That pass is what
-surfaced the blank cost and supplier fields and the MISC item class before any test was written,
-and it set the baseline every later comparison is measured against. Only then did we run one test
-per error type, the sixteen in the tables below. Every test was written as a query against the
-extracted tables, and the query and its output were kept, so each finding traces to a stated rule
-and the shop can rerun it later.</p>
-
-<p><strong>Where precision has a floor.</strong> Two tests were built to be robust to the errors
-they sit on top of. Actual lead times were computed from receipt history using the median and a
-trimmed 80th percentile rather than the mean, because receipts are batched to Mondays and
-month-end, and that posting lag puts a floor of a few days on how precisely any lead time can be
-known. Quantity errors were found as per-item outliers against each item's own median and spread
-rather than against averages, so a genuinely lumpy item is not flagged for being lumpy. Duplicate
-detection normalized descriptions (case, punctuation, fraction and decimal forms, unit tokens),
-compared only within an item class, and scored on description similarity, cost proximity and shared
-supplier, with a sample of candidate pairs checked by hand.</p>
-
-<p>Nothing in the source data was overwritten by any of this. Every finding, every review decision
-and every correction was recorded in a reference table (the dead-item dispositions, the duplicate
-and supplier crosswalks, the UOM conversions, the lead-time computations, the chronic-adjustment
-list, the BOM change log, the document closures, the spreadsheet reconciliation, the free-text
-attribution and the posting corrections), so each one is auditable and reversible. The tables below give, for each error, how it was
-remediated and whose input that took, the evidence it rested on, and how many of the affected
-rows were remediated.</p>
+<p>The remediation ran in a fixed order. We began by exploring and profiling every component of the
+ERP: row counts by year, fill rates by column, the distinct values in every code field and the date
+ranges, which surfaced the blank fields and placeholder classes before any test was written. We then
+ran one test for each of the sixteen error types, written as queries against the extracted tables so
+that each finding traces to a stated rule and can be rerun. Where the ERP could not settle a finding
+on its own, we brought in evidence from outside it: the physical cycle counts against the system's
+on-hand balances, the purchasing manager's spreadsheet against the ERP for the components she tracks,
+and expected consumption from jobs and bills of materials against what was actually issued, with
+crosswalks built for the duplicate items and the fragmented suppliers. Findings that rested on
+judgment rather than fact, such as duplicate pairs, free-text attributions, dead-item dispositions
+and BOM additions, went to the people who own them, the buyer, the stockroom lead, the engineering
+manager and the assembly supervisor, for confirmation before anything was changed. Lead times were
+recomputed with a method robust to batched receipt dates, and every correction was recorded in a
+reference table rather than written over the source, so each one is auditable and reversible. The
+tables below give, for each error, how it was remediated and whose input that took, the evidence it
+rested on, and how many of the affected rows were remediated.</p>
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
 {rem_master_table}
 
