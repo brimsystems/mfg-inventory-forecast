@@ -15,6 +15,10 @@ staged as (
         uom,
         work_order_id,
         location,
+        -- Populated only on non-stock free-text lines (defect T1).
+        description,
+        entered_code,
+        cast(unit_price as double)      as unit_price,
         date_trunc('month', cast(transaction_date as date)) as transaction_month
 
     from source
