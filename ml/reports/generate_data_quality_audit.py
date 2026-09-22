@@ -838,27 +838,6 @@ the affected rows are the write-off adjustments that stand in for the issues tha
 for BOM omissions they are the component rows missing from the bill of materials, counted against
 the complete bill.</p>
 
-{B.chart("Share of rows with at least one error, by ERP table", chart_error_rates(d))}
-
-<p>Two of these rates need reading with care, because the chart measures how many rows an error
-touches, not how badly. The item master reads {d['im_err_pct']*100:.0f}% because two of its errors are
-conditions of the whole file rather than scattered mistakes. {d['dead_pct']*100:.0f}% of its records are
-dead, and among the {d['n_live']:,} live items the parameters set at go-live were never revisited:
-{d['im_stale_any']:,} of them ({d['im_stale_any_pct']*100:.0f}%) carry a lead time more than three days
-from what the supplier actually delivers, a reorder point that moved materially when recomputed, or
-both. Duplicates, unit faults and blank fields sit almost entirely inside that group and add only
-{d['im_other_added']} items of their own, leaving {d['im_live_clean']} live items with no error at all.
-Read that way, the item master is not {d['im_err_pct']*100:.0f}% wrong rows; it is a master whose
-settings are years out of date, measured item by item. Purchase orders read {d['po_err_pct']*100:.0f}%
-for the same reason: {d['po_batch_of_received']*100:.0f}% of received lines carry a posting date days
-after the material arrived, because receiving posts in batches on Mondays and at month-end, a habit
-that by its nature touches most receipts and moves each date by only a few days. Free-text lines
-({d['ft_pct']*100:.0f}%) and lines left open ({d['open_po_lines']/d['n_po']*100:.0f}%) add the remainder.
-The breadth of these two errors says little about their severity, which the cost table below carries.
-The stale parameters were recomputed and the batched dates were absorbed by making the lead-time
-method robust to them, while the narrower errors, phantom on-order and unrecorded consumption, are
-the ones that cost the shop money.</p>
-
 {B.section("costs", "Section 2.2", "Operational and Financial Costs")}
 
 <p>These errors cost the shop in two ways. Operationally, they turn into line stops and expedites on
