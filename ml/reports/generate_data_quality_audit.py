@@ -238,6 +238,14 @@ def gather():
     t4_mask = pd.Series([k in t4_keys for k in zip(po["po_id"], po["line"].astype(int))], index=po.index)
     po_err = int((t4_mask | po["item_number"].isin(["NONSTOCK", "MISC", "SHOPSUPPLY"]) | (po["status"] == "OPEN")).sum())
     tc_map = dict(txn_comp)
+    stale_any = stale_lead_nums | stale_rop_nums
+    d["im_stale_any"] = len(stale_any)
+    d["im_stale_any_pct"] = len(stale_any) / n_live
+    d["im_other_added"] = len((dup_members | uom_nums | blank_nums) - stale_any)
+    d["im_live_clean"] = n_live - len(im_err - dead_nums)
+    d["im_err_pct"] = len(im_err) / n_master
+    d["po_err_pct"] = po_err / d["n_po"]
+    d["po_batch_of_received"] = d["n_batch_rows"] / max(1, int(po["received_date"].notna().sum()))
     d["table_rates"] = [
         ("Item master", len(im_err), n_master),
         ("Bill of materials", d["omit_items"], d["n_bom_rows"] + d["omit_items"]),
@@ -450,7 +458,9 @@ def chart_error_rates(d):
 def build(d):
     toc = "".join([
         '<a href="#results">Results</a>',
-        '<a href="#found">What we found</a>',
+        '<a href="#found">Findings</a>',
+        '<a class="sub" href="#errors">Data Quality Errors</a>',
+        '<a class="sub" href="#costs">Operational and Financial Costs</a>',
         '<a href="#did">What we did</a>',
         '<a href="#who">Who was involved</a>',
         '<a href="#means">What it means for purchasing</a>',
@@ -801,7 +811,7 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
          for i, e in enumerate(MASTER_ERRORS + TXN_ERRORS, 1)], right=[]), [4, 19, 45, 32])
 
     found = f"""
-{B.section("found", "Section 2", "What we found")}
+{B.section("found", "Section 2", "Findings")}
 <p>This audit examined one company's ERP system end to end. On the master side, the records that
 define what the shop buys and builds: the {mc}. On the transaction side, the history those masters
 govern: the {tc}. That is {len(d['master_comp'])} master-level components holding
@@ -817,6 +827,8 @@ the system.</p>
     B.kpi_card("16", "Error types tested", "8 master-level, 8 transaction-level"),
 )}
 
+{B.section("errors", "Section 2.1", "Data Quality Errors")}
+
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
 {master_table}
 
@@ -829,6 +841,27 @@ for BOM omissions they are the component rows missing from the bill of materials
 the complete bill.</p>
 
 {B.chart("Share of rows with at least one error, by ERP table", chart_error_rates(d))}
+
+<p>Two of these rates need reading with care, because the chart measures how many rows an error
+touches, not how badly. The item master reads {d['im_err_pct']*100:.0f}% because two of its errors are
+conditions of the whole file rather than scattered mistakes. {d['dead_pct']*100:.0f}% of its records are
+dead, and among the {d['n_live']:,} live items the parameters set at go-live were never revisited:
+{d['im_stale_any']:,} of them ({d['im_stale_any_pct']*100:.0f}%) carry a lead time more than three days
+from what the supplier actually delivers, a reorder point that moved materially when recomputed, or
+both. Duplicates, unit faults and blank fields sit almost entirely inside that group and add only
+{d['im_other_added']} items of their own, leaving {d['im_live_clean']} live items with no error at all.
+Read that way, the item master is not {d['im_err_pct']*100:.0f}% wrong rows; it is a master whose
+settings are years out of date, measured item by item. Purchase orders read {d['po_err_pct']*100:.0f}%
+for the same reason: {d['po_batch_of_received']*100:.0f}% of received lines carry a posting date days
+after the material arrived, because receiving posts in batches on Mondays and at month-end, a habit
+that by its nature touches most receipts and moves each date by only a few days. Free-text lines
+({d['ft_pct']*100:.0f}%) and lines left open ({d['open_po_lines']/d['n_po']*100:.0f}%) add the remainder.
+The breadth of these two errors says little about their severity, which the cost table below carries.
+The stale parameters were recomputed and the batched dates were absorbed by making the lead-time
+method robust to them, while the narrower errors, phantom on-order and unrecorded consumption, are
+the ones that cost the shop money.</p>
+
+{B.section("costs", "Section 2.2", "Operational and Financial Costs")}
 
 <p>These errors cost the shop in two ways. Operationally, they turn into line stops and expedites on
 the components that matter, into write-offs at the annual count, and into buyers who work around
@@ -844,7 +877,6 @@ The table below gives, for each error, what it does to the operation and which f
 it touches. Not every error is a loss: a few are misattributions or timing errors that net to zero at
 the total and only distort where the cost sits, and those are marked as such.</p>
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Operational and financial cost</p>
 {cost_table}
 """
 
