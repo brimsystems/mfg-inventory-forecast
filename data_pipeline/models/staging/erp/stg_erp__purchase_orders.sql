@@ -18,6 +18,8 @@ staged as (
         cast(quantity_ordered as double)    as quantity_ordered,
         cast(quantity_received as double)   as quantity_received,
         cast(unit_price as double)          as unit_price,
+        -- OPEN marks a never-closed partial receipt (defect T6).
+        coalesce(po_status, 'CLOSED')       as po_status,
         -- Actual lead time realized on received lines, for lead-time recalculation.
         case
             when received_date is not null

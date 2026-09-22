@@ -39,6 +39,8 @@ def _flag_tags(r):
         tags += '<span class="tag tag-lead">lead corrected</span>'
     if r["flag_merged"]:
         tags += '<span class="tag tag-merge">record merged</span>'
+    if r.get("flag_attribution"):
+        tags += '<span class="tag tag-attr">demand recovered</span>'
     return tags
 
 
@@ -72,7 +74,7 @@ def build():
     n_ok = int((rec["priority"] == "OK").sum())
     order_value = float((rec.loc[rec["priority"] == "REORDER", "suggested_qty"]
                          * rec.loc[rec["priority"] == "REORDER", "unit_cost"]).sum())
-    n_flag = int((rec["flag_merged"] | rec["flag_lead_corrected"]).sum())
+    n_flag = int((rec["flag_merged"] | rec["flag_lead_corrected"] | rec.get("flag_attribution", False)).sum())
 
     due = rec[rec["priority"] == "REORDER"].sort_values("cover_days").head(NROWS)
     body_rows = "".join(_row(r) for _, r in due.iterrows())
@@ -127,6 +129,7 @@ def build():
   .tag {{ display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; margin-left:6px; }}
   .tag-lead {{ background:#FCEBD2; color:#8a5a06; }}
   .tag-merge {{ background:#E7E1F5; color:#4a3aa0; }}
+  .tag-attr {{ background:#D6F0E5; color:#0a6b45; }}
   .foot {{ padding:16px 32px 30px; font-size:12px; color:{MUTED}; }}
 </style></head>
 <body>

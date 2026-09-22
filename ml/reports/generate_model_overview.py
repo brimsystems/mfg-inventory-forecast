@@ -29,6 +29,15 @@ mbt     = pd.read_parquet(BACKTEST / "model_backtest.parquet")
 clean   = pd.read_parquet(BACKTEST / "clean_before_after.parquet")
 policy  = json.loads((POLICY / "policy_summary.json").read_text(encoding="utf-8"))
 
+# Three-way cleaning decomposition: the same forecaster rerun on data at three
+# stages of cleaning. Raw = untouched source, master = duplicates merged and
+# master data fixed, fully = transaction ledger also repaired.
+tw_overall = json.loads((BACKTEST / "threeway_overall.json").read_text(encoding="utf-8"))
+tw_raw    = pd.read_parquet(BACKTEST / "threeway_raw.parquet")
+tw_master = pd.read_parquet(BACKTEST / "threeway_master.parquet")
+tw_fully  = pd.read_parquet(BACKTEST / "threeway_fully.parquet")
+t1_attr   = pd.read_parquet(REPO / "ml" / "data" / "data_quality" / "txn" / "t1_attribution.parquet")
+
 CAND_LABEL   = {"Linear": "Linear (Ridge)", "RandomForest": "Random Forest", "XGBoost": "XGBoost"}
 CAND_ORDER   = ["Linear", "RandomForest", "XGBoost"]
 SEG_ORDER    = ["smooth", "erratic", "lumpy", "intermittent"]
@@ -60,14 +69,33 @@ for abc in ["A", "B", "C"]:
                      "model": _wape(g["actual"], g["pred"]),
                      "base": _wape(g["actual"], g["base"])})
 
-# Cleaning result: forecasting the merged series vs the split records.
-clean_before = float(clean["before"].mean())
-clean_after  = float(clean["after"].mean())
-clean_before_med = float(clean["before"].median())
-clean_after_med  = float(clean["after"].median())
-clean_rel    = (clean_before - clean_after) / clean_before
-n_clean      = int(len(clean))
-n_improved   = int((clean["after"] < clean["before"]).sum())
+# Three-way cleaning decomposition. Overall WAPE at each stage, plus the two
+# item groups each stage of cleaning is meant to repair: the duplicate items
+# (history split across duplicate part numbers) and the free-text items (demand
+# posted on typed-in ledger lines with no clean part number).
+tw_raw_w    = tw_overall["raw"]
+tw_master_w = tw_overall["master"]
+tw_fully_w  = tw_overall["fully"]
+master_gain = (tw_raw_w - tw_master_w) / tw_raw_w        # value of master-level cleaning
+txn_gain    = (tw_master_w - tw_fully_w) / tw_master_w   # value of transaction-level cleaning
+total_gain  = (tw_raw_w - tw_fully_w) / tw_raw_w
+
+dup_items = set(clean["item"])
+ft_items  = {i for i in t1_attr["probable_item"].unique() if i is not None}
+
+
+def _wape_sub(df, items):
+    g = df[df["item"].isin(items)]
+    return _wape(g["target"], g["pred"]), int(g["item"].nunique())
+
+
+# Duplicate items: rescued by master-level cleaning (raw -> master).
+dup_raw_w,    n_dup = _wape_sub(tw_raw, dup_items)
+dup_master_w, _     = _wape_sub(tw_master, dup_items)
+# Free-text items: rescued by transaction-level cleaning (master -> fully).
+ft_master_w, n_ft = _wape_sub(tw_master, ft_items)
+ft_fully_w,  _    = _wape_sub(tw_fully, ft_items)
+ft_gain = (ft_master_w - ft_fully_w) / ft_master_w
 
 # Working capital released at equal service (safety-stock section).
 wc_release = policy["corrected"]["inv"] - policy["forecast"]["inv"]
@@ -120,23 +148,30 @@ def chart_segment_vs_baseline():
     return B.b64(fig)
 
 
-def chart_cleaning():
-    before = clean["before"] * 100
-    after  = clean["after"] * 100
-    bins = np.linspace(min(before.min(), after.min()), max(before.max(), after.max()), 12)
-    fig, ax = B.make_fig(h=3.6)
-    ax.hist(before, bins=bins, color=MED_GREY, alpha=0.75, label="Split records (before merge)")
-    ax.hist(after, bins=bins, color=DARK_BLUE, alpha=0.75, label="Merged series (after cleaning)")
-    ax.axvline(clean_before * 100, color=MED_GREY, ls="--", lw=1.6)
-    ax.axvline(clean_after * 100, color=DARK_BLUE, ls="--", lw=1.6)
-    ax.text(clean_before * 100, ax.get_ylim()[1] * 0.96, f" mean {clean_before*100:.0f}%",
-            color=DARK_GREY, fontsize=9, va="top", ha="left")
-    ax.text(clean_after * 100, ax.get_ylim()[1] * 0.82, f"mean {clean_after*100:.0f}% ",
-            color=DARK_BLUE, fontsize=9, va="top", ha="right")
-    ax.set_xlabel("WAPE on the affected items (lower is better)")
-    ax.set_ylabel("Items")
-    ax.xaxis.set_major_formatter(B.mticker.PercentFormatter())
-    ax.legend(ncol=1, loc="upper right", frameon=False)
+def chart_threeway():
+    stages = ["Raw source\ndata",
+              "After master-level\ncleaning",
+              "After transaction-level\ncleaning"]
+    vals   = [tw_raw_w * 100, tw_master_w * 100, tw_fully_w * 100]
+    colors = [MED_GREY, LIGHT_BLUE, DARK_BLUE]
+    x = np.arange(len(stages))
+    fig, ax = B.make_fig(h=3.8)
+    bars = ax.bar(x, vals, 0.56, color=colors)
+    for bar in bars:
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
+                f"{bar.get_height():.1f}%", ha="center", va="bottom",
+                fontsize=10, color=DARK_GREY, fontweight="bold")
+    # Annotate what each stage of cleaning was worth.
+    ax.annotate(f"master cleaning\n{master_gain*100:+.1f}% overall",
+                xy=(0.5, (vals[0] + vals[1]) / 2), ha="center", va="center",
+                fontsize=8.5, color=DARK_BLUE)
+    ax.annotate(f"transaction cleaning\n{txn_gain*100:+.1f}% overall",
+                xy=(1.5, (vals[1] + vals[2]) / 2), ha="center", va="center",
+                fontsize=8.5, color=DARK_BLUE)
+    ax.set_xticks(x); ax.set_xticklabels(stages, fontsize=9)
+    ax.set_ylabel("Overall WAPE (lower is better)")
+    ax.set_ylim(0, max(vals) * 1.18)
+    ax.yaxis.set_major_formatter(B.mticker.PercentFormatter())
     B.chart_style(ax); fig.tight_layout()
     return B.b64(fig)
 
@@ -216,14 +251,14 @@ MODEL_CARD = f"""
 charts = {
     "cand": chart_candidates(),
     "seg": chart_segment_vs_baseline(),
-    "clean": chart_cleaning(),
+    "threeway": chart_threeway(),
 }
 
 toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#predicts">What the Model Predicts</a>'
        '<a href="#selection">Model Selection</a>'
        '<a href="#performance">Performance by Segment and ABC</a><hr>'
-       '<a href="#cleaning">The Cleaning Result</a>'
+       '<a href="#cleaning">What Each Stage of Cleaning Was Worth</a>'
        '<a href="#safetystock">From Accuracy to Safety Stock</a>'
        '<a href="#limits">Limitations and Intended Use</a>')
 
@@ -248,8 +283,8 @@ policy on simpler numbers, while holding fill rate steady.</p>
     B.kpi_card(f"${wc_release/1000:,.0f}K", "Working capital released", f"{wc_release_pct:.0%} at equal service", GREEN))}
 <p>The rest of this report is written for a non-technical reader. It explains what the model forecasts and why
 lead-time demand is the right target, how the winning algorithm was chosen from a field of candidates, where
-it beats the shop's current baselines and where an old-fashioned rule is still the honest choice, the data
-cleaning that quietly delivered the single largest accuracy gain, and how the forecast error turns into the
+it beats the shop's current baselines and where an old-fashioned rule is still the honest choice, the two
+stages of data cleaning and what each one was worth to accuracy, and how the forecast error turns into the
 safety stock that protects the line.</p>
 {MODEL_CARD}
 
@@ -310,21 +345,38 @@ against what the buyers actually use: a 3-month moving average applied to every 
 the model cuts WAPE from about <strong>{ma_wape*100:.0f}% to {overall_model*100:.0f}%</strong>, because the
 moving average is badly mismatched to the lumpy and intermittent items that make up nearly half the catalog.</p>
 
-{B.section("cleaning", "Section 5", "The Cleaning Result")}
-<p>The single largest accuracy gain did not come from the algorithm at all. It came from repairing the data
-first. In the source records, {n_clean} items had their history split across duplicate part numbers, so the
-demand for one physical item was scattered over two or more records. Forecasting each split fragment means
-forecasting a series with holes in it. After the duplicates were merged into one canonical item and the
-history stitched back together, the same model was rerun on the repaired series. The chart below shows the
-error distribution before and after; the takeaway is that cleaning shifted the whole distribution left,
-dropping the average WAPE on these items from about <strong>{clean_before*100:.0f}% to
-{clean_after*100:.0f}%</strong>.</p>
-{B.chart("Forecast Error Before and After Merging Duplicate Records", charts["clean"])}
-<p>Across the {n_clean} affected items the median error fell from {clean_before_med*100:.0f}% to
-{clean_after_med*100:.0f}%, and {n_improved} of {n_clean} improved. The point for the business is that model
-choice and data quality are not competing investments: the cleaning captured here is worth more than the
-difference between the candidate algorithms in Section 3, and it is the reason the reorder queue can be trusted
-at the item level, not just in aggregate.</p>
+{B.section("cleaning", "Section 5", "What Each Stage of Cleaning Was Worth")}
+<p>Some of the accuracy did not come from the algorithm at all; it came from repairing the data before the
+model ever saw it. The records were cleaned in two stages, and to measure what each stage bought, the same
+forecaster was rerun three times: once on the raw source data, once after <strong>master-level cleaning</strong>
+(merging duplicate part numbers and fixing the item master), and once after <strong>transaction-level
+cleaning</strong> as well (repairing the ledger of individual stock movements, including the typed-in free-text
+lines). The chart below tracks the overall forecast error across those three stages; the takeaway is that each
+stage of cleaning lowered error, and the two stages together cut the overall WAPE from about
+<strong>{tw_raw_w*100:.1f}% to {tw_fully_w*100:.1f}%</strong>.</p>
+{B.chart("Overall Forecast Error at Three Stages of Cleaning", charts["threeway"])}
+<p>Read on the whole catalog, the gains look modest: master-level cleaning is worth about
+<strong>{master_gain*100:+.1f}%</strong> overall and transaction-level cleaning about
+<strong>{txn_gain*100:+.1f}%</strong> more. That is because most items were never broken in the first place, so
+averaging the repair across all {n_items} of them dilutes it. The honest way to see the value of cleaning is to
+look at the specific items each stage was meant to fix.</p>
+<p><strong>Master-level cleaning rescues the duplicate items.</strong> {n_dup} items had their history split
+across duplicate part numbers, so the demand for one physical item was scattered over two or more records and
+every forecast was working from a series with holes in it. Merging those duplicates into one canonical item and
+stitching the history back together dropped the forecast error on exactly those items from about
+<strong>{dup_raw_w*100:.0f}% to {dup_master_w*100:.0f}% WAPE</strong>. The overall number barely moves because
+these are {n_dup} items out of {n_items}, but for the buyers who order those parts the forecast went from
+untrustworthy to usable.</p>
+<p><strong>Transaction-level cleaning rescues the free-text items.</strong> {n_ft} items had a meaningful share
+of their demand posted on typed-in ledger lines that never carried a clean part number, so a slice of their real
+consumption was invisible to the forecast. Attributing those free-text movements back to the right item lowered
+the error on that group by about <strong>{ft_gain*100:+.1f}%</strong> (from {ft_master_w*100:.0f}% to
+{ft_fully_w*100:.0f}% WAPE). As with the duplicates, the effect is concentrated where the defect lived rather
+than spread evenly across the catalog.</p>
+<p>The point for the business is that model choice and data quality are not competing investments, and neither is
+a silver bullet on its own. Each stage of cleaning delivers a small overall gain but a large one on the items it
+repairs, and it is that item-level repair, not the headline average, that lets the reorder queue be trusted part
+by part rather than only in aggregate.</p>
 
 {B.section("safetystock", "Section 6", "From Accuracy to Safety Stock")}
 <p>Accuracy is not the end product; the reorder policy is. The forecast sets the expected demand over lead

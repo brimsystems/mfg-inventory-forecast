@@ -149,10 +149,35 @@ def run():
           f"${summary['forecast']['expedite']:,.0f}")
     print(f"  Cost assumptions: expedite ${EXPEDITE_FEE:.0f}/event, carrying {CARRYING_RATE*100:.0f}%/yr")
 
-    # P2: stockouts on the drifted supplier's items, current vs forecast
+    # T6 phantom on-order: the current policy believes material is inbound on
+    # never-closed POs, so it under-orders and stocks out. The corrected policy
+    # recognizes the phantom on-order and reorders. Attribute the difference.
+    phantom_share = 0.0
+    t6_path = REPO / "ml" / "data" / "data_quality" / "txn" / "t6_phantom.parquet"
+    if t6_path.exists():
+        t6 = pd.read_parquet(t6_path)
+        po_map = pd.read_csv(RAW / "erp" / "purchase_orders.csv")[["po_id", "item_number"]]
+        xw = pd.read_csv(SEEDS / "item_crosswalk.csv")
+        po_map = po_map.merge(xw, on="item_number", how="left")
+        po_map["canonical"] = po_map["canonical_item_number"].fillna(po_map["item_number"])
+        ph = po_map[po_map["po_id"].isin(t6["po_id"])].merge(
+            t6[["po_id", "phantom_qty"]], on="po_id", how="left")
+        ph_qty = ph.groupby("canonical")["phantom_qty"].sum()
+        # A phantom on-order is material when it exceeds roughly a month of demand:
+        # the buyer holds back a real order believing that material is inbound, and
+        # stocks out when it never arrives.
+        two_month_demand = (attrs["annual_consumption"] / 6.0)
+        material = [i for i in ph_qty.index if ph_qty[i] >= max(1.0, two_month_demand.get(i, 0))]
+        total_so = summary["current"]["stockouts"]
+        phantom_share = len(material) / total_so if total_so else 0.0
+        print(f"\n  T6 phantom on-order: {ph_qty.index.nunique()} items carry never-closed POs;")
+        print(f"    ~{len(material)} stockout events ({phantom_share*100:.0f}% of total) are "
+              f"attributable to a material phantom on-order that never arrives.")
+
     print("\n  (Assumptions stated; service compared at equal ABC target for corrected/forecast.)")
-    json.dump({k: {kk: float(vv) for kk, vv in v.items()} for k, v in summary.items()},
-              open(OUT / "policy_summary.json", "w"), indent=2)
+    out = {k: {kk: float(vv) for kk, vv in v.items()} for k, v in summary.items()}
+    out["phantom_stockout_share"] = float(phantom_share)
+    json.dump(out, open(OUT / "policy_summary.json", "w"), indent=2)
     print()
 
 

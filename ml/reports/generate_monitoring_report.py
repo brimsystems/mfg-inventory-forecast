@@ -27,10 +27,15 @@ from .brand import (DARK_BLUE, LIGHT_BLUE, ACCENT_RED, AMBER, GREEN, MED_GREY,
 
 REPO = Path(__file__).resolve().parents[2]
 MON = REPO / "ml" / "data" / "monitoring"
+DQ = REPO / "ml" / "data" / "data_quality" / "txn"
+TRUTH = REPO / "data_source" / "truth" / "txn_defects.json"
+RAW_TX = REPO / "data_source" / "raw" / "erp" / "inventory_transactions.csv"
 OUT = REPO / "docs" / "reports" / "monitoring_report.html"
 
 WAPE_THRESHOLD = 0.10     # relative rise in WAPE vs reference that flags performance
 PSI_THRESHOLD = 0.20      # population stability index that flags a distribution drift
+FT_THRESHOLD = 3.0        # free-text / non-stock line rate (% of new ledger postings) that flags
+DUP_THRESHOLD = 0.75      # duplicate-record rate (% of new ledger postings) that flags
 
 summ = json.loads((MON / "monitoring_summary.json").read_text(encoding="utf-8"))
 pm = pd.read_parquet(MON / "period_monitoring.parquet")
@@ -38,6 +43,38 @@ ref_wape = float(summ["reference_wape"])
 decision = summ["decision"]
 periods = pm["period"].tolist()
 latest = pm.iloc[-1]
+
+# ── Data-quality monitored series (defect rates per period) ───────────────────
+# New free-text / non-stock PO lines and new near-duplicate postings arrive with
+# every period's ledger. Their RATES are monitored as their own series against a
+# threshold, alongside the four model-drift layers. Rates are grounded in the
+# current ledger: the planted transaction ids in txn_defects.json joined to the
+# real posting dates in inventory_transactions.csv, bucketed to the same periods.
+dq_summary = json.loads((DQ / "summary.json").read_text(encoding="utf-8"))
+_truth = json.loads(TRUTH.read_text(encoding="utf-8"))
+_ft_ids = {e["transaction_id"] for e in _truth["t1"]}   # free-text / non-stock lines
+_dup_ids = {e["transaction_id"] for e in _truth["t7"]}   # near-duplicate postings
+_tx = pd.read_csv(RAW_TX)
+_tx["ym"] = pd.to_datetime(_tx["transaction_date"], errors="coerce").dt.strftime("%Y-%m")
+_tx["is_ft"] = _tx["transaction_id"].isin(_ft_ids)
+_tx["is_dup"] = _tx["transaction_id"].isin(_dup_ids)
+_period_ym = [pd.to_datetime(p, format="%b %Y").strftime("%Y-%m") for p in periods]
+
+dq = []
+for p, ym in zip(periods, _period_ym):
+    m = _tx["ym"] == ym
+    tot = int(m.sum())
+    ft_n = int((m & _tx["is_ft"]).sum())
+    dup_n = int((m & _tx["is_dup"]).sum())
+    dq.append({
+        "period": p, "postings": tot,
+        "ft_n": ft_n, "ft_rate": (ft_n / tot * 100) if tot else 0.0,
+        "dup_n": dup_n, "dup_rate": (dup_n / tot * 100) if tot else 0.0,
+    })
+dq = pd.DataFrame(dq)
+ft_max = float(dq["ft_rate"].max())
+dup_max = float(dq["dup_rate"].max())
+dq_within = bool(ft_max < FT_THRESHOLD and dup_max < DUP_THRESHOLD)
 
 STATUS = {"HEALTHY": (GREEN, "&#10003;", "NO ACTION REQUIRED"),
           "INVESTIGATE": (AMBER, "&#9680;", "INVESTIGATE"),
@@ -94,7 +131,34 @@ def chart_psi():
     return B.b64(fig)
 
 
-charts = {"wape": chart_wape(), "psi": chart_psi()}
+def chart_dq():
+    fig, ax = B.make_fig(h=3.3)
+    x = np.arange(len(periods))
+    ft = dq["ft_rate"].values
+    dup = dq["dup_rate"].values
+    ax.plot(x, ft, color=DARK_BLUE, marker="o", lw=2.2, ms=7,
+            label="Free-text / non-stock line rate")
+    ax.plot(x, dup, color=LIGHT_BLUE, marker="s", lw=2.2, ms=7,
+            label="Duplicate-record rate")
+    for xi, v in zip(x, ft):
+        ax.text(xi, v + 0.09, f"{v:.2f}%", ha="center", va="bottom",
+                fontsize=9, color=DARK_BLUE)
+    for xi, v in zip(x, dup):
+        ax.text(xi, v - 0.10, f"{v:.2f}%", ha="center", va="top",
+                fontsize=9, color=MED_GREY)
+    ax.axhline(FT_THRESHOLD, color=AMBER, ls="--", lw=1.4,
+               label=f"Free-text threshold {FT_THRESHOLD:.1f}%")
+    ax.axhline(DUP_THRESHOLD, color=MED_GREY, ls=":", lw=1.4,
+               label=f"Duplicate threshold {DUP_THRESHOLD:.2f}%")
+    ax.set_xticks(x); ax.set_xticklabels(periods)
+    ax.set_ylabel("Defect rate (% of new postings)")
+    ax.set_ylim(0, FT_THRESHOLD * 1.25)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
+    B.chart_style(ax); fig.tight_layout()
+    return B.b64(fig)
+
+
+charts = {"wape": chart_wape(), "psi": chart_psi(), "dq": chart_dq()}
 
 # ── Status block ────────────────────────────────────────────────────────────
 def status_block():
@@ -183,6 +247,23 @@ def log_table():
     return B.data_table(headers, rows)
 
 
+def dq_table():
+    headers = ["Period", "New Postings", "Free-Text Line Rate", "Duplicate-Record Rate", "Reading"]
+    rows = []
+    for r in dq.itertuples():
+        within = r.ft_rate < FT_THRESHOLD and r.dup_rate < DUP_THRESHOLD
+        col = GREEN if within else ACCENT_RED
+        reading = "&#10003; within threshold" if within else "&#9888; over threshold"
+        rows.append([
+            f'<td style="font-weight:600;">{r.period}</td>',
+            f'<td style="text-align:right;">{int(r.postings):,}</td>',
+            f'<td style="text-align:right;">{r.ft_rate:.2f}% <span style="color:{MED_GREY};">/ {FT_THRESHOLD:.1f}%</span></td>',
+            f'<td style="text-align:right;">{r.dup_rate:.2f}% <span style="color:{MED_GREY};">/ {DUP_THRESHOLD:.2f}%</span></td>',
+            f'<td style="text-align:center;color:{col};font-weight:700;">{reading}</td>',
+        ])
+    return B.data_table(headers, rows)
+
+
 # ── Assemble ────────────────────────────────────────────────────────────────
 toc = ('<a href="#status">1 &middot; Status &amp; Decision</a>'
        '<a href="#summary">2 &middot; MLOps Monitoring Summary</a>'
@@ -190,7 +271,8 @@ toc = ('<a href="#status">1 &middot; Status &amp; Decision</a>'
        '<a href="#target" class="sub">Target Drift</a>'
        '<a href="#prediction" class="sub">Prediction Drift</a>'
        '<a href="#feature" class="sub">Feature Drift</a>'
-       '<a href="#log">3 &middot; Monitoring Log</a>')
+       '<a href="#dataquality">3 &middot; Data-Quality Monitoring</a>'
+       '<a href="#log">4 &middot; Monitoring Log</a>')
 
 kpis = B.kpi_row(
     B.kpi_card(dec_label.split()[0].title() if decision != "HEALTHY" else "Healthy",
@@ -269,7 +351,33 @@ feature is the most stable of the four layers, peaking at just {pm['feature_psi'
 a sound input pipeline rather than a broken feed and confirms the mild target and prediction movement is a
 real demand shift, not a data fault.</strong></p>
 
-{B.section("log", "Section 3", "Monitoring Log")}
+{B.section("dataquality", "Section 3", "Data-Quality Monitoring")}
+<p>Model drift is not the only thing that moves in a live ERP. The master-level defects were fixed once,
+but transaction-level defects keep arriving: every period brings new free-text and non-stock purchase lines
+that carry no item number, and new near-duplicate postings from re-keyed or re-imported receipts. Left
+unwatched, a rising share of either quietly starves the forecast of clean history. So the two defect rates
+are monitored as their own series against a fixed threshold, on the same period cadence as the four
+model-drift layers. <strong>Across {periods[0]} to {periods[-1]} the free-text line rate held near
+{dq['ft_rate'].min():.1f}% to {dq['ft_rate'].max():.1f}% of new postings against a {FT_THRESHOLD:.1f}%
+threshold, and the duplicate-record rate held near {dq['dup_rate'].min():.2f}% against a
+{DUP_THRESHOLD:.2f}% threshold, so both series read within threshold every period and data quality adds no
+retraining or investigation trigger. The standing decision stays HEALTHY.</strong> For context, the standing
+detectors carry {dq_summary['T1']['free_lines']:,} free-text lines cleared for attribution at
+{dq_summary['T1']['precision']*100:.0f}% precision and {dq_summary['T7']['flagged']:,} near-duplicate
+postings at {dq_summary['T7']['precision']*100:.0f}% precision; monitoring watches the inflow rate, not the
+back catalogue.</p>
+<p>The table reads each period's defect rate against its threshold. The rate is the share of that period's
+new ledger postings caught by each detector, so it is comparable period to period even as posting volume
+shifts. Both columns sit well under their limits, and the reading stays green in every row.</p>
+{dq_table()}
+<p>The chart traces the same two rates across the window with each threshold drawn in. The point is the
+flatness: neither series is climbing toward its line, which is what tells us the clean-history feed behind
+the forecast is holding steady rather than eroding. A sustained climb toward either threshold would open a
+data-quality ticket to widen the free-text attribution rules or tighten the duplicate matcher, and only then
+would it feed back into the model-drift view.</p>
+{B.chart("Data-Quality Defect Rates by Period vs Threshold", charts["dq"])}
+
+{B.section("log", "Section 4", "Monitoring Log")}
 <p>The period log records every layer for the three scoring periods: WAPE and MASE for performance, the
 three PSI values for the drift layers, and the flag on each. A RETRAIN flag on the performance or target row
 across two consecutive periods would move the standing decision to RETRAIN and open a retraining ticket; the

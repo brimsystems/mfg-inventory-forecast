@@ -208,8 +208,9 @@ __marimo__/
 
 # Additional Settings
 
-# Internal build brief, not published
+# Internal build briefs, not published
 ml/reports/BUILD_NOTES.md
+ml/reports/BUILD_NOTES_ADDENDUM.md
 
 # Generated data, ground-truth crosswalks and ML artifacts — regenerated from
 # scripts (committed samples show the shape)
