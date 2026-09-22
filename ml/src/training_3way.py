@@ -85,7 +85,7 @@ def run():
     dup_items = set(clusters[clusters > 1].index)
     txn = json.loads((TRUTH / "txn_defects.json").read_text())
     x = dict(zip(cw["item_number"], cw["canonical_item_number"]))
-    t1_items = {x.get(r["true_item_number"], r["true_item_number"]) for r in txn["t1"] if not r["is_oneoff"]}
+    t1_items = {x.get(r["item_number"], r["item_number"]) for r in txn.get("t1", [])}
 
     # One production model, trained on the fully-cleaned history, then fed each
     # tier's data at inference. This isolates the value of clean input: the model

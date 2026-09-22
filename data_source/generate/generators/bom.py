@@ -112,8 +112,14 @@ def apply_m3_omissions(bom_true, plan, rng):
     for idx, r in eligible.iterrows():
         if r["component_item"] not in omit_items:
             continue
-        top_ok = (r["parent_type"] == "subassembly") or (r["parent"] in omit_products)
-        if top_ok and rng.random() < 0.8:
+        # Subassembly omissions are rarer, because a shared subassembly propagates
+        # its omission to every product that uses it and would otherwise put most
+        # products in scope.
+        if r["parent_type"] == "subassembly":
+            ok = rng.random() < 0.55
+        else:
+            ok = (r["parent"] in omit_products) and rng.random() < 0.8
+        if ok:
             omit_idx.append(idx)
 
     bom_recorded = bom_true.drop(index=omit_idx).reset_index(drop=True)

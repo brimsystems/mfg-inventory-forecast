@@ -128,7 +128,7 @@ def run():
     print("[7/9] Inventory ledger   (ERP) - this step takes a moment")
     transactions, tx_truth = build_inventory_transactions(
         production_orders, prod_map, item_master, item_meta, dup_map, service_orders,
-        manual_demand, purchase_orders, omitted_backflush, plan, rng)
+        manual_demand, purchase_orders, omitted_backflush, omit_items, plan, rng)
     transactions = _add_stray_dead_txns(transactions, defects, rng)
 
     on_hand = _on_hand_from_tx(transactions, item_meta)

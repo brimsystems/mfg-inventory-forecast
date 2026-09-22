@@ -77,8 +77,8 @@ def run():
     # current reorder point per canonical item: sum across its recorded records
     im = item_master.merge(crosswalk, on="item_number", how="left")
     im["canonical"] = im["canonical_item_number"].fillna(im["item_number"])
-    cur = im.groupby("canonical").agg(cur_rop=("current_reorder_point", "sum"),
-                                      cur_ss=("current_safety_stock", "sum")).fillna(0)
+    cur = im.groupby("canonical").agg(cur_rop=("reorder_point", "sum"),
+                                      cur_ss=("safety_stock", "sum")).fillna(0)
 
     # model forecast level and error per item over the holdout origins
     fc = model_bt.groupby("item").agg(fc_mean=("pred", "mean"),

@@ -26,7 +26,7 @@ from .. import config as C
 
 def build_inventory_transactions(production_orders, prod_map, item_master, item_meta,
                                  dup_map, service_orders, manual_demand, purchase_orders,
-                                 omitted_backflush, plan, rng):
+                                 omitted_backflush, omitted_item_ids, plan, rng):
     class_by_item = plan.set_index("item_id")["item_class"].to_dict()
     fam_by_item = plan.set_index("item_id")["family"].to_dict()
     recorded = {}
@@ -120,15 +120,21 @@ def build_inventory_transactions(production_orders, prod_map, item_master, item_
                 f"WO-{int(rng.integers(100000,999999))}", "MANUAL", "floor")
 
     # ── T1 chronic negative adjustments on omitted items ────────────────────
-    for r in omitted_backflush.groupby("item_id", as_index=False)["qty"].sum().itertuples(index=False):
-        iid = int(r.item_id)
+    # Every BOM-omitted item bleeds usage the ERP never recorded, so it accrues a
+    # chronic run of downward adjustments. The magnitude scales with the item's
+    # unrecorded backflush where known, or a small nominal amount otherwise.
+    vol_by_iid = (omitted_backflush.groupby("item_id")["qty"].sum().to_dict()
+                  if len(omitted_backflush) else {})
+    for iid in sorted(set(int(i) for i in omitted_item_ids)):
         if iid not in primary_num:
             continue
         num = primary_num[iid]
-        truth["t1"].append({"item_number": num, "item_id": iid, "annual_unrecorded": int(r.qty)})
+        vol = float(vol_by_iid.get(iid, 0.0))
+        truth["t1"].append({"item_number": num, "item_id": iid, "annual_unrecorded": int(vol)})
+        base = vol / 24.0 if vol > 0 else float(rng.uniform(1.5, 4.0))
         for m in C.month_starts():
             if rng.random() < C.T1_MONTHLY_ADJ_PROB:
-                mag = max(1, int(abs(rng.normal(r.qty / 24.0, r.qty / 40.0 + 1))))
+                mag = max(1, int(abs(rng.normal(base, base / 2.0 + 1))))
                 reason = rng.choice(C.GENERIC_REASON_CODES) if rng.random() < C.T2_BLANK_REASON_SHARE \
                     else rng.choice(C.SPECIFIC_REASON_CODES)
                 add(num, m + timedelta(days=int(rng.integers(20, 27))), "ADJUST", -mag,
@@ -153,18 +159,35 @@ def build_inventory_transactions(production_orders, prod_map, item_master, item_
     remaining = max(0.0, target_adj - cur_adj)
     live_nums = [n for n, m in item_meta.items() if not m["dead"]]
     months = C.month_starts()
+    # Write-offs (negative adjustments) concentrate on the items that actually
+    # lose material: BOM-omitted components whose usage never got recorded. Clean
+    # items see only sporadic positive corrections (mis-receipts), so chronic
+    # downward adjustments stay a signature of the omitted items.
+    omit_pool = [primary_num[int(i)] for i in set(int(x) for x in omitted_item_ids)
+                 if int(i) in primary_num]
+    # a smaller pool of other trouble items (UOM faults, duplicate members) carries
+    # the remaining ~30% of chronic write-offs (floor practice, receiving errors)
+    other_pool = [n for n, m in item_meta.items()
+                  if not m["dead"] and (m["uom_conv"] and m["uom_conv"] > 1 or m["member"] > 0)]
+    rng.shuffle(other_pool)
+    other_pool = other_pool[:30]
     n_events = min(len(live_nums) * 8, 20000)
     extra = []
     if remaining > 0 and n_events > 0 and live_nums:
         weights = rng.dirichlet(np.full(n_events, 0.6))    # skewed: a few big write-offs
         for w in weights:
-            num = rng.choice(live_nums)
+            neg = rng.random() < 0.62
+            if neg and omit_pool:
+                num = rng.choice(omit_pool) if (rng.random() < 0.72 or not other_pool) \
+                    else rng.choice(other_pool)
+            else:
+                num = rng.choice(live_nums)
             mag = max(1, int(round(w * remaining)))
             seq[0] += 1
             m = months[int(rng.integers(0, len(months)))]
             reason = rng.choice(C.GENERIC_REASON_CODES) if rng.random() < C.T2_BLANK_REASON_SHARE \
                 else rng.choice(C.SPECIFIC_REASON_CODES)
-            sign = -1 if rng.random() < 0.7 else 1
+            sign = -1 if neg else 1
             tid = f"TX-{seq[0]:07d}"
             extra.append({"txn_id": tid, "item_number": num,
                           "txn_date": (m + timedelta(days=int(rng.integers(0, 27)))).isoformat(),
