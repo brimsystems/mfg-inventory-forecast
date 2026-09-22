@@ -40,22 +40,20 @@ def build_marts():
     crosswalk = pd.read_csv(SEEDS / "item_crosswalk.csv")
     x = dict(zip(crosswalk["item_number"], crosswalk["canonical_item_number"]))
 
-    # Cleaned consumption from issues, merged to the canonical item.
+    # Weekly consumption (issues merged to the canonical item) for the dashboard.
     iss = tx[tx["type"] == "issue"].copy()
     iss["canonical"] = iss["item_number"].map(x).fillna(iss["item_number"])
     iss["date"] = pd.to_datetime(iss["transaction_date"])
-    iss["month"] = iss["date"].values.astype("datetime64[M]")
     iss["week"] = iss["date"].dt.to_period("W").dt.start_time
-
-    monthly = iss.groupby(["canonical", "month"])["quantity"].sum().reset_index()
     weekly = iss.groupby(["canonical", "week"])["quantity"].sum().reset_index()
 
-    # Complete the monthly grid so gaps are explicit zeros.
+    # Monthly consumption is the fully-cleaned series (duplicates merged plus the
+    # confirmed transaction corrections), densified with explicit zeros.
+    monthly = pd.read_parquet(MARTS / "consumption_fully.parquet")
     items = monthly["canonical"].unique()
     months = pd.period_range(monthly["month"].min(), monthly["month"].max(), freq="M").to_timestamp()
     grid = pd.MultiIndex.from_product([items, months], names=["canonical", "month"])
-    monthly = (monthly.set_index(["canonical", "month"]).reindex(grid, fill_value=0)
-               .reset_index().rename(columns={"quantity": "consumption"}))
+    monthly = (monthly.set_index(["canonical", "month"]).reindex(grid, fill_value=0).reset_index())
 
     # Corrected lead time from actual receipts (recent window), per canonical item.
     po = po[po["received_date"].notna()].copy()
