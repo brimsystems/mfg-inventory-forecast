@@ -451,6 +451,10 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         # count on the first line, share in italics on the second
         return f"{n:,} of {total:,}<br><em>({n / total * 100:.1f}%)</em>" if total else f"{n:,}"
 
+    def numcell(i):
+        # untitled left column: bold number, vertically centred
+        return f'<td style="vertical-align:middle;text-align:center;font-weight:700;width:36px;">{i}</td>'
+
     # (name, one-sentence description, ERP table, scale as rows affected, test,
     #  what counts as a finding, operational cost). The ERP table is the table the
     #  scale denominator counts, so equal denominators always share a location.
@@ -560,9 +564,9 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
          "Movement double-counted"),
     ]
     d["op_cost"] = {n: c for n, _d, _l, _s, _t, _f, c in MASTER_ERRORS + TXN_ERRORS}   # reserved for Results
-    hdr = ["Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
-    master_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[])
-    txn_table = B.data_table(hdr, [[f"#{i} {n}", desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[])
+    hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
+    master_table = B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[])
+    txn_table = B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[])
     def rem_of(n, total):
         return f"{n:,} of {total:,} ({n / total * 100:.0f}%)" if total else f"{n:,}"
 
@@ -628,10 +632,10 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         ("The second posting reversed for every pair.",
          ERP, rem_of(d["t8_count"], d["t8_count"])),
     ]
-    rem_hdr = ["Error", "Remediation", "Evidence", "Remediated (rows)"]
-    rem_master_table = B.data_table(rem_hdr, [[f"#{i} {e[0]}", r, ev, rows]
+    rem_hdr = ["", "Error", "Remediation", "Evidence", "Remediated (rows)"]
+    rem_master_table = B.data_table(rem_hdr, [[numcell(i), e[0], r, ev, rows]
         for i, (e, (r, ev, rows)) in enumerate(zip(MASTER_ERRORS, REM_MASTER), 1)], right=[])
-    rem_txn_table = B.data_table(rem_hdr, [[f"#{i} {e[0]}", r, ev, rows]
+    rem_txn_table = B.data_table(rem_hdr, [[numcell(i), e[0], r, ev, rows]
         for i, (e, (r, ev, rows)) in enumerate(zip(TXN_ERRORS, REM_TXN), len(MASTER_ERRORS) + 1)], right=[])
 
     found = f"""
