@@ -14,19 +14,24 @@ import pandas as pd
 from .. import config as C
 
 
-def build_buyer_spreadsheet(item_master, item_meta, abc_by_item, on_hand, plan, rng):
+def build_buyer_spreadsheet(item_master, item_meta, abc_by_item, on_hand, plan, rng, preselected=None):
     # Candidate line-stopping components: A-class, non-dead, mechanical/electrical/
-    # fastener/hardware parts the assembly line waits on.
+    # fastener/hardware parts the assembly line waits on. When the replay has
+    # already fixed the tracked set, use it so her compensation and her
+    # spreadsheet cover the same items.
     live = item_master[item_master["item_number"].isin(
         [n for n, m in item_meta.items() if not m["dead"]])].copy()
     live["item_id"] = live["item_number"].map({n: m["item_id"] for n, m in item_meta.items()})
     live["abc"] = live["item_id"].map({int(k): v for k, v in abc_by_item.items()})
-    pool = live[live["abc"] == "A"]
-    if len(pool) < C.BUYER_SPREADSHEET_ITEMS:
-        pool = live
-    chosen = pool.drop_duplicates("item_id").sample(
-        n=min(C.BUYER_SPREADSHEET_ITEMS, len(pool.drop_duplicates("item_id"))),
-        random_state=C.RANDOM_SEED)
+    if preselected:
+        chosen = live[live["item_number"].isin(preselected)].drop_duplicates("item_id")
+    else:
+        pool = live[live["abc"] == "A"]
+        if len(pool) < C.BUYER_SPREADSHEET_ITEMS:
+            pool = live
+        chosen = pool.drop_duplicates("item_id").sample(
+            n=min(C.BUYER_SPREADSHEET_ITEMS, len(pool.drop_duplicates("item_id"))),
+            random_state=C.RANDOM_SEED)
 
     rows, truth = [], []
     for r in chosen.itertuples(index=False):

@@ -1,5 +1,12 @@
 """Build all nine source datasets, write raw and sample extracts, and record the
-ground-truth crosswalks the data-quality pipeline is scored against.
+ground truth the data-quality pipeline is scored against.
+
+The build runs in the order the shop's records are produced: demand and the
+product structure, the masters, the jobs and service orders, the physical
+consumption those create, then a day-by-day replay of the ERP's own
+replenishment against its books (which is where the purchase orders, the rush
+buys, the shortages and the count corrections come from), and finally the
+ledger, the counts and the buyer's spreadsheet.
 
 Run:  python -m data_source.generate.run_generator
 """
@@ -16,19 +23,22 @@ from .checkpoint import classify
 from .generators.demand import build_item_plan, build_monthly_demand
 from .generators.suppliers import build_suppliers
 from .generators.bom import (build_catalog, build_bom, apply_m3_omissions,
-                             build_product_builds, explode_builds, effective_component_map)
+                             build_product_builds, explode_builds)
 from .generators.item_master import build_item_master
-from .generators.production_orders import build_production_orders
+from .generators.production_orders import build_production_orders, apply_delays
 from .generators.service_orders import build_service_orders
-from .generators.purchase_orders import build_purchase_orders
-from .generators.inventory_transactions import build_inventory_transactions
+from .generators.consumption import build_consumption_events
+from .generators.replenishment import simulate, draw_drift_rates
+from .generators.counterfactual import corrected_inputs, replay_metrics
+from .generators.purchase_orders import assemble_purchase_orders
+from .generators.inventory_transactions import build_ledger, post_count_adjustments
 from .generators.cycle_counts import build_cycle_counts
 from .generators.buyer_spreadsheet import build_buyer_spreadsheet
 
 TRUTH_DIR = C.REPO_ROOT / "data_source" / "truth"
 
 
-def _abc(plan, annual_by_item) -> dict:
+def _abc(plan, annual_by_item):
     cost = plan.set_index("item_id")["unit_cost"].to_dict()
     val = {i: annual_by_item.get(i, 0.0) * cost.get(i, 0.0) for i in cost}
     order = sorted(val, key=val.get, reverse=True)
@@ -37,7 +47,7 @@ def _abc(plan, annual_by_item) -> dict:
     for i in order:
         cum += val[i] / total
         out[i] = "A" if cum <= C.ABC_A_CUM else ("B" if cum <= C.ABC_B_CUM else "C")
-    return out
+    return out, val
 
 
 def _save(df, name, base_dir, sample=False):
@@ -52,8 +62,6 @@ def _save(df, name, base_dir, sample=False):
 
 
 def _channel_split(direct, service_items):
-    """Partition the item-level engine demand into a small service channel (for
-    service-relevant items only) and a manual channel (the remainder)."""
     d = direct.rename(columns={"demand_units": "qty"}).copy()
     is_svc = d["item_id"].isin(service_items)
     d["service"] = np.where(is_svc, (d["qty"] * C.SERVICE_SCALE).round(), 0).astype(int)
@@ -65,11 +73,12 @@ def _channel_split(direct, service_items):
 
 def _on_hand_from_tx(tx, item_meta):
     conv = {n: (m["uom_conv"] or 1) for n, m in item_meta.items()}
-    t = tx.copy()
     sign = {"RECEIPT": 1, "RETURN": 1, "ISSUE": -1, "BACKFLUSH": -1, "SCRAP": -1, "ADJUST": 1}
-    t["signed"] = t.apply(lambda r: r["qty"] * sign.get(r["type"], 0)
-                          * (conv.get(r["item_number"], 1) if r["type"] == "RECEIPT" and r["uom"] == "BOX" else 1),
-                          axis=1)
+    t = tx.copy()
+    t["signed"] = t["qty"] * t["type"].map(sign).fillna(0)
+    stock_uom = {n: m["stock_uom"] for n, m in item_meta.items()}
+    box = (t["type"] == "RECEIPT") & (t["uom"] != t["item_number"].map(stock_uom))
+    t.loc[box, "signed"] = t.loc[box, "signed"] * t.loc[box, "item_number"].map(conv).fillna(1)
     oh = t.groupby("item_number")["signed"].sum()
     return {n: max(0, int(v)) for n, v in oh.items()}
 
@@ -78,9 +87,9 @@ def run():
     rng = np.random.default_rng(C.RANDOM_SEED)
     print(f"\nBuilding equipment-builder source extracts for {C.START_DATE} through {C.END_DATE}\n")
 
-    # ── Demand and consumption structure ────────────────────────────────────
+    # ── Demand and product structure ────────────────────────────────────────
     plan = build_item_plan(rng)
-    direct = build_monthly_demand(plan, rng)          # item-level service + manual channels
+    direct = build_monthly_demand(plan, rng)
     service_items = set(rng.choice(plan["item_id"].to_numpy(),
                                    size=int(round(len(plan) * C.SERVICE_ITEM_SHARE)), replace=False))
     service_demand, manual_demand = _channel_split(direct, service_items)
@@ -91,20 +100,11 @@ def run():
     builds = build_product_builds(products, rng)
     bf_recorded = explode_builds(builds, bom_recorded)
     bf_true = explode_builds(builds, bom_true)
-    prod_map = effective_component_map(bom_recorded)
 
-    # unrecorded (omitted) backflush = true minus recorded, positive part
-    merged = bf_true.merge(bf_recorded, on=["item_id", "month"], how="left",
-                           suffixes=("_true", "_rec")).fillna({"qty_rec": 0})
-    merged["qty"] = (merged["qty_true"] - merged["qty_rec"]).clip(lower=0).astype(int)
-    omitted_backflush = merged[merged["qty"] > 0][["item_id", "month", "qty"]]
-
-    # total recorded consumption drives replenishment and ABC
     total = (pd.concat([direct.rename(columns={"demand_units": "qty"})[["item_id", "month", "qty"]],
                         bf_recorded]).groupby(["item_id", "month"], as_index=False)["qty"].sum())
     wide = total.pivot(index="item_id", columns="month", values="qty").fillna(0).sort_index(axis=1)
     annual_by_item = wide.iloc[:, -12:].sum(axis=1).to_dict()
-    abc_by_item = _abc(plan, annual_by_item)
 
     # ── Masters ─────────────────────────────────────────────────────────────
     print("[1/9] Suppliers          (ERP)")
@@ -112,33 +112,65 @@ def run():
     print("[2/9] Item master        (ERP)")
     item_master, dup_map, item_meta, defects = build_item_master(
         plan, suppliers, annual_by_item, drift_supplier_id, sup_frag, rng)
-
-    # ── BOM dataset (recorded, with omissions) ──────────────────────────────
+    abc_by_item, value_by_item = _abc(plan, annual_by_item)   # after the M5 per-unit costing
     print("[3/9] Bill of materials  (ERP)")
     bom_ds = _bom_dataset(bom_recorded, item_meta, dup_map)
 
-    # ── Orders and ledger ───────────────────────────────────────────────────
+    # ── Jobs, service orders and physical consumption ───────────────────────
     print("[4/9] Production orders  (ERP)")
     production_orders = build_production_orders(builds, products, rng)
     print("[5/9] Service orders     (ERP)")
     service_orders = build_service_orders(service_demand, item_meta, dup_map, plan, rng)
-    print("[6/9] Purchase orders    (ERP)")
-    purchase_orders, po_truth = build_purchase_orders(
-        total, item_master, item_meta, dup_map, suppliers, sup_frag, drift_supplier_id, plan, rng)
-    print("[7/9] Inventory ledger   (ERP) - this step takes a moment")
-    transactions, tx_truth = build_inventory_transactions(
-        production_orders, prod_map, item_master, item_meta, dup_map, service_orders,
-        manual_demand, purchase_orders, omitted_backflush, omit_items, plan, rng)
+    events = build_consumption_events(production_orders, bom_true, bom_recorded, service_orders,
+                                      manual_demand, item_meta, dup_map, omit_items, rng)
+
+    # the purchasing manager tracks the highest-value A items by hand
+    primary = {}
+    for num, m in item_meta.items():
+        if not m["dead"]:
+            iid = m["item_id"]
+            primary[iid] = dup_map[iid]["primary"] if iid in dup_map else primary.get(iid, num)
+    top = sorted((i for i in value_by_item if abc_by_item.get(i) == "A" and i in primary),
+                 key=lambda i: value_by_item[i], reverse=True)[:C.BUYER_SPREADSHEET_ITEMS]
+    buyer_nums = {primary[i] for i in top}
+
+    # ── Replenishment replay: purchase orders, rushes, shortages, counts ────
+    print("[6/9] Purchase orders    (ERP) - replaying replenishment, this takes a minute")
+    drift_rate = draw_drift_rates(item_meta, rng)
+    sim = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
+                   buyer_nums, omit_items, rng, drift_rate=drift_rate)
+    production_orders = apply_delays(production_orders, sim["job_delays"])
+    purchase_orders, po_truth = assemble_purchase_orders(sim["po_lines"], suppliers, item_master, rng)
+
+    # the same rule on the corrected masters, over the same demand and suppliers
+    print("      Counterfactual replay on corrected masters")
+    ev_c, im_c, meta_c, base_lead, _ = corrected_inputs(events, item_master, item_meta, dup_map, drift_rate,
+                                                        drift_supplier_id, abc_by_item, rng)
+    sim_c = simulate(ev_c, im_c, meta_c, {}, plan, drift_supplier_id, sup_frag, buyer_nums, [],
+                     np.random.default_rng(C.RANDOM_SEED + 11), drift_rate=drift_rate, never_closed=0.0,
+                     actual_base=base_lead)
+    cost_by_item = plan.set_index("item_id")["unit_cost"].to_dict()
+    counterfactual = {
+        "year": C.MODEL_SPAN_END.year,
+        "as_is": replay_metrics(sim, cost_by_item, primary, production_orders, C.MODEL_SPAN_END.year),
+        "corrected": replay_metrics(sim_c, cost_by_item, primary, production_orders, C.MODEL_SPAN_END.year),
+    }
+
+    # ── Counts, ledger, spreadsheet ─────────────────────────────────────────
+    print("[7/9] Inventory ledger   (ERP)")
+    transactions, tx_truth = build_ledger(events, purchase_orders, sim["adjustments"],
+                                          sim["job_delays"], item_master, item_meta, dup_map, plan,
+                                          omit_items, rng)
     transactions = _add_stray_dead_txns(transactions, defects, rng)
-
-    on_hand = _on_hand_from_tx(transactions, item_meta)
-    unreliable = _unreliable_nums(item_meta, defects, omit_items, dup_map)
-
+    # the count program reads the ledger balance and posts what it finds
     print("[8/9] Cycle counts       (WMS)")
-    cycle_counts = build_cycle_counts(item_master, item_meta, on_hand, unreliable, rng)
+    unreliable = _unreliable_nums(item_meta, defects, omit_items, dup_map)
+    cycle_counts, count_adj = build_cycle_counts(sim, transactions, item_meta, dup_map, unreliable, rng)
+    transactions = post_count_adjustments(transactions, count_adj, item_meta, rng)
+    on_hand = _on_hand_from_tx(transactions, item_meta)
     print("[9/9] Buyer spreadsheet  (Purchasing)")
     buyer_spreadsheet, buyer_truth = build_buyer_spreadsheet(
-        item_master, item_meta, abc_by_item, on_hand, plan, rng)
+        item_master, item_meta, abc_by_item, on_hand, plan, rng, preselected=buyer_nums)
 
     tables = {
         "item_master":            item_master,
@@ -158,82 +190,69 @@ def run():
     for name, df in tables.items():
         _save(df.head(C.SAMPLE_SIZE), name, C.SAMPLES_DIR, sample=True)
 
-    # top-level products affected by a BOM omission (direct or via a subassembly)
     sub_omitted = set(omissions.loc[omissions["parent_type"] == "subassembly", "parent"])
     affected_products = set(omissions.loc[omissions["parent_type"] == "product", "parent"])
     for p, slist in prod_subs.items():
         if any(s in sub_omitted for s in slist):
             affected_products.add(p)
-
-    _write_truth(plan, dup_map, item_meta, supplier_truth, sup_frag, defects, abc_by_item,
-                 drift_supplier_id, omit_items, omissions, po_truth, tx_truth, buyer_truth, bf_true,
-                 sorted(affected_products), C.N_PRODUCTS)
-    _summary(plan, total, item_master, purchase_orders, transactions, cycle_counts,
-             production_orders, service_orders, dup_map, defects, abc_by_item)
+    _write_truth(dup_map, item_meta, supplier_truth, sup_frag, defects, abc_by_item, drift_supplier_id,
+                 omit_items, po_truth, tx_truth, buyer_truth, bf_true, sorted(affected_products),
+                 C.N_PRODUCTS, sim, primary, sorted(buyer_nums))
+    (TRUTH_DIR / "counterfactual.json").write_text(json.dumps(counterfactual, indent=2))
+    a, c = counterfactual["as_is"], counterfactual["corrected"]
+    print(f"Counterfactual {counterfactual['year']}: inventory ${a['inventory_value_avg']:,.0f} -> "
+          f"${c['inventory_value_avg']:,.0f}  | purchases ${a['purchases']:,.0f} -> ${c['purchases']:,.0f}  | "
+          f"rush freight ${a['rush_freight']:,.0f} -> ${c['rush_freight']:,.0f}  | shortages "
+          f"{a['shortage_episodes']:,} -> {c['shortage_episodes']:,}  | jobs delayed {a['jobs_delayed']:,} -> "
+          f"{c['jobs_delayed']:,}")
+    _summary(total, item_master, purchase_orders, transactions, cycle_counts, production_orders,
+             service_orders, defects, sim)
 
 
 def _bom_dataset(bom_recorded, item_meta, dup_map):
-    """Render the recorded BOM with component item numbers (primary record)."""
     primary = {}
     for num, m in item_meta.items():
         if not m["dead"]:
             iid = m["item_id"]
-            if iid in dup_map:
-                primary[iid] = dup_map[iid]["primary"]
-            else:
-                primary.setdefault(iid, num)
+            primary[iid] = dup_map[iid]["primary"] if iid in dup_map else primary.get(iid, num)
     rows = []
     for r in bom_recorded.itertuples(index=False):
-        if r.component_type == "purchased":
-            comp = primary.get(int(r.component_item))
-            if comp is None:
-                continue
-        else:
-            comp = r.component_item
-        rows.append({"product_number": r.parent, "component_item": comp,
-                     "qty_per": r.qty_per, "uom": "EA",
-                     "effective_date": C.START_DATE.isoformat()})
+        comp = primary.get(int(r.component_item)) if r.component_type == "purchased" else r.component_item
+        if comp is None:
+            continue
+        rows.append({"product_number": r.parent, "component_item": comp, "qty_per": r.qty_per,
+                     "uom": "EA", "effective_date": C.START_DATE.isoformat()})
     return pd.DataFrame(rows)
 
 
 def _add_stray_dead_txns(tx, defects, rng):
-    rows = []
-    seqbase = int(tx["txn_id"].str[3:].astype(int).max()) + 1
+    rows, seqbase = [], int(tx["txn_id"].str[3:].astype(int).max()) + 1
     for meta in defects["dead_meta"]:
         if meta["stray"]:
             d = C.MODEL_SPAN_END - timedelta(days=int(rng.integers(30, 300)))
             rows.append({"txn_id": f"TX-{seqbase:07d}", "item_number": meta["item_number"],
                          "txn_date": d.isoformat(), "txn_time": "09:00", "type": "ISSUE",
-                         "qty": int(rng.integers(1, 4)), "uom": "EA", "job_id": None,
-                         "reason_code": "MANUAL", "location": "CRIB",
-                         "user_id": rng.choice(C.SHARED_LOGINS)})
+                         "qty": int(rng.integers(1, 4)), "uom": "EA", "job_id": None, "reason_code": "MANUAL",
+                         "location": "CRIB", "user_id": rng.choice(C.SHARED_LOGINS)})
             seqbase += 1
-    if rows:
-        tx = pd.concat([tx, pd.DataFrame(rows)], ignore_index=True)
-    return tx
+    return pd.concat([tx, pd.DataFrame(rows)], ignore_index=True) if rows else tx
 
 
 def _unreliable_nums(item_meta, defects, omit_items, dup_map):
-    nums = set()
-    omit = set(int(i) for i in omit_items)
+    nums, omit = set(), set(int(i) for i in omit_items)
     for num, m in item_meta.items():
-        if m["dead"]:
-            continue
-        if m["item_id"] in omit or (m["uom_conv"] and m["uom_conv"] > 1):
+        if not m["dead"] and (m["item_id"] in omit or (m["uom_conv"] and m["uom_conv"] > 1)):
             nums.add(num)
     for c in dup_map.values():
         nums.update(c["records"])
     return nums
 
 
-def _write_truth(plan, dup_map, item_meta, supplier_truth, sup_frag, defects, abc,
-                 drift_supplier_id, omit_items, omissions, po_truth, tx_truth, buyer_truth, bf_true,
-                 affected_products, n_products):
+def _write_truth(dup_map, item_meta, supplier_truth, sup_frag, defects, abc, drift_supplier_id, omit_items,
+                 po_truth, tx_truth, buyer_truth, bf_true, affected_products, n_products, sim, primary, buyer_nums):
     TRUTH_DIR.mkdir(parents=True, exist_ok=True)
-    dup_truth = {str(k): {"records": v["records"], "primary": v["primary"]}
-                 for k, v in dup_map.items()}
     payload = {
-        "duplicate_clusters":       dup_truth,
+        "duplicate_clusters":       {str(k): {"records": v["records"], "primary": v["primary"]} for k, v in dup_map.items()},
         "supplier_id_to_canonical": supplier_truth,
         "supplier_fragments":       sup_frag["records"],
         "m2_drift_supplier":        drift_supplier_id,
@@ -243,33 +262,49 @@ def _write_truth(plan, dup_map, item_meta, supplier_truth, sup_frag, defects, ab
         "m3_affected_products":     affected_products,
         "n_products":               n_products,
         "m5_items":                 sorted(int(i) for i in defects["m5_items"]),
-        "m5_conversions":           {n: int(m["uom_conv"]) for n, m in item_meta.items()
-                                     if m["uom_conv"] and m["uom_conv"] > 1},
+        "m5_conversions":           {n: int(m["uom_conv"]) for n, m in item_meta.items() if m["uom_conv"] and m["uom_conv"] > 1},
         "m7_blank_items":           sorted(int(i) for i in defects["m7_blank"]),
         "abc_by_item":              {str(k): v for k, v in abc.items()},
+        "buyer_tracked_items":      buyer_nums,
     }
     (TRUTH_DIR / "crosswalks.json").write_text(json.dumps(payload, indent=2))
     (TRUTH_DIR / "po_defects.json").write_text(json.dumps(po_truth, indent=2, default=str))
-    (TRUTH_DIR / "txn_defects.json").write_text(json.dumps(tx_truth, indent=2, default=str))
+    (TRUTH_DIR / "txn_defects.json").write_text(json.dumps({k: v for k, v in tx_truth.items() if k != "t1_events"},
+                                                           indent=2, default=str))
+    pd.DataFrame(tx_truth["t1_events"]).to_csv(TRUTH_DIR / "unrecorded_events.csv", index=False)
     (TRUTH_DIR / "buyer_reconciliation.json").write_text(json.dumps(buyer_truth, indent=2, default=str))
     bf_true.to_csv(TRUTH_DIR / "true_backflush.csv", index=False)
+    sim["shortages"].to_csv(TRUTH_DIR / "shortages.csv", index=False)
+    sim["rushes"].to_csv(TRUTH_DIR / "rushes.csv", index=False)
+    (TRUTH_DIR / "job_delays.json").write_text(json.dumps(sim["job_delays"], indent=2))
+    phys_end = {primary[iid]: float(series[-1]) for iid, series in sim["physical"].items() if primary.get(iid)}
+    (TRUTH_DIR / "physical_on_hand_end.json").write_text(json.dumps(phys_end, indent=2))
     print(f"\nGround-truth -> {TRUTH_DIR}")
 
 
-def _summary(plan, total, item_master, po, tx, cc, prod, svc, dup_map, defects, abc):
+def _summary(total, item_master, po, tx, cc, prod, svc, defects, sim):
     print("\n" + "=" * 72)
-    print("DATA & DEFECT SUMMARY")
+    print("DATA & ERROR SUMMARY")
     print("=" * 72)
     wide = total.pivot(index="item_id", columns="month", values="qty").fillna(0).sort_index(axis=1)
     cls = pd.Series({i: classify(wide.loc[i].to_numpy(dtype=float)) for i in wide.index})
     print("\nDemand-segment mix (classified)")
     for seg in C.SEGMENTS:
         print(f"  {seg:<13} {(cls == seg).mean()*100:5.1f}%")
-    n_dead = sum(1 for m in defects["dead_meta"])
-    print(f"\nItem master {len(item_master):,} records; dead {n_dead:,} "
-          f"({n_dead/len(item_master)*100:.0f}%)  live {len(item_master)-n_dead:,}")
+    n_dead = len(defects["dead_meta"])
+    print(f"\nItem master {len(item_master):,} records; dead {n_dead:,} ({n_dead/len(item_master)*100:.0f}%)")
     print(f"Rows  POs {len(po):,}  transactions {len(tx):,}  production {len(prod):,}  "
           f"service {len(svc):,}  cycle_counts {len(cc):,}")
+    rush = po[po["rush"]]
+    n_sh = len(sim["shortages"])
+    print(f"\nReplay  rush lines {len(rush):,} ({len(rush)/max(1,len(po))*100:.1f}% of lines), "
+          f"freight ${rush['freight'].sum():,.0f}  | shortages {n_sh:,} on "
+          f"{sim['shortages']['item_id'].nunique() if n_sh else 0} items  | jobs delayed "
+          f"{sum(1 for v in sim['job_delays'].values() if v > 0):,}")
+    if n_sh:
+        print("  shortage causes:", sim["shortages"]["cause"].value_counts().to_dict())
+    if len(sim["rushes"]):
+        print("  rush causes:    ", sim["rushes"]["cause"].value_counts().to_dict())
     print("=" * 72 + "\n")
 
 

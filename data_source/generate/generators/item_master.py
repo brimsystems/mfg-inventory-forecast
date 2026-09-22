@@ -188,6 +188,11 @@ def build_item_master(plan, suppliers, annual_by_item, drift_supplier_id, sup_fr
         cur_ss = max(0, round(0.5 * dol * err))
         cur_rop = max(0, round((dol + cur_ss) * err))
         std_cost = float(row.unit_cost)
+        if conv > 1:
+            # the class cost draw prices the purchase unit (a spool, a box); the
+            # standard cost is per stock unit, so spread it over the conversion
+            std_cost = round(std_cost / conv, 4)
+            plan.loc[plan["item_id"] == iid, "unit_cost"] = std_cost
         item_class = "MISC" if iid in m7_misc else row.item_class
 
         base = dict(uom=stock_uom, purchase_uom=purchase_uom, uom_conversion=(conv if conv != 1 else np.nan),

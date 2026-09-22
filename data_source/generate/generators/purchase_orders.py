@@ -212,6 +212,108 @@ def build_purchase_orders(total_consumption, item_master, item_meta, dup_map,
     return po, truth
 
 
+def assemble_purchase_orders(po_lines, suppliers, item_master, rng):
+    """Turn the replay's buy lines into the purchase-order file: regular lines
+    grouped into multi-line orders by supplier and order week, rush lines as
+    single-line orders carrying their premium and freight. Then the purchasing
+    side defects: T3 free-text lines, T4 batched receipt dates, and T5 lines
+    left open (the replay decided which balances never arrived)."""
+    stype_by_sup = suppliers.set_index("supplier_id")["supplier_type"].to_dict()
+    desc_by_num = item_master.set_index("item_number")["description"].to_dict()
+    lines = po_lines.copy()
+    lines["od"] = pd.to_datetime(lines["order_date"]).dt.date
+    reg = lines[~lines["rush"]].sort_values(["supplier_id", "od", "line_seq"])
+    rush = lines[lines["rush"]].sort_values(["od", "line_seq"])
+
+    rows, truth = [], {"t3": [], "t4": [], "t5": []}
+    po_seq = 0
+
+    def emit(r, po_id, line_no):
+        arrived = r.arrival_date is not None and not (isinstance(r.arrival_date, float) and np.isnan(r.arrival_date))
+        received = int(r.qty_received) if arrived else 0
+        status = "CLOSED" if received >= int(r.qty_ordered) else "OPEN"
+        rows.append({
+            "po_id": po_id, "line": line_no, "item_number": r.item_number, "description_text": None,
+            "supplier_id": r.supplier_id, "order_date": r.order_date, "promised_date": r.promised_date,
+            "received_date": r.arrival_date if (arrived and received > 0) else None,
+            "qty_ordered": int(r.qty_ordered), "qty_received": received, "unit_price": float(r.unit_price),
+            "status": status, "rush": bool(r.rush), "freight": float(r.freight),
+        })
+        if bool(r.never_closed):
+            truth["t5"].append({"po_id": po_id, "line": line_no, "qty_ordered": int(r.qty_ordered),
+                                "qty_received": received})
+
+    i, recs = 0, list(reg.itertuples(index=False))
+    while i < len(recs):
+        r0 = recs[i]
+        many = stype_by_sup.get(r0.supplier_id) in ("Fasteners", "Distributor", "Material")
+        max_lines = int(rng.integers(10, 21)) if many else int(rng.integers(1, 4))
+        po_seq += 1
+        po_id = f"PO-{po_seq:06d}"
+        window_end = r0.od + timedelta(days=5)
+        line_no = 0
+        while i < len(recs) and recs[i].supplier_id == r0.supplier_id and recs[i].od <= window_end and line_no < max_lines:
+            line_no += 1
+            emit(recs[i], po_id, line_no)
+            i += 1
+    for r in rush.itertuples(index=False):
+        po_seq += 1
+        emit(r, f"PO-{po_seq:06d}", 1)
+
+    po = pd.DataFrame(rows)
+
+    # ── T3 free-text / non-stock lines ──────────────────────────────────────
+    n_ft = int(round(len(po) * C.T3_FREETEXT_SHARE))
+    ft_rows = []
+    # a free-text buy of a stocked item is a small one-off, typed in for a job
+    # and used on it: the spend is real, the item's history never sees it
+    stocked = po[~po["rush"] & po["received_date"].notna()].sample(n=int(n_ft * C.T3_STOCKED_RATIO),
+                                                                    random_state=C.RANDOM_SEED)
+    for r in stocked.itertuples(index=False):
+        code = rng.choice(C.GENERIC_ITEM_CODES)
+        po_seq += 1
+        pid = f"PO-{po_seq:06d}"
+        q = int(rng.integers(1, 6))
+        ft_rows.append({"po_id": pid, "line": 1, "item_number": code,
+                        "description_text": _freetext(desc_by_num.get(r.item_number, ""), rng),
+                        "supplier_id": r.supplier_id, "order_date": r.order_date, "promised_date": r.promised_date,
+                        "received_date": r.received_date, "qty_ordered": q, "qty_received": q,
+                        "unit_price": r.unit_price, "status": "CLOSED", "rush": False, "freight": 0.0})
+        truth["t3"].append({"po_id": pid, "true_item_number": r.item_number, "is_stocked": True})
+    for _ in range(n_ft - len(stocked)):
+        code = rng.choice(C.GENERIC_ITEM_CODES)
+        po_seq += 1
+        pid = f"PO-{po_seq:06d}"
+        d = C.START_DATE + timedelta(days=int(rng.integers(0, (C.END_DATE - C.START_DATE).days)))
+        lead = int(rng.integers(7, 60))
+        q = int(rng.integers(1, 6))
+        ft_rows.append({"po_id": pid, "line": 1, "item_number": code, "description_text": rng.choice(_ONEOFF),
+                        "supplier_id": rng.choice(suppliers["supplier_id"]), "order_date": d.isoformat(),
+                        "promised_date": (d + timedelta(days=lead)).isoformat(),
+                        "received_date": (d + timedelta(days=lead)).isoformat(), "qty_ordered": q, "qty_received": q,
+                        "unit_price": round(rng.uniform(15, 400), 2), "status": "CLOSED", "rush": False, "freight": 0.0})
+        truth["t3"].append({"po_id": pid, "true_item_number": None, "is_stocked": False})
+    if ft_rows:
+        po = pd.concat([po, pd.DataFrame(ft_rows)], ignore_index=True)
+
+    # ── T4 batched receipt dates: the books post days after physical arrival ─
+    rec_idx = po.index[po["received_date"].notna()]
+    for idx in rng.choice(rec_idx, size=min(int(len(rec_idx) * C.T4_BATCH_SHARE), len(rec_idx)), replace=False):
+        rd = pd.to_datetime(po.at[idx, "received_date"]).date()
+        nd = None
+        for extra in range(1, C.T4_MAX_DISPLACEMENT + 1):
+            if (rd + timedelta(days=extra)).weekday() == 0:
+                nd = rd + timedelta(days=extra); break
+        if nd is None:
+            nd = rd + timedelta(days=int(rng.integers(1, C.T4_MAX_DISPLACEMENT + 1)))
+        if nd > C.END_DATE:
+            continue
+        truth["t4"].append({"po_id": po.at[idx, "po_id"], "line": int(po.at[idx, "line"]),
+                            "true_received_date": rd.isoformat(), "recorded_received_date": nd.isoformat()})
+        po.at[idx, "received_date"] = nd.isoformat()
+    return po, truth
+
+
 def _freetext(desc, rng):
     s = str(desc).lower()
     for k, v in _ABBREV.items():

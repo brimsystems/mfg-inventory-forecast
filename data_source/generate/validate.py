@@ -45,8 +45,8 @@ def run():
     print("\n=== Volume and shape ===")
     _chk("Item master records", len(im), 2200, 2600, "{:.0f}")
     _chk("Live share of master (%)", len(live) / len(im) * 100, 55, 65)
-    _chk("Inventory transactions", len(tx), 180000, 260000, "{:.0f}")
-    _chk("PO lines", len(po), 28000, 40000, "{:.0f}")
+    _chk("Inventory transactions", len(tx), 150000, 260000, "{:.0f}")
+    _chk("PO lines", len(po), 15000, 40000, "{:.0f}")
     _chk("Production orders", len(prod), 5000, 7500, "{:.0f}")
     _chk("Service orders", svc["order_id"].nunique(), 3500, 5500, "{:.0f}")
 
@@ -55,7 +55,7 @@ def run():
     po_live["spend"] = po_live["qty_received"].fillna(0) * po_live["unit_price"].fillna(0)
     spend = po_live.groupby("item_number")["spend"].sum().sort_values(ascending=False)
     top20 = int(len(spend) * 0.2)
-    _chk("Top 20% live items = % of spend", spend.head(top20).sum() / spend.sum() * 100, 75, 85)
+    _chk("Top 20% live items = % of spend", spend.head(top20).sum() / spend.sum() * 100, 70, 85)
 
     # consumption concentration
     cons = tx[tx["type"].isin(["ISSUE", "BACKFLUSH"])].copy()

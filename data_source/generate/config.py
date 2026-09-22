@@ -178,7 +178,8 @@ SEASONAL_AMP_RANGE    = (0.15, 0.40)
 FAMILY_FACTOR_WEIGHT  = 0.35
 
 # ── Cost, ABC and current (stale) inventory policy ──────────────────────────
-STANDARD_COST_LOG_MEAN = 1.6    # exp(1.6) ~ $5 median before the class multiplier
+STANDARD_COST_LOG_MEAN = 1.72   # exp(1.17) ~ $3.2 median before the class multiplier; sized so
+                                # annual purchases land near $10M for a ~$28M builder
 STANDARD_COST_LOG_STD  = 0.75
 # ABC by cumulative share of annual consumption value.
 ABC_A_CUM = 0.80
@@ -274,8 +275,8 @@ T1_MONTHLY_ADJ_PROB    = 0.45     # probability of a write-off adjustment in a g
 
 # T2 Adjustments as catch-all: ADJUST used for unrecorded issues, mis-receipts,
 # returns and scrap; most carry blank or generic reason codes.
-T2_ADJ_SHARE_OF_QTY    = 0.20     # share of quantity moved that flows through adjustments (15-25%)
-T2_BLANK_REASON_SHARE  = 0.68     # adjustments with blank or generic reason (60-75%)
+T2_ADJ_SHARE_OF_QTY    = 0.04     # share of quantity moved that flows through adjustments (15-25%)
+T2_BLANK_REASON_SHARE  = 0.60     # adjustments with blank or generic reason (60-75%)
 GENERIC_REASON_CODES   = ["", "ADJ", "VAR", "MISC", "COUNT"]
 SPECIFIC_REASON_CODES  = ["CYCLE", "DAMAGE", "SCRAP", "RECOUNT", "RETURN"]
 
@@ -301,11 +302,40 @@ T6_ISSUE_SHARE         = 0.015    # share of manual issues misposted (1-2%)
 
 # T7 Quantity and unit errors: order-of-magnitude and box/each keying errors,
 # concentrated on M5 items.
-T7_TXN_SHARE           = 0.007    # share of transactions with a keying error (0.5-1%)
+T7_TXN_SHARE           = 0.005    # share of transactions with a keying error (0.5-1%)
 T7_M5_WEIGHT           = 4.0      # relative over-weighting of M5 items
 
 # T8 Duplicate postings: the same transaction twice within minutes.
 T8_DUP_SHARE           = 0.003    # share of transactions posted a second time (0.2-0.4%)
+
+# ── Replenishment replay ────────────────────────────────────────────────────
+# Purchase orders are placed by replaying the ERP's own reorder points and lead
+# times against book on-hand and book on-order, so the errors in those records
+# produce their consequences: suppressed orders, late arrivals, rush buys and
+# shortages. Physical stock is tracked alongside the books.
+ORDER_COVER_DAYS        = 75      # order quantity ~ this many days of average demand
+INITIAL_STOCK_COVER     = 1.5     # opening stock as a multiple of the reorder point
+REORDER_GAP_DAYS        = 5       # no second regular order within this many days
+PARTIAL_RECEIPT_PROB    = 0.09    # share of receipts that arrive short
+MRP_MAX_LOT_MULT        = 4       # a planned order covers the net requirement, up to this many standard lots
+SHELF_FULL_COVER_DAYS   = 180     # no regular order when the visible pile already covers this many days
+FLOOR_VISUAL_MIN_DAYS   = 10      # after a surprise shortage, the floor reorders by sight at this cover
+PARTIAL_NEVER_CLOSED    = 0.85    # of short receipts, the share whose balance never arrives (T5)
+PARTIAL_RECEIVED_RANGE  = (0.6, 0.9)
+
+# The purchasing manager's compensation on the items she tracks: she orders on
+# her own (closer to actual) lead time and expedites when inbound runs late.
+BUYER_LEAD_MULT         = 1.15    # her lead-time note relative to the true actual
+BUYER_SAFETY_DAYS       = 28      # extra days of cover she keeps on tracked items
+RUSH_LEAD_FRACTION      = 0.15    # a rush order arrives in this fraction of the normal lead time (min 2 days)
+RUSH_ESCALATION_PROB    = 0.85    # share of visible stockouts on untracked items that get expedited
+RUSH_PRICE_PREMIUM      = (0.10, 0.20)
+RUSH_FREIGHT_BY_CLASS   = {       # freight charge on a rush line, by item class
+    "Mechanical": (250, 600), "Electrical": (200, 500), "Raw Material": (150, 400),
+    "Fittings": (60, 150), "Fasteners": (60, 150), "Hardware": (60, 150),
+    "Consumables": (60, 150), "Outside Service": (100, 300),
+}
+COUNT_NOISE_SD          = 0.02    # counting noise on a physical count, share of quantity
 
 # ── Transaction volume and floor conditions ─────────────────────────────────
 LOCATIONS       = ["MAIN", "FLOOR", "RECV", "CRIB"]

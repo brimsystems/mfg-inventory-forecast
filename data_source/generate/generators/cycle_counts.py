@@ -1,13 +1,19 @@
-"""Cycle counts and the annual physical inventory.
+"""Cycle counts and the annual physical inventory, as measurements of the shelf.
 
-Before remediation the shop runs one annual physical inventory per year, and the
-variance between system and counted quantity is large for items with phantom
-inventory (BOM omissions, UOM faults, chronic adjustments). During the
-remediation period a cycle-count program runs weekly, unreliable items first, and
-its variance narrows as balances are corrected.
+A count records what the ERP believed (the ledger balance on the count date,
+summed the way the ERP sums it, whatever unit each row was keyed in) against
+what was actually there (physical on-hand, with a small counting error), and
+posts the difference as a balance correction. Before remediation the shop ran
+one annual physical (reason code COUNT). During the remediation period a
+cycle-count program runs weekly, unreliable items first (reason code CYCLE).
+
+The counts are keyed in the stock unit. On a UOM-mismatch item the ledger
+balance mixes spools and feet, so the count corrects a nonsense number to a
+real one every time, which is one of the ways that error surfaces.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import timedelta
 
 import numpy as np
@@ -15,56 +21,62 @@ import pandas as pd
 
 from .. import config as C
 
+SIGN = {"RECEIPT": 1, "RETURN": 1, "ISSUE": -1, "BACKFLUSH": -1, "SCRAP": -1, "ADJUST": 1}
 
-def build_cycle_counts(item_master, item_meta, on_hand, unreliable_nums, rng):
-    live = item_master[item_master["status"] == "ACTIVE"].copy()
-    live = live[live["item_number"].isin([n for n, m in item_meta.items() if not m["dead"]])]
-    rows = []
-    seq = 0
 
-    def variance(num, base_var):
-        v = base_var
-        if num in unreliable_nums:
-            v += rng.uniform(0.10, 0.35)
-        conv = item_meta.get(num, {}).get("uom_conv", 1)
-        if conv and conv > 1:
-            v += rng.uniform(0.05, 0.20)
-        return v
+def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, rng):
+    days = sim["days"]
+    day_idx = {d.date(): i for i, d in enumerate(days)}
 
-    # Annual physical inventory each January of the history.
-    for yr in range(C.START_DATE.year, C.MODEL_SPAN_END.year + 1):
-        count_date = pd.Timestamp(year=yr, month=1, day=int(rng.integers(8, 20))).date()
-        if count_date < C.START_DATE or count_date > C.END_DATE:
-            continue
-        counted = live.sample(frac=C.CYCLE_COUNT_ANNUAL_COVERAGE, random_state=yr)
-        for r in counted.itertuples(index=False):
-            num = r.item_number
-            sysq = int(on_hand.get(num, rng.integers(0, 50)))
-            v = variance(num, C.__dict__.get("D4_VARIANCE_BASE", 0.04) if hasattr(C, "D4_VARIANCE_BASE") else 0.04)
-            cq = max(0, int(round(sysq * (1 - rng.normal(0.0, v)))))
-            seq += 1
-            rows.append({"count_id": f"CC-{seq:06d}", "item_number": num,
-                         "count_date": count_date.isoformat(), "system_qty": sysq,
-                         "counted_qty": cq, "counter_id": rng.choice(C.OFFICE_USERS),
-                         "program": "ANNUAL"})
+    # ledger balance per item through any date, as the ERP sums it
+    lg = ledger[["item_number", "txn_date", "type", "qty"]].copy()
+    lg["s"] = lg["qty"] * lg["type"].map(SIGN).fillna(0)
+    lg = lg.sort_values("txn_date")
+    per = {n: (g["txn_date"].to_numpy(), np.cumsum(g["s"].to_numpy())) for n, g in lg.groupby("item_number")}
+    posted = defaultdict(float)     # count corrections already posted, per item
 
-    # Remediation cycle counts: weekly from week 2, unreliable items first.
-    weeks = C.remediation_weeks()
-    unrel_live = [n for n in unreliable_nums if n in set(live["item_number"])]
-    rng.shuffle(unrel_live)
-    per_week = max(1, len(unrel_live) // max(1, (C.REMEDIATION_WEEKS - 1)))
-    idx = 0
+    def system_qty(num, d):
+        base = 0.0
+        if num in per:
+            dates, cum = per[num]
+            k = int(np.searchsorted(dates, d, side="right"))
+            base = float(cum[k - 1]) if k else 0.0
+        return int(round(base + posted[num]))
+
+    def weight_of(num):
+        iid = item_meta[num]["item_id"]
+        if iid in dup_map:
+            return dup_map[iid]["weights"][dup_map[iid]["records"].index(num)]
+        return 1.0
+
+    pending = [(r.date, r.item_number, int(r.counted_qty), "ANNUAL") for r in sim["counts"].itertuples(index=False)]
+
+    unrel = [n for n in unreliable_nums if n in item_meta and not item_meta[n]["dead"]]
+    rng.shuffle(unrel)
+    weeks = [w for w in C.remediation_weeks() if w[0] >= 2]
+    per_week = max(1, len(unrel) // max(1, len(weeks)))
+    i = 0
     for w, monday in weeks:
-        if w < 2:
-            continue
-        batch = unrel_live[idx: idx + per_week]; idx += per_week
+        batch = unrel[i: i + per_week]; i += per_week
         for num in batch:
-            sysq = int(on_hand.get(num, rng.integers(0, 50)))
-            # counts correct balances: post-count variance is small
-            cq = max(0, int(round(sysq * (1 - rng.normal(0.0, 0.03)))))
-            seq += 1
-            rows.append({"count_id": f"CC-{seq:06d}", "item_number": num,
-                         "count_date": (monday + timedelta(days=int(rng.integers(0, 5)))).isoformat(),
-                         "system_qty": sysq, "counted_qty": cq,
-                         "counter_id": rng.choice(C.OFFICE_USERS), "program": "CYCLE"})
-    return pd.DataFrame(rows)
+            d = monday + timedelta(days=int(rng.integers(0, 5)))
+            if d not in day_idx:
+                continue
+            phys = max(sim["physical"][item_meta[num]["item_id"]][day_idx[d]], 0.0) * weight_of(num)
+            counted = max(0, int(round(phys * (1 + rng.normal(0, C.COUNT_NOISE_SD)))))
+            pending.append((d.isoformat(), num, counted, "CYCLE"))
+
+    rows, adj = [], []
+    for seq, (d, num, counted, program) in enumerate(sorted(pending), start=1):
+        system = system_qty(num, d)
+        rows.append({"count_id": f"CC-{seq:06d}", "item_number": num, "count_date": d,
+                     "system_qty": system, "counted_qty": counted,
+                     "counter_id": rng.choice(C.OFFICE_USERS), "program": program})
+        if counted != system:
+            adj.append({"item_number": num, "date": d, "qty": counted - system,
+                        "reason": "COUNT" if program == "ANNUAL" else "CYCLE"})
+            posted[num] += counted - system
+
+    counts = pd.DataFrame(rows)
+    adjustments = pd.DataFrame(adj, columns=["item_number", "date", "qty", "reason"])
+    return counts, adjustments

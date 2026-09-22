@@ -66,3 +66,25 @@ def build_production_orders(builds, products, rng):
     left_open = local.choice(finished, size=int(len(finished) * C.T5_OPEN_JOB_SHARE), replace=False)
     df.loc[left_open, "status"] = "OPEN"
     return df
+
+
+def apply_delays(df, job_delays):
+    """Push the completion of jobs that waited on material, and record the hold.
+    A real ERP shows a shortage as a late job with a hold reason, not as an event."""
+    df = df.copy()
+    df["hold_reason"] = None
+    df["delay_days"] = 0
+    idx = {oid: i for i, oid in zip(df.index, df["order_id"])}
+    for oid, dly in job_delays.items():
+        if dly <= 0 or oid not in idx:
+            continue
+        i = idx[oid]
+        if df.at[i, "qty_completed"] <= 0 or df.at[i, "completed_date"] is None:
+            continue
+        cd = pd.to_datetime(df.at[i, "completed_date"]).date() + timedelta(days=int(dly))
+        if cd > C.END_DATE:
+            cd = C.END_DATE
+        df.at[i, "completed_date"] = cd.isoformat()
+        df.at[i, "hold_reason"] = "MATERIAL SHORTAGE"
+        df.at[i, "delay_days"] = int(dly)
+    return df
