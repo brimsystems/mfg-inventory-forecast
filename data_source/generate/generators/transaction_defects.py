@@ -70,7 +70,9 @@ def apply(item_master, plan, item_meta, dup_map, po, tx, rng):
     issue_vol = tx[tx["type"] == "issue"].groupby("item_number")["quantity"].sum()
 
     # ── T1 free-text / non-stock ─────────────────────────────────────────────
-    top = issue_vol.sort_values(ascending=False).head(int(C.T1_AFFECTED_ITEMS * 0.5)).index.tolist()
+    # Concentrate on higher-consumption items, including some of the largest, so
+    # recovering their hidden demand is a material forecast improvement.
+    top = issue_vol.sort_values(ascending=False).head(int(C.T1_AFFECTED_ITEMS * 0.6)).index.tolist()
     others = [n for n in issue_vol.index if n not in top]
     rng.shuffle(others)
     affected = set(top + others[:C.T1_AFFECTED_ITEMS - len(top)])
