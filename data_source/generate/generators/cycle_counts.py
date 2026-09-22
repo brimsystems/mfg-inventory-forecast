@@ -1,10 +1,10 @@
-"""Cycle counts, with defect D4 (phantom inventory).
+"""Cycle counts and the annual physical inventory.
 
-Counted quantity diverges from system quantity for a share of items, and the
-divergence grows with time since the last count. Items that also carry a
-unit-of-measure fault (D3) or a duplicate record (D1) are over-represented among
-the phantom items, because those are exactly the records whose on-hand the system
-cannot keep straight.
+Before remediation the shop runs one annual physical inventory per year, and the
+variance between system and counted quantity is large for items with phantom
+inventory (BOM omissions, UOM faults, chronic adjustments). During the
+remediation period a cycle-count program runs weekly, unreliable items first, and
+its variance narrows as balances are corrected.
 """
 from __future__ import annotations
 
@@ -15,54 +15,56 @@ import pandas as pd
 
 from .. import config as C
 
-COUNTERS = [f"CNT-{i:02d}" for i in range(1, 7)]
-_CADENCE_DAYS = {"A": 60, "B": 120, "C": 240}
 
-
-def build_cycle_counts(item_master, item_meta, annual_by_item, abc_by_item,
-                       dup_map, defects, rng):
-    d3_items = {n for n, m in item_meta.items() if m.get("box_size")}
-    d1_members = {n for c in dup_map.values() for n in c["records"]}
-
+def build_cycle_counts(item_master, item_meta, on_hand, unreliable_nums, rng):
+    live = item_master[item_master["status"] == "ACTIVE"].copy()
+    live = live[live["item_number"].isin([n for n, m in item_meta.items() if not m["dead"]])]
     rows = []
     seq = 0
-    for r in item_master.itertuples(index=False):
-        num = r.item_number
-        meta = item_meta[num]
-        iid = meta["item_id"]
-        if rng.random() > C.CYCLE_COUNT_ANNUAL_COVERAGE:
+
+    def variance(num, base_var):
+        v = base_var
+        if num in unreliable_nums:
+            v += rng.uniform(0.10, 0.35)
+        conv = item_meta.get(num, {}).get("uom_conv", 1)
+        if conv and conv > 1:
+            v += rng.uniform(0.05, 0.20)
+        return v
+
+    # Annual physical inventory each January of the history.
+    for yr in range(C.START_DATE.year, C.MODEL_SPAN_END.year + 1):
+        count_date = pd.Timestamp(year=yr, month=1, day=int(rng.integers(8, 20))).date()
+        if count_date < C.START_DATE or count_date > C.END_DATE:
             continue
-        abc = abc_by_item.get(iid, "C")
-        weight = dict(zip(dup_map[iid]["records"], dup_map[iid]["weights"]))[num] if iid in dup_map else 1.0
-        avg_month = max(0.5, annual_by_item[iid] / 12.0 * weight)
-
-        # phantom flag, biased toward UOM and duplicate records
-        p = 0.08 + (0.55 if num in d3_items else 0.0) + (0.35 if num in d1_members else 0.0)
-        phantom = rng.random() < min(0.95, p)
-
-        cadence = _CADENCE_DAYS[abc]
-        d = C.START_DATE + timedelta(days=int(rng.integers(0, cadence)))
-        last = C.START_DATE
-        while d <= C.END_DATE:
-            months_since = (d - last).days / 30.0
-            system_qty = max(0, int(round(avg_month * rng.uniform(0.5, 2.5))))
-            if num in d3_items:
-                system_qty = int(system_qty * rng.uniform(3, 8))    # box/each inflation
-            sd = C.D4_VARIANCE_BASE + C.D4_VARIANCE_PER_MONTH * months_since
-            if phantom:
-                gap = abs(rng.normal(0, sd * 2.5))
-                counted = max(0, int(round(system_qty * (1 - gap))))
-            else:
-                counted = max(0, int(round(system_qty * (1 + rng.normal(0, sd * 0.4)))))
+        counted = live.sample(frac=C.CYCLE_COUNT_ANNUAL_COVERAGE, random_state=yr)
+        for r in counted.itertuples(index=False):
+            num = r.item_number
+            sysq = int(on_hand.get(num, rng.integers(0, 50)))
+            v = variance(num, C.__dict__.get("D4_VARIANCE_BASE", 0.04) if hasattr(C, "D4_VARIANCE_BASE") else 0.04)
+            cq = max(0, int(round(sysq * (1 - rng.normal(0.0, v)))))
             seq += 1
-            rows.append({
-                "count_id":        f"CC-{seq:06d}",
-                "item_number":     num,
-                "count_date":      d.isoformat(),
-                "system_quantity": system_qty,
-                "counted_quantity":counted,
-                "counter_id":      rng.choice(COUNTERS),
-            })
-            last = d
-            d += timedelta(days=int(cadence * rng.uniform(0.8, 1.3)))
+            rows.append({"count_id": f"CC-{seq:06d}", "item_number": num,
+                         "count_date": count_date.isoformat(), "system_qty": sysq,
+                         "counted_qty": cq, "counter_id": rng.choice(C.OFFICE_USERS),
+                         "program": "ANNUAL"})
+
+    # Remediation cycle counts: weekly from week 2, unreliable items first.
+    weeks = C.remediation_weeks()
+    unrel_live = [n for n in unreliable_nums if n in set(live["item_number"])]
+    rng.shuffle(unrel_live)
+    per_week = max(1, len(unrel_live) // max(1, (C.REMEDIATION_WEEKS - 1)))
+    idx = 0
+    for w, monday in weeks:
+        if w < 2:
+            continue
+        batch = unrel_live[idx: idx + per_week]; idx += per_week
+        for num in batch:
+            sysq = int(on_hand.get(num, rng.integers(0, 50)))
+            # counts correct balances: post-count variance is small
+            cq = max(0, int(round(sysq * (1 - rng.normal(0.0, 0.03)))))
+            seq += 1
+            rows.append({"count_id": f"CC-{seq:06d}", "item_number": num,
+                         "count_date": (monday + timedelta(days=int(rng.integers(0, 5)))).isoformat(),
+                         "system_qty": sysq, "counted_qty": cq,
+                         "counter_id": rng.choice(C.OFFICE_USERS), "program": "CYCLE"})
     return pd.DataFrame(rows)

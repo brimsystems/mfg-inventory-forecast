@@ -29,8 +29,8 @@ def _assign_by_share(n: int, shares: dict, rng) -> list:
 
 
 def build_item_plan(rng) -> pd.DataFrame:
-    """Return one row per canonical item with all latent demand attributes."""
-    n = C.N_ITEMS
+    """Return one row per canonical live item with all latent demand attributes."""
+    n = C.N_LIVE_ITEMS
     item_class = _assign_by_share(n, C.ITEM_CLASS_SHARES, rng)
     segment = _assign_by_share(n, C.SEGMENT_MIX, rng)
 
@@ -47,7 +47,10 @@ def build_item_plan(rng) -> pd.DataFrame:
             family.append(None)
             material.append(None)
 
-    unit_cost = np.exp(rng.normal(C.STANDARD_COST_LOG_MEAN, C.STANDARD_COST_LOG_STD, n)).round(2)
+    # Unit cost scales by class: motors, gear reducers and drives are the
+    # expensive buys; hardware and consumables are cheap and high-volume.
+    class_mult = np.array([C.CLASS_COST_MULT[c] for c in item_class])
+    unit_cost = (np.exp(rng.normal(C.STANDARD_COST_LOG_MEAN, C.STANDARD_COST_LOG_STD, n)) * class_mult).round(2)
     unit_cost = np.clip(unit_cost, 0.05, None)
     base_level = np.exp(rng.normal(C.BASE_DEMAND_LOG_MEAN, C.BASE_DEMAND_LOG_STD, n))
 

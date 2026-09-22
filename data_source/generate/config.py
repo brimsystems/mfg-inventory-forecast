@@ -1,10 +1,19 @@
 """Central configuration for the inventory-forecasting and ERP data-quality platform.
 
 Every generative choice that determines whether the case works lives here as a
-named constant: the observation window, the item universe, the demand-segment
-mix and its parameters, the ABC value distribution, and the scale of each
-planted data-quality defect. The generators read this module and nothing else
-for their calibration, so the whole simulation can be tuned from one place.
+named constant: the observation window, the item universe, the multi-level bill
+of materials, the demand-segment mix and its parameters, the ABC value
+distribution, the scale of each planted data-quality defect, and the ten-week
+remediation period. The generators read this module and nothing else for their
+calibration, so the whole build can be tuned from one place.
+
+The company is an industrial equipment builder: conveyors and material-handling
+modules, industrial mixers and agitators, and custom enclosures and frames.
+Fabrication of frames and weldments is in house; machined parts, motors,
+gearboxes, bearings, controls and hardware are purchased. Products carry
+multi-level bills of materials (product -> subassembly -> component), and
+consumption is recorded by backflush at each level, by service-parts issues, and
+by manual issues.
 """
 from datetime import date, timedelta
 from pathlib import Path
@@ -19,65 +28,116 @@ RANDOM_SEED = 42
 SAMPLE_SIZE = 200
 
 # ── Observation window ──────────────────────────────────────────────────────
-# A modeled span used for training, validation and the rolling-origin backtest,
-# followed by a three-month forward window that stands in as the current period.
-# The reorder queue is generated as of the final day of the forward window.
-START_DATE      = date(2023, 4, 1)
-MODEL_SPAN_END  = date(2026, 5, 31)   # last month included in the backtest origins
-FORWARD_START   = date(2026, 6, 1)
-END_DATE        = date(2026, 8, 31)   # last day of generated history
-AS_OF_DATE      = date(2026, 8, 31)   # "today" for the reorder queue and on-hand
+# A 36-month history used for training, validation and the rolling-origin
+# backtest, followed by a three-month forward window that stands in as the
+# current period. The reorder queue is generated as of the final day of the
+# forward window. The remediation period is the final ten weeks of the history.
+START_DATE      = date(2023, 1, 1)
+MODEL_SPAN_END  = date(2025, 12, 31)   # last month of history; end of remediation
+FORWARD_START   = date(2026, 1, 1)
+END_DATE        = date(2026, 3, 31)     # last day of generated history
+AS_OF_DATE      = date(2026, 3, 31)     # "today" for the reorder queue and on-hand
+
+# The engagement: the final ten weeks of the history window.
+REMEDIATION_WEEKS = 10
+REMEDIATION_END   = MODEL_SPAN_END
+REMEDIATION_START = REMEDIATION_END - timedelta(weeks=REMEDIATION_WEEKS)  # ~2025-10-22
 
 # ── Source system → output subdirectory ─────────────────────────────────────
-# The five datasets stand in for the modules of a single ERP and its bolt-on
-# inventory and purchasing records.
+# The nine datasets stand in for the modules of a single ERP, its bolt-on
+# inventory and purchasing records, and the purchasing manager's spreadsheet.
 TABLE_SYSTEM_MAP = {
     "item_master":            "erp",
-    "inventory_transactions": "erp",
+    "supplier_master":        "erp",
+    "bill_of_materials":      "erp",
+    "production_orders":      "erp",
+    "service_orders":         "erp",
     "purchase_orders":        "erp",
-    "suppliers":              "erp",
+    "inventory_transactions": "erp",
     "cycle_counts":           "wms",
+    "buyer_spreadsheet":      "purchasing",
 }
 
 # ── Item universe ───────────────────────────────────────────────────────────
-N_ITEMS = 800
+# Live canonical items carry demand and drive the case. Dead records (defect M1)
+# and duplicate members (defect M4) are added on top to reach a ~2,400-record
+# master of which ~58% is live before remediation.
+N_LIVE_ITEMS = 1300         # canonical live purchased items (one row per physical item)
+N_DEAD_ITEMS = 980          # inactive records never deactivated (M1)
 
-# Purchased-item classes and their share of the catalog. Fasteners and hardware
-# are the high-count, high-transaction classes where duplicate records and
-# unit-of-measure problems concentrate in practice.
+# Purchased-item classes and their share of the LIVE catalog. Hardware,
+# fasteners, fittings, bearings and electrical are the high-count classes where
+# duplicate records, unit-of-measure problems and BOM omissions concentrate.
 ITEM_CLASS_SHARES = {
-    "Bar Stock":       0.17,
-    "Sheet":           0.11,
-    "Fasteners":       0.22,
-    "Hardware":        0.14,
-    "Tooling":         0.15,
-    "Consumables":     0.13,
-    "Outside Service": 0.08,
+    "Raw Material":    0.14,   # structural steel, tube, plate, sheet
+    "Mechanical":      0.20,   # motors, gear reducers, bearings, sprockets, belts, rollers
+    "Fittings":        0.08,   # hydraulic and pneumatic fittings
+    "Electrical":      0.16,   # drives, sensors, contactors, enclosures, wire, cable
+    "Fasteners":       0.16,
+    "Hardware":        0.12,
+    "Consumables":     0.08,   # weld wire, abrasives, paint, powder
+    "Outside Service": 0.06,   # plating, powder coat, heat treat
 }
 
-# Material grades carried for the metal classes. Grades within a family are
+# Relative unit-cost scale by class. Motors, gear reducers and drives are the
+# expensive, low-line-count buys; hardware and consumables are cheap and bought
+# in long multi-line orders. This shapes the spend and consumption concentration.
+CLASS_COST_MULT = {
+    "Raw Material":    2.0,
+    "Mechanical":      6.0,
+    "Fittings":        1.1,
+    "Electrical":      4.0,
+    "Fasteners":       0.25,
+    "Hardware":        0.5,
+    "Consumables":     0.8,
+    "Outside Service": 1.6,
+}
+
+# Classes whose purchase orders carry many lines (distributor/hardware buys)
+# versus classes bought one to a few lines at a time (motors, drives, services).
+MANY_LINE_CLASSES = ["Fasteners", "Hardware", "Consumables", "Fittings"]
+FEW_LINE_CLASSES  = ["Mechanical", "Electrical", "Outside Service"]
+
+# Material grades carried for the raw-material class. Grades within a family are
 # substitutable, so their demand shares a latent family factor (see below).
 MATERIAL_FAMILIES = {
-    "Steel":    ["1018 CRS", "1045 CRS", "4140 HR", "A36 Plate"],
-    "Stainless":["304 SS", "316 SS", "17-4 PH"],
-    "Aluminum": ["6061-T6", "7075-T6", "2024-T3"],
-    "Titanium": ["Ti-6Al-4V"],
+    "Structural Steel": ["A36 Angle", "A500 Tube", "A36 Plate", "A36 Channel"],
+    "Stainless":        ["304 Sheet", "316 Sheet", "304 Tube"],
+    "Aluminum":         ["6061 Extrusion", "5052 Sheet", "6063 Tube"],
 }
-METAL_CLASSES = ["Bar Stock", "Sheet"]
+METAL_CLASSES = ["Raw Material"]
+
+# ── Bill of materials ───────────────────────────────────────────────────────
+# Standard products, configurable, built from subassemblies and purchased
+# components. Consumption is recorded by backflush through this structure.
+N_PRODUCTS       = 80          # standard catalog products (conveyors, mixers, enclosures)
+N_SUBASSEMBLIES  = 140         # shared subassemblies
+PRODUCT_FAMILIES = ["Conveyor", "Mixer", "Enclosure"]
+SUBASSY_PER_PRODUCT_RANGE   = (1, 3)    # subassemblies per product
+COMPONENTS_PER_PRODUCT_RANGE= (2, 5)    # direct purchased components per product
+COMPONENTS_PER_SUBASSY_RANGE= (2, 5)    # purchased components per subassembly
+BOM_QTY_PER_RANGE           = (1, 8)    # qty of a component per parent
+
+# Backflush from production is the dominant channel for the high-runner
+# components on BOMs; service parts and manual pulls are smaller item-level
+# channels. Lumpy and intermittent items are mostly service/manual (kept off the
+# BOM) so the item-level segment mix survives the product-driven smoothing.
+BOM_COMPONENT_SEGMENTS = ["smooth", "erratic"]   # segments eligible to sit on BOMs
+SERVICE_ITEM_SHARE = 0.20      # share of items that also carry a service channel
+SERVICE_SCALE      = 0.25      # service demand as a fraction of the item's engine demand
 
 # ── Demand segments ─────────────────────────────────────────────────────────
 # The mix is chosen so the case can report a genuine overall lift while still
 # showing a segment (intermittent) where a simple method is the right call.
 SEGMENTS = ["smooth", "erratic", "lumpy", "intermittent"]
 # Target classified mix (spec) is 25 / 30 / 25 / 20. The generation shares below
-# are offset from that target to cancel the classifier's leakage (a minority of
-# erratic items read as smooth, a few lumpy items as intermittent), so the
+# are offset from that target to cancel the classifier's leakage, so the
 # classified distribution lands on target. See the checkpoint report.
 SEGMENT_MIX = {
-    "smooth":       0.22,
-    "erratic":      0.34,
-    "lumpy":        0.27,
-    "intermittent": 0.17,
+    "smooth":       0.17,
+    "erratic":      0.40,
+    "lumpy":        0.29,
+    "intermittent": 0.14,
 }
 
 # Per-segment demand process parameters. Monthly demand is built as a base level
@@ -98,8 +158,8 @@ SEGMENT_PARAMS = {
 
 # Base monthly demand (units) is lognormal; a heavy right tail creates the ABC
 # value concentration once multiplied by unit cost.
-BASE_DEMAND_LOG_MEAN = 3.2     # exp(3.2) ~ 25 units/month median
-BASE_DEMAND_LOG_STD  = 1.05
+BASE_DEMAND_LOG_MEAN = 2.5     # exp(2.5) ~ 12 units/month median (item-level channel)
+BASE_DEMAND_LOG_STD  = 0.70
 
 # Lumpy, calendar-driven items: a subset of repeat customers release on a
 # quarterly schedule, so demand concentrates in one month of each quarter with a
@@ -118,8 +178,8 @@ SEASONAL_AMP_RANGE    = (0.15, 0.40)
 FAMILY_FACTOR_WEIGHT  = 0.35
 
 # ── Cost, ABC and current (stale) inventory policy ──────────────────────────
-STANDARD_COST_LOG_MEAN = 1.6    # exp(1.6) ~ $5 median unit cost
-STANDARD_COST_LOG_STD  = 1.15
+STANDARD_COST_LOG_MEAN = 1.6    # exp(1.6) ~ $5 median before the class multiplier
+STANDARD_COST_LOG_STD  = 0.75
 # ABC by cumulative share of annual consumption value.
 ABC_A_CUM = 0.80
 ABC_B_CUM = 0.95
@@ -132,97 +192,134 @@ SERVICE_LEVEL_BY_ABC = {"A": 0.98, "B": 0.95, "C": 0.90}
 CURRENT_POLICY_ERROR_STD = 0.35
 
 # ── Supplier master ─────────────────────────────────────────────────────────
-N_SUPPLIERS      = 24
-SUPPLIER_TYPES   = ["Material", "Fasteners", "Tooling", "Outside Service", "Distributor"]
+N_SUPPLIERS      = 40
+SUPPLIER_TYPES   = ["Material", "Mechanical", "Electrical", "Fasteners",
+                    "Distributor", "Outside Service"]
 PAYMENT_TERMS    = ["Net 30", "Net 45", "Net 60", "2/10 Net 30"]
-BASE_LEAD_TIME_RANGE = (7, 75)    # master lead-time days at item creation (spans 1-3 month horizons)
+BASE_LEAD_TIME_RANGE = (7, 75)    # master lead-time days at item creation (1-3 month horizons)
 
-# ── Planted defects ─────────────────────────────────────────────────────────
-# Each scale is chosen so the defect is material to the outcome, not cosmetic.
+# Map each item class to the supplier type that serves it.
+CLASS_SUPPLIER_TYPE = {
+    "Raw Material":    "Material",
+    "Mechanical":      "Mechanical",
+    "Fittings":        "Distributor",
+    "Electrical":      "Electrical",
+    "Fasteners":       "Fasteners",
+    "Hardware":        "Fasteners",
+    "Consumables":     "Distributor",
+    "Outside Service": "Outside Service",
+}
 
-# D1 Duplicate item records. Concentrated in higher-consumption hardware and
-# material whose combined demand is forecastable but whose split halves are not.
-D1_N_CLUSTERS          = 35
-D1_CLUSTER_CLASSES     = ["Fasteners", "Hardware", "Bar Stock"]
-D1_MEMBERS_RANGE       = (2, 3)   # records per duplicate cluster
-D1_SPLIT_MIN_SHARE     = 0.30     # each half gets at least this share of demand
+# ══════════════════════════════════════════════════════════════════════════
+# Planted defects. Two tiers, master-level (M1-M7) and transaction-level
+# (T1-T8), generated as artifacts of how people work. Every scale is chosen so
+# the defect is material to the outcome, not cosmetic, and is parameterized so
+# it can be tuned at the validation checkpoint.
+# ══════════════════════════════════════════════════════════════════════════
 
-# D2 Stale lead times. One supplier's true lead time drifts upward over 18
-# months while every master_lead_time_days stays at its creation value.
-D2_N_ITEMS             = 120
-D2_DRIFT_START_DAYS    = 12
-D2_DRIFT_END_DAYS      = 27
-D2_DRIFT_MONTHS        = 18       # drift plays out over the final 18 months
+# ── Master-level ────────────────────────────────────────────────────────────
+# M1 Dead records never deactivated: active items with no movement in 24+ months.
+M1_DEAD_SHARE          = 0.39     # dead records as a share of the whole master (35-45%)
+M1_KEEP_REORDER_SHARE  = 0.30     # share of dead items that still carry a reorder point
+M1_STRAY_TXN_SHARE     = 0.03     # share of dead items with one stray recent transaction
+M1_RESCUE_SHARE        = 0.10     # dead items rescued in remediation (seasonal / safety-critical)
 
-# D3 Unit-of-measure inconsistency: purchased by the box, issued by the each,
-# with no conversion factor recorded, inflating apparent demand and on-hand.
-D3_N_ITEMS             = 40
-D3_BOX_SIZES           = [25, 50, 100, 250]
+# M2 Stale parameters: every live item's lead time, reorder point, safety stock
+# and standard cost date from go-live; actual lead times have drifted, upward for
+# most suppliers and sharply for one.
+M2_DRIFT_SHARE         = 0.26     # live items drifted enough to matter (>7 days subset)
+M2_GENERAL_DRIFT_DAYS  = (2, 9)   # general upward drift range (days) over the history
+M2_DRIFT_SUPPLIER_MONTHS = 18     # the sharply-drifting supplier ramps over the final 18 months
+M2_DRIFT_SUPPLIER_START  = 14     # its lead time early in the history (days)
+M2_DRIFT_SUPPLIER_RATIO  = (1.8, 2.4)  # end-of-history actual / master ratio
 
-# D4 Phantom inventory: cycle counts diverge from system quantity, worse for
-# items with UOM or duplicate problems, and growing with time since last count.
-D4_PHANTOM_SHARE       = 0.15
-D4_VARIANCE_BASE       = 0.04     # baseline count variance
-D4_VARIANCE_PER_MONTH  = 0.015    # added variance per month since last count
+# M3 BOM omissions: hardware, fittings, wire, weld consumables and finishing
+# materials missing from subassembly and product BOMs, so backflush never
+# consumes them; omissions compound through levels.
+M3_OMISSION_CLASSES    = ["Hardware", "Fasteners", "Fittings", "Consumables", "Outside Service"]
+M3_ITEM_SHARE          = 0.24     # share of items in those classes omitted somewhere (25-35%)
+M3_PRODUCT_SHARE       = 0.26     # share of products directly targeted for omission
 
-# D5 Inconsistent supplier records: one real vendor split across three spellings
-# and two IDs, fragmenting spend and lead-time history.
-D5_SPELLING_VARIANTS   = 3
-D5_SECOND_ID_SHARE     = 0.45     # share of the vendor's POs booked to the 2nd id
+# M4 Duplicate item records: same physical item under two or more numbers.
+M4_LIVE_SHARE          = 0.065    # share of live items in a duplicate cluster (5-8%)
+M4_CLUSTER_CLASSES     = ["Hardware", "Fasteners", "Fittings", "Mechanical", "Electrical"]
+M4_MEMBERS_RANGE       = (2, 4)   # records per duplicate cluster
+M4_SPLIT_MIN_SHARE     = 0.30     # each member gets at least this share of demand
 
-# D6 Missing fields: blank reorder point, missing standard cost, or null primary
-# supplier on a share of active items.
-D6_MISSING_SHARE       = 0.08
+# M5 UOM mismatch: purchase UOM differs from stock UOM with no conversion.
+M5_N_ITEMS             = 48       # items with a box/each, spool/ft, length/ft or gal/oz mismatch
+M5_UOM_PAIRS           = {        # (purchase_uom, stock_uom, conversion) by class
+    "Hardware":   [("BOX", "EA", 100), ("BOX", "EA", 50), ("BOX", "EA", 25)],
+    "Fasteners":  [("BOX", "EA", 100), ("BOX", "EA", 250)],
+    "Electrical": [("SPOOL", "FT", 500), ("SPOOL", "FT", 1000)],
+    "Raw Material":[("LENGTH", "FT", 20), ("LENGTH", "FT", 24)],
+    "Consumables":[("GAL", "OZ", 128)],
+}
 
-# ── Transaction volume ──────────────────────────────────────────────────────
-# Issues are the demand signal; receipts follow purchase orders; adjustments and
-# returns are the small remainder that make the ledger read like a real one.
-ADJUSTMENT_RATE = 0.02    # adjustments as a share of issue lines
-RETURN_RATE     = 0.015   # returns as a share of issue lines
-LOCATIONS       = ["MAIN", "FLOOR", "CRIB"]
+# M6 Supplier fragmentation: three real suppliers under multiple names and IDs.
+M6_FRAGMENTED_SUPPLIERS = 3       # real vendors split into...
+M6_TOTAL_RECORDS        = 7       # ...this many supplier records
 
-# Cycle counting covers part of the catalog each period (an ABC-weighted cadence).
-CYCLE_COUNT_ANNUAL_COVERAGE = 0.85   # share of items counted at least once a year
+# M7 Missing and placeholder fields: blank cost, supplier or reorder point;
+# item_class = MISC; descriptions in mixed conventions.
+M7_BLANK_SHARE         = 0.12     # live items with at least one blocking blank (10-15%)
+M7_MISC_SHARE          = 0.12     # live items with item_class = MISC (10-14%)
 
-# ── Transaction-level defects (addendum T1-T7) ──────────────────────────────
-# These are created by people keying transactions day to day. They hide in the
-# ledger and purchase orders and each needs its own detection method. Rates are
-# parameterized so they can be tuned at the validation checkpoint. The master
-# defects D1-D6 above are unchanged.
+# ── Transaction-level ───────────────────────────────────────────────────────
+# T1 Unrecorded consumption: consequence of M3 plus incomplete manual issues and
+# unrecorded service-parts pulls; material leaves with no record, and chronic
+# downward adjustments follow the annual count.
+T1_UNRECORDED_SHARE    = 0.30     # share of an affected item's true usage that escapes
+T1_MONTHLY_ADJ_PROB    = 0.45     # probability of a write-off adjustment in a given month
 
-# T1 Free-text / non-stock lines. Consumption for affected items is diverted to
-# generic item codes with a typed description, so demand is understated until the
-# free text is attributed back. A share of the free-text lines are genuine
-# one-offs that must NOT be attributed (held back as true negatives).
+# T2 Adjustments as catch-all: ADJUST used for unrecorded issues, mis-receipts,
+# returns and scrap; most carry blank or generic reason codes.
+T2_ADJ_SHARE_OF_QTY    = 0.20     # share of quantity moved that flows through adjustments (15-25%)
+T2_BLANK_REASON_SHARE  = 0.68     # adjustments with blank or generic reason (60-75%)
+GENERIC_REASON_CODES   = ["", "ADJ", "VAR", "MISC", "COUNT"]
+SPECIFIC_REASON_CODES  = ["CYCLE", "DAMAGE", "SCRAP", "RECOUNT", "RETURN"]
+
+# T3 Free-text and non-stock PO lines: generic codes with typed descriptions,
+# some corresponding to stocked items (the defect), some genuine ETO buys.
 GENERIC_ITEM_CODES     = ["NONSTOCK", "MISC", "SHOPSUPPLY"]
-T1_AFFECTED_ITEMS      = 70       # real items whose demand is partly diverted
-T1_DIVERTED_SHARE      = 0.14     # share of an affected item's issues diverted to free text
-T1_ONEOFF_RATIO        = 0.55     # genuine one-off free-text lines as a multiple of diverted lines
+T3_FREETEXT_SHARE      = 0.12     # share of PO lines that are free-text (10-14%)
+T3_STOCKED_RATIO       = 0.55     # share of free-text lines matching a stocked item (the defect)
 
-# T2 Quantity keying errors: order-of-magnitude (x10) and box-as-each (xN) errors,
-# weighted toward the D3 unit-of-measure items.
-T2_TXN_SHARE           = 0.008    # share of issue/receipt lines with a keying error
-T2_D3_WEIGHT           = 4.0      # relative over-weighting of D3 items
+# T4 Batched and backdated postings: receipts cluster on Mondays and month-end;
+# job completions reported at week-end; posting lag 1-5 days.
+T4_BATCH_SHARE         = 0.58     # share of receipts displaced (50-65%)
+T4_MAX_DISPLACEMENT    = 5        # days
 
-# T3 Issues posted to the wrong item, within the same family or duplicate cluster.
-T3_ISSUE_SHARE         = 0.015    # share of issue lines misposted to a similar item
+# T5 Open documents never closed: partial receipts never closed; completed jobs
+# left open.
+T5_OPEN_PO_SHARE       = 0.06     # PO lines older than 90 days left open (5-8%)
+T5_OPEN_JOB_SHARE      = 0.08     # completed jobs left open (6-10%)
 
-# T4 Unrecorded consumption written off through negative adjustments (chronic).
-T4_ITEMS               = 25       # items with a persistent negative adjustment pattern
-T4_MONTHLY_ADJ_PROB    = 0.55     # probability of a write-off adjustment in a given month
-T4_UNRECORDED_SHARE    = 0.30     # share of the item's true usage that escapes as adjustments
+# T6 Wrong references: issues against a similar item or wrong job, often within
+# duplicate clusters or the same material family.
+T6_ISSUE_SHARE         = 0.015    # share of manual issues misposted (1-2%)
 
-# T5 Receipt-date batching: postings cluster on Mondays and month-end, displaced
-# 1-4 days from actual arrival, biasing computed lead times upward.
-T5_BATCH_SHARE         = 0.30     # share of receipts displaced
-T5_MAX_DISPLACEMENT    = 4        # days
+# T7 Quantity and unit errors: order-of-magnitude and box/each keying errors,
+# concentrated on M5 items.
+T7_TXN_SHARE           = 0.007    # share of transactions with a keying error (0.5-1%)
+T7_M5_WEIGHT           = 4.0      # relative over-weighting of M5 items
 
-# T6 Purchase orders never closed: partial receipt, balance never received, line
-# left open, inflating on-order quantity (phantom inbound).
-T6_OPEN_SHARE          = 0.05     # share of PO lines older than 90 days left open
+# T8 Duplicate postings: the same transaction twice within minutes.
+T8_DUP_SHARE           = 0.003    # share of transactions posted a second time (0.2-0.4%)
 
-# T7 Duplicate transaction postings: the same line posted twice.
-T7_DUP_SHARE           = 0.003    # share of transactions posted a second time
+# ── Transaction volume and floor conditions ─────────────────────────────────
+LOCATIONS       = ["MAIN", "FLOOR", "RECV", "CRIB"]
+SHARED_LOGINS   = ["ASSY1", "FAB1", "RECV"]     # shared floor / receiving logins
+OFFICE_USERS    = ["jbuyer", "kbuyer", "pmgr", "scoord", "recvclerk"]
+SHARED_LOGIN_SHARE = 0.78        # floor and receiving transactions under shared logins (70-85%)
+
+# The purchasing manager's spreadsheet: the line-stopping components she tracks.
+BUYER_SPREADSHEET_ITEMS   = 120
+BUYER_DISAGREE_SHARE      = 0.70   # items where on-hand disagrees with the ERP (60-80%)
+BUYER_RIGHT_SHARE         = 0.82   # disagreements where the spreadsheet is closer to truth (75-90%)
+
+# Cycle counting: none before remediation; an annual physical inventory each year.
+CYCLE_COUNT_ANNUAL_COVERAGE = 0.85
 
 
 def month_starts(start: date = START_DATE, end: date = END_DATE):
@@ -244,3 +341,14 @@ def working_days(start: date = START_DATE, end: date = END_DATE):
             days.append(d)
         d += timedelta(days=1)
     return days
+
+
+def remediation_weeks():
+    """Return the (week_number, monday_date) pairs of the remediation period."""
+    out = []
+    # Start on the Monday on or before REMEDIATION_START.
+    monday = REMEDIATION_START - timedelta(days=REMEDIATION_START.weekday())
+    for w in range(1, REMEDIATION_WEEKS + 1):
+        out.append((w, monday))
+        monday += timedelta(weeks=1)
+    return out

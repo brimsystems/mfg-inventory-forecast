@@ -1,10 +1,10 @@
-"""Supplier master, including defect D5 (inconsistent supplier records).
+"""Supplier master, including defect M6 (supplier fragmentation).
 
-One real vendor is fragmented across three name spellings and two supplier IDs,
-so its spend and lead-time history split apart in every downstream join. The
-generator returns both the recorded supplier table and the ground-truth map from
-each recorded id to its canonical vendor, which the supplier crosswalk is scored
-against.
+Three real vendors are each split across multiple names and IDs (seven records
+in all), so their spend and lead-time history fragment in every downstream join.
+The generator returns the recorded supplier table, the ground-truth map from each
+recorded id to its canonical vendor, a fragmentation summary, and the id of the
+supplier whose actual lead time drifts sharply over the history (defect M2).
 """
 from __future__ import annotations
 
@@ -16,29 +16,22 @@ from .. import config as C
 
 
 def _spelling_variants(name: str) -> list:
-    """Three plausible data-entry spellings of the same company name."""
     base = name.replace(",", "")
     stem = base.split()[0]
-    return [
-        base,                                  # "Atlas Metals Inc"
-        base.upper(),                          # "ATLAS METALS INC"
-        f"{stem} Metals",                      # "Atlas Metals" (truncated)
-    ]
+    return [base, base.upper(), f"{stem} Inc", f"{stem} Co", f"{stem.upper()} MFG"]
 
 
 def build_suppliers(rng: np.random.Generator):
     fake = Faker()
     Faker.seed(C.RANDOM_SEED)
 
-    rows = []
-    truth = {}   # recorded supplier_id -> canonical vendor key
+    rows, truth = [], {}
     for i in range(1, C.N_SUPPLIERS + 1):
         sid = f"SUP-{i:03d}"
-        name = fake.company()
-        stype = rng.choice(C.SUPPLIER_TYPES)
+        stype = C.SUPPLIER_TYPES[i % len(C.SUPPLIER_TYPES)]
         rows.append({
             "supplier_id":   sid,
-            "supplier_name": name,
+            "supplier_name": fake.company(),
             "supplier_type": stype,
             "payment_terms": rng.choice(C.PAYMENT_TERMS),
             "status":        "ACTIVE",
@@ -47,27 +40,38 @@ def build_suppliers(rng: np.random.Generator):
 
     suppliers = pd.DataFrame(rows)
 
-    # D5: pick one active Material vendor and fragment it across 3 spellings /
-    # 2 ids. The primary id keeps its row; a second id and a duplicate-id row
-    # carry the alternate spellings.
-    material_ids = suppliers.loc[suppliers["supplier_type"] == "Material", "supplier_id"]
-    primary = material_ids.iloc[0] if len(material_ids) else suppliers["supplier_id"].iloc[0]
-    canonical_name = suppliers.loc[suppliers["supplier_id"] == primary, "supplier_name"].iloc[0]
-    spellings = _spelling_variants(canonical_name)
+    # ── M6: fragment three real vendors across seven records ────────────────
+    # Vendor A -> 3 records, vendors B and C -> 2 records each.
+    frag_plan = [3, 2, 2]
+    base_ids = list(suppliers["supplier_id"])
+    rng.shuffle(base_ids)
+    next_id = C.N_SUPPLIERS + 1
+    alias_ids = {}          # primary_id -> [alias ids]
+    frag_records = []
+    used = 0
+    for n_records in frag_plan:
+        primary = base_ids[used]; used += 1
+        canonical_name = suppliers.loc[suppliers["supplier_id"] == primary, "supplier_name"].iloc[0]
+        stype = suppliers.loc[suppliers["supplier_id"] == primary, "supplier_type"].iloc[0]
+        spellings = _spelling_variants(canonical_name)
+        suppliers.loc[suppliers["supplier_id"] == primary, "supplier_name"] = spellings[0]
+        aliases = []
+        for k in range(1, n_records):
+            aid = f"SUP-{next_id:03d}"; next_id += 1
+            suppliers = pd.concat([suppliers, pd.DataFrame([{
+                "supplier_id": aid, "supplier_name": spellings[k],
+                "supplier_type": stype, "payment_terms": rng.choice(C.PAYMENT_TERMS),
+                "status": "ACTIVE"}])], ignore_index=True)
+            truth[aid] = primary
+            aliases.append(aid)
+        alias_ids[primary] = aliases
+        frag_records.append({"canonical": primary, "aliases": aliases, "spellings": spellings[:n_records]})
 
-    second_id = f"SUP-{C.N_SUPPLIERS + 1:03d}"
-    suppliers.loc[suppliers["supplier_id"] == primary, "supplier_name"] = spellings[0]
-    extra = pd.DataFrame([
-        {"supplier_id": second_id, "supplier_name": spellings[1],
-         "supplier_type": "Material", "payment_terms": "Net 30", "status": "ACTIVE"},
-        {"supplier_id": second_id, "supplier_name": spellings[2],
-         "supplier_type": "Material", "payment_terms": "Net 45", "status": "ACTIVE"},
-    ])
-    suppliers = pd.concat([suppliers, extra], ignore_index=True)
+    sup_frag = {"alias_ids": alias_ids, "records": frag_records,
+                "fragmented_primaries": list(alias_ids)}
 
-    vendor_key = primary                       # canonical identity for the vendor
-    truth[primary] = vendor_key
-    truth[second_id] = vendor_key
+    # ── M2 sharp-drift supplier: a Mechanical vendor (motors, gearboxes) ─────
+    mech = suppliers.loc[suppliers["supplier_type"] == "Mechanical", "supplier_id"]
+    drift_supplier_id = mech.iloc[0] if len(mech) else suppliers["supplier_id"].iloc[0]
 
-    d5 = {"canonical": vendor_key, "ids": [primary, second_id], "spellings": spellings}
-    return suppliers, truth, d5
+    return suppliers, truth, sup_frag, drift_supplier_id

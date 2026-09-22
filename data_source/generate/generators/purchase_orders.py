@@ -1,11 +1,17 @@
-"""Purchase orders, with defect D2 (stale lead times) and the purchasing side of
-D5 (fragmented supplier) and D3 (box vs each).
+"""Purchase orders: multi-line replenishment orders grouped by supplier, with the
+purchasing-side defects.
 
-Replenishment orders are placed as consumption accumulates, so the cadence and
-quantities track real demand. For items on the drift supplier the recorded
-master lead time stays at its creation value while the actual receipt-minus-order
-gap ramps upward over the final months, which is what miscalibrates their reorder
-points and drives their stockouts.
+Replenishment buy events accumulate as consumption is drawn down, then group into
+orders by supplier and order week: distributor and hardware suppliers carry many
+lines per order, motors and drives one to a few. The defects planted here:
+
+  M2  stale lead times   recorded master lead stays; actual receipt lead drifts
+                         up generally and sharply for one supplier
+  M5  UOM mismatch       box/spool/length buys booked in the purchase UOM
+  M6  supplier fragments  some orders booked to an alias supplier id
+  T3  free-text lines    generic codes with typed descriptions (some stocked)
+  T4  batched receipts   received dates snapped to Mondays / month-end
+  T5  open documents     partial receipts left open past 90 days
 """
 from __future__ import annotations
 
@@ -16,42 +22,64 @@ import pandas as pd
 
 from .. import config as C
 
-
-def _actual_lead(is_d2: bool, master_lead: int, order_date: date, rng) -> int:
-    if not is_d2:
-        return max(2, int(round(master_lead + rng.normal(0, 1.5))))
-    drift_start = C.END_DATE - timedelta(days=C.D2_DRIFT_MONTHS * 30)
-    if order_date <= drift_start:
-        base = C.D2_DRIFT_START_DAYS
-    else:
-        frac = (order_date - drift_start).days / (C.D2_DRIFT_MONTHS * 30)
-        base = C.D2_DRIFT_START_DAYS + frac * (C.D2_DRIFT_END_DAYS - C.D2_DRIFT_START_DAYS)
-    return max(2, int(round(base + rng.normal(0, 2.0))))
+_ABBREV = {"washer": "wshr", "bearing": "brg", "fitting": "fitg", "sensor": "sens",
+           "bracket": "brkt", "coupling": "cplg", "enclosure": "encl"}
+_ONEOFF = ["shop supplies", "freight charge", "crating", "rush machining",
+           "custom weldment", "prototype part", "field service kit", "rental",
+           "calibration service", "special order casting"]
 
 
-def build_purchase_orders(plan, demand, item_master, item_meta, dup_map,
-                          supplier_truth, d5, rng):
-    monthly = demand.pivot(index="item_id", columns="month", values="demand_units").fillna(0)
+def _actual_lead(meta, master_lead, order_date, drift_rate, drift_supplier_id, rng):
+    if meta["is_sharp"] and meta["supplier_id"] == drift_supplier_id:
+        ramp_start = C.MODEL_SPAN_END - timedelta(days=C.M2_DRIFT_SUPPLIER_MONTHS * 30)
+        end_ratio = rng.uniform(*C.M2_DRIFT_SUPPLIER_RATIO)
+        target = master_lead * end_ratio
+        if order_date <= ramp_start:
+            base = C.M2_DRIFT_SUPPLIER_START
+        else:
+            frac = min(1.0, (order_date - ramp_start).days / (C.M2_DRIFT_SUPPLIER_MONTHS * 30))
+            base = C.M2_DRIFT_SUPPLIER_START + frac * (target - C.M2_DRIFT_SUPPLIER_START)
+        return max(2, int(round(base + rng.normal(0, 2.0))))
+    # Every item's actual lead drifts upward over the history while the recorded
+    # master value stays put; flagged items (M2) drift harder.
+    frac = (order_date - C.START_DATE).days / max(1, (C.MODEL_SPAN_END - C.START_DATE).days)
+    return max(2, int(round(master_lead + drift_rate * frac + rng.normal(0, 1.5))))
+
+
+def build_purchase_orders(total_consumption, item_master, item_meta, dup_map,
+                          suppliers, sup_frag, drift_supplier_id, plan, rng):
+    monthly = total_consumption.pivot(index="item_id", columns="month", values="qty").fillna(0)
     monthly = monthly.sort_index(axis=1)
     months = list(monthly.columns)
     cost_by_item = plan.set_index("item_id")["unit_cost"].to_dict()
+    class_by_item = plan.set_index("item_id")["item_class"].to_dict()
+    lead_by_num = item_master.set_index("item_number")["master_lead_time_days"].to_dict()
 
-    # recorded numbers by canonical item (single record or duplicate members)
     recorded = {}
     for num, meta in item_meta.items():
-        recorded.setdefault(meta["item_id"], []).append(num)
+        if not meta["dead"]:
+            recorded.setdefault(meta["item_id"], []).append(num)
 
-    d3_items = _d3_lookup(item_meta)
-    rows = []
-    po_seq = 0
+    # Per-item end-of-history lead-time drift (days): a general upward creep for
+    # every item, plus a harder drift for the flagged M2 items.
+    drift_rate = {}
+    for num, meta in item_meta.items():
+        if meta["dead"]:
+            continue
+        drift_rate[num] = rng.uniform(1, 8) + (rng.uniform(12, 26) if meta["is_drift"] else 0.0)
+
+    # ── Phase 1: buy events per item ────────────────────────────────────────
+    buys = []   # (order_date, item_number, supplier_id, qty_each, item_id)
     for iid, series in monthly.iterrows():
+        if iid not in recorded:
+            continue
         vals = series.to_numpy()
         avg = vals[-12:].mean()
         if avg <= 0:
             continue
-        batch = max(1, int(round(avg * 2.0)))          # ~two months of cover
+        batch = max(1, int(round(avg * 2.0)))       # ~two months cover
         nums = recorded[iid]
-        weights = dup_map[iid]["weights"] if iid in dup_map else [1.0]
+        weights = dup_map[iid]["weights"] if iid in dup_map else None
         acc = 0.0
         for mi, q in enumerate(vals):
             acc += q
@@ -61,41 +89,136 @@ def build_purchase_orders(plan, demand, item_master, item_meta, dup_map,
                 if order_date > C.END_DATE:
                     break
                 num = nums[int(rng.choice(len(nums), p=weights))] if len(nums) > 1 else nums[0]
-                meta = item_meta[num]
-                is_d2 = meta["is_d2"]
-                master_lead = int(item_master.loc[item_master["item_number"] == num,
-                                                  "master_lead_time_days"].iloc[0])
-                alead = _actual_lead(is_d2, master_lead, order_date, rng)
-                promised = order_date + timedelta(days=master_lead)
-                received = order_date + timedelta(days=alead)
-                sup = meta["supplier_id"]
-                # D5: some of the fragmented vendor's POs book to its second id.
-                if sup == d5["ids"][0] and rng.random() < C.D5_SECOND_ID_SHARE:
-                    sup = d5["ids"][1]
-                # D3: purchased by the box, so quantity and price are per box.
-                box = d3_items.get(num)
-                if box:
-                    qty = max(1, int(round(batch / box)))
-                    price = round(cost_by_item[iid] * box * rng.uniform(0.95, 1.15), 2)
-                else:
-                    qty = batch
-                    price = round(cost_by_item[iid] * rng.uniform(0.9, 1.2), 2)
-                recv_qty = qty if rng.random() < 0.93 else int(qty * rng.uniform(0.6, 1.0))
-                po_seq += 1
-                rows.append({
-                    "po_id":            f"PO-{po_seq:06d}",
-                    "line":             1,
-                    "item_number":      num,
-                    "supplier_id":      sup,
-                    "order_date":       order_date.isoformat(),
-                    "promised_date":    promised.isoformat(),
-                    "received_date":    received.isoformat() if received <= C.END_DATE else None,
-                    "quantity_ordered": qty,
-                    "quantity_received":recv_qty if received <= C.END_DATE else 0,
-                    "unit_price":       price,
-                })
-    return pd.DataFrame(rows)
+                sup = item_meta[num]["supplier_id"]
+                if sup in sup_frag["alias_ids"] and rng.random() < 0.4:
+                    aliases = sup_frag["alias_ids"][sup]
+                    if aliases:
+                        sup = rng.choice(aliases)
+                buys.append((order_date, num, sup, batch, iid))
+
+    # ── Phase 2: group buys into multi-line POs by supplier and order week ──
+    buys.sort(key=lambda b: (b[2], b[0]))
+    rows, truth = [], {"t3": [], "t4": [], "t5": []}
+    po_seq = 0
+    i = 0
+    stock_nums = set(item_master["item_number"])
+    desc_by_num = item_master.set_index("item_number")["description"].to_dict()
+    while i < len(buys):
+        order_date, _, sup, _, _ = buys[i]
+        stype = suppliers.loc[suppliers["supplier_id"] == sup, "supplier_type"]
+        stype = stype.iloc[0] if len(stype) else "Distributor"
+        many = stype in ("Fasteners", "Distributor", "Material")
+        max_lines = int(rng.integers(10, 21)) if many else int(rng.integers(1, 4))
+        po_seq += 1
+        po_id = f"PO-{po_seq:06d}"
+        line_no = 0
+        # gather buys for the same supplier within a 5-day window
+        window_end = order_date + timedelta(days=5)
+        while i < len(buys) and buys[i][2] == sup and buys[i][0] <= window_end and line_no < max_lines:
+            od, num, s, qty_each, iid = buys[i]; i += 1
+            line_no += 1
+            meta = item_meta[num]
+            master_lead = int(lead_by_num.get(num, 21))
+            alead = _actual_lead(meta, master_lead, od, drift_rate.get(num, 6.0), drift_supplier_id, rng)
+            promised = od + timedelta(days=master_lead)
+            received = od + timedelta(days=alead)
+            conv = meta["uom_conv"]
+            if conv and conv > 1:                    # M5: booked in purchase UOM
+                qord = max(1, int(round(qty_each / conv)))
+                price = round(cost_by_item[iid] * conv * rng.uniform(0.95, 1.15), 2)
+            else:
+                qord = qty_each
+                price = round(cost_by_item[iid] * rng.uniform(0.9, 1.2), 2)
+            recv_ok = received <= C.END_DATE
+            qrec = qord if rng.random() < 0.93 else int(qord * rng.uniform(0.6, 1.0))
+            rows.append({
+                "po_id": po_id, "line": line_no, "item_number": num,
+                "description_text": None, "supplier_id": s,
+                "order_date": od.isoformat(), "promised_date": promised.isoformat(),
+                "received_date": received.isoformat() if recv_ok else None,
+                "qty_ordered": qord, "qty_received": (qrec if recv_ok else 0),
+                "unit_price": price, "status": "CLOSED" if recv_ok else "OPEN",
+            })
+
+    po = pd.DataFrame(rows)
+
+    # ── T3 free-text / non-stock PO lines ───────────────────────────────────
+    n_lines = len(po)
+    n_ft = int(round(n_lines * C.T3_FREETEXT_SHARE))
+    ft_rows = []
+    # a share correspond to stocked items (the defect); the rest are ETO one-offs
+    stocked_targets = po.sample(n=int(n_ft * C.T3_STOCKED_RATIO), random_state=C.RANDOM_SEED)
+    for r in stocked_targets.itertuples(index=False):
+        code = rng.choice(C.GENERIC_ITEM_CODES)
+        po_seq += 1
+        ft_rows.append({
+            "po_id": f"PO-{po_seq:06d}", "line": 1, "item_number": code,
+            "description_text": _freetext(desc_by_num.get(r.item_number, ""), rng),
+            "supplier_id": r.supplier_id, "order_date": r.order_date,
+            "promised_date": r.promised_date, "received_date": r.received_date,
+            "qty_ordered": r.qty_ordered, "qty_received": r.qty_received,
+            "unit_price": r.unit_price, "status": r.status,
+        })
+        truth["t3"].append({"po_id": f"PO-{po_seq:06d}", "true_item_number": r.item_number,
+                            "is_stocked": True})
+    for _ in range(n_ft - len(stocked_targets)):
+        code = rng.choice(C.GENERIC_ITEM_CODES)
+        po_seq += 1
+        d = C.START_DATE + timedelta(days=int(rng.integers(0, (C.END_DATE - C.START_DATE).days)))
+        lead = int(rng.integers(7, 60))
+        ft_rows.append({
+            "po_id": f"PO-{po_seq:06d}", "line": 1, "item_number": code,
+            "description_text": rng.choice(_ONEOFF),
+            "supplier_id": rng.choice(suppliers["supplier_id"]),
+            "order_date": d.isoformat(), "promised_date": (d + timedelta(days=lead)).isoformat(),
+            "received_date": (d + timedelta(days=lead)).isoformat(),
+            "qty_ordered": int(rng.integers(1, 20)), "qty_received": int(rng.integers(1, 20)),
+            "unit_price": round(rng.uniform(20, 2000), 2), "status": "CLOSED",
+        })
+        truth["t3"].append({"po_id": f"PO-{po_seq:06d}", "true_item_number": None,
+                            "is_stocked": False})
+    if ft_rows:
+        po = pd.concat([po, pd.DataFrame(ft_rows)], ignore_index=True)
+
+    # ── T4 receipt-date batching (snap to Monday / +1-5 days) ───────────────
+    rec_idx = po.index[po["received_date"].notna()]
+    n4 = int(len(rec_idx) * C.T4_BATCH_SHARE)
+    for idx in rng.choice(rec_idx, size=min(n4, len(rec_idx)), replace=False):
+        rd = pd.to_datetime(po.at[idx, "received_date"]).date()
+        nd = None
+        for extra in range(1, C.T4_MAX_DISPLACEMENT + 1):
+            if (rd + timedelta(days=extra)).weekday() == 0:
+                nd = rd + timedelta(days=extra); break
+        if nd is None:
+            nd = rd + timedelta(days=int(rng.integers(1, C.T4_MAX_DISPLACEMENT + 1)))
+        if nd > C.END_DATE:
+            nd = rd
+        truth["t4"].append({"po_id": po.at[idx, "po_id"], "line": int(po.at[idx, "line"]),
+                            "true_received_date": rd.isoformat(), "recorded_received_date": nd.isoformat()})
+        po.at[idx, "received_date"] = nd.isoformat()
+
+    # ── T5 open documents (partial receipt, never closed, >90 days) ─────────
+    old = po.index[(pd.to_datetime(po["order_date"]).dt.date < C.END_DATE - timedelta(days=90)) &
+                   (po["received_date"].notna())]
+    n5 = int(len(old) * C.T5_OPEN_PO_SHARE)
+    for idx in rng.choice(old, size=min(n5, len(old)), replace=False):
+        q = po.at[idx, "qty_ordered"]
+        po.at[idx, "qty_received"] = int(q * rng.uniform(0.3, 0.7))
+        po.at[idx, "received_date"] = None
+        po.at[idx, "status"] = "OPEN"
+        truth["t5"].append({"po_id": po.at[idx, "po_id"], "line": int(po.at[idx, "line"]),
+                            "qty_ordered": int(q), "qty_received": int(po.at[idx, "qty_received"])})
+
+    return po, truth
 
 
-def _d3_lookup(item_meta) -> dict:
-    return {num: meta["box_size"] for num, meta in item_meta.items() if meta.get("box_size")}
+def _freetext(desc, rng):
+    s = str(desc).lower()
+    for k, v in _ABBREV.items():
+        if rng.random() < 0.7:
+            s = s.replace(k, v)
+    s = " ".join(s.split())
+    if rng.random() < 0.2 and len(s) > 6:
+        i = int(rng.integers(1, len(s) - 1))
+        s = s[:i] + s[i + 1:]
+    return s.strip()
