@@ -461,12 +461,10 @@ def build(d):
         '<a href="#found">Findings</a>',
         '<a class="sub" href="#errors">Data Quality Errors</a>',
         '<a class="sub" href="#costs">Operational and Financial Costs</a>',
-        '<a href="#did">What we did</a>',
-        '<a href="#who">Who was involved</a>',
-        '<a href="#means">What it means for purchasing</a>',
-        '<a href="#keep">Keeping it clean</a>',
+        '<a href="#did">Actions</a>',
+        '<a class="sub" href="#remediation">Error Remediation</a>',
+        '<a class="sub" href="#process">Process Changes</a>',
         '<a href="#remains">What remains</a>',
-        '<a href="#appendix">Appendix</a>',
     ])
 
     trust_before = d["rel_before"]["reliable"]["pct"]
@@ -881,7 +879,8 @@ the total and only distort where the cost sits, and those are marked as such.</p
 """
 
     did = f"""
-{B.section("did", "Section 3", "What we did")}
+{B.section("did", "Section 3", "Actions")}
+{B.section("remediation", "Section 3.1", "Error Remediation")}
 <p><strong>How the tests were run.</strong> The work ran in a fixed order. Before looking for
 anything specific, we profiled every component of the ERP plainly: row counts by year, the fill rate
 of every column, the distinct values in every code field, and the date ranges. That pass is what
@@ -914,25 +913,6 @@ rows were remediated.</p>
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
 {rem_txn_table}
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">The remediation</p>
-<p>The remediation ran over ten weeks. Nothing in the source data was overwritten;
-every correction is a reference record that can be audited. Review decisions were
-made by the shop's own people, and not everything was resolved.</p>
-{B.data_table(
-    ["Activity", "Result"],
-    [
-        ["Dead item review", f"{d['dead_deactivated']:,} deactivated, {d['dead_kept']} kept (seasonal / safety-critical, per the buyer and production lead), {d['dead_held']} held for review"],
-        ["Duplicate resolution", f"{d['dup_merged']} records merged to a survivor; {d['dup_rejected']} candidate pairs rejected as genuinely different parts"],
-        ["Lead time & parameters", f"Lead times recomputed from receipt history for {d['lead_recomputed']:,} items; {d['params_changed']:,} reorder points / safety stocks changed at the ABC service level"],
-        ["Chronic adjustment analysis", f"{d['chronic_items']:,} chronic items attributed to root causes ({', '.join(f'{k} {v}' for k,v in list(d['chronic_root'].items())[:3])})"],
-        ["BOM corrections", f"{d['bom_changes']} components added back to product and subassembly BOMs (engineering review and floor observation)"],
-        ["UOM conversions", f"{d['uom_added']} box/spool/length conversions added"],
-        ["Open document closure", f"{d['closed_po']:,} PO lines and {d['closed_jobs']:,} jobs closed on confirmation"],
-        ["Spreadsheet reconciliation", f"120 tracked items reconciled; ERP and spreadsheet disagreed on {d['recon_disagree']}, the spreadsheet was closer on {d['recon_buyer_right']}"],
-        ["Free-text attribution", f"{d['ft_confirmed']:,} lines attributed to a stocked item and confirmed by the buyer, {d['ft_rejected']:,} rejected as genuine non-stock buys"],
-        ["Cycle-count program", "Weekly counts from week 2, unreliable items first, balances corrected as counted"],
-        ["System configuration", "Reason codes required, required fields enforced, generic codes restricted, negative on-hand blocked, individual logins issued"],
-    ], right=[])}
 """
 
     who_rows = [[r.role.title(), r.consulted_on, r.topic] for r in d["interviews"].itertuples(index=False)]
@@ -967,7 +947,7 @@ material the ERP believed was inbound on never-closed POs.</p>
 """
 
     keep = f"""
-{B.section("keep", "Section 6", "Keeping it clean")}
+{B.section("process", "Section 3.2", "Process Changes")}
 <p>The corrections are worth nothing if the same problems return. Some fixes were
 made in the system during the engagement; the rest need an owner and a cadence.</p>
 <p><strong>Implemented in the system (done, with dates).</strong></p>
@@ -984,7 +964,7 @@ made in the system during the engagement; the rest need an owner and a cadence.<
 """
 
     remains = f"""
-{B.section("remains", "Section 7", "What remains")}
+{B.section("remains", "Section 4", "What remains")}
 <p>Not everything was resolved, and it would be dishonest to imply otherwise.</p>
 <ul class="limitation-list">
   <li><strong>Items still unreliable.</strong> {d['rel_after']['unreliable']['pct']:.0f}% of live items still
@@ -1016,7 +996,7 @@ manufacturing ERP systems.</p>
     "stockouts and working capital. This report leads with impact; the counts are in the tables above.")}
 """
 
-    return results + found + did + who + means + keep + remains + appendix, toc
+    return results + found + did + keep + remains, toc
 
 
 def run():
