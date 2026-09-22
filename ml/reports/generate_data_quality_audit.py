@@ -387,6 +387,13 @@ def _err_block(num, name, what, location, headers, rows):
             f'{sample}</div>')
 
 
+def _widths(table_html, widths):
+    """Give a data table fixed column widths (percent) so tables line up."""
+    cols = "".join(f'<col style="width:{w}%;">' for w in widths)
+    return table_html.replace('<table class="data-table">',
+                              f'<table class="data-table" style="table-layout:fixed;"><colgroup>{cols}</colgroup>', 1)
+
+
 # ── report ───────────────────────────────────────────────────────────────────
 def build(d):
     toc = "".join([
@@ -453,7 +460,7 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
 
     def numcell(i):
         # untitled left column: bold number, vertically centred
-        return f'<td style="vertical-align:middle;text-align:center;font-weight:700;width:36px;">{i}</td>'
+        return f'<td style="vertical-align:middle;text-align:center;">#{i}</td>'
 
     # (name, one-sentence description, ERP table, scale as rows affected, test,
     #  what counts as a finding, operational cost). The ERP table is the table the
@@ -539,8 +546,8 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         ("Open Documents Never Closed",
          "Purchase order lines and jobs left open after they were effectively complete.",
          f"{PO}; {PROD.lower()}",
-         (f"{d['open_po_lines']:,} of {d['n_po']:,}; {d['n_open_jobs']:,} of {d['n_prod']:,}<br>"
-          f"<em>({d['open_po_lines'] / d['n_po'] * 100:.1f}%; {d['n_open_jobs'] / d['n_prod'] * 100:.1f}%)</em>"),
+         (f"{d['open_po_lines']:,} of {d['n_po']:,} <em>({d['open_po_lines'] / d['n_po'] * 100:.1f}%)</em><br>"
+          f"{d['n_open_jobs']:,} of {d['n_prod']:,} <em>({d['n_open_jobs'] / d['n_prod'] * 100:.1f}%)</em>"),
          "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
          "Count and on-order value",
          "Phantom on-order; stockouts"),
@@ -564,9 +571,22 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
          "Movement double-counted"),
     ]
     d["op_cost"] = {n: c for n, _d, _l, _s, _t, _f, c in MASTER_ERRORS + TXN_ERRORS}   # reserved for Results
+    ORIG_MASTER = [e[0] for e in MASTER_ERRORS]
+    ORIG_TXN = [e[0] for e in TXN_ERRORS]
+    # order by ERP table so the tables read by location
+    ORDER_M = ["Dead Records Never Deactivated", "Stale Lead Times", "Stale Reorder Points",
+               "Duplicate Item Records", "UOM Mismatch", "Missing and Placeholder Fields",
+               "BOM Omissions", "Supplier Fragmentation"]
+    ORDER_T = ["Unrecorded Consumption", "Wrong References", "Quantity and Unit Errors", "Duplicate Postings",
+               "Adjustments as a Catch-All", "Free-Text Purchases", "Batched and Backdated Postings",
+               "Open Documents Never Closed"]
+    MASTER_ERRORS.sort(key=lambda e: ORDER_M.index(e[0]))
+    TXN_ERRORS.sort(key=lambda e: ORDER_T.index(e[0]))
+    W2 = [4, 19, 35, 18, 24]          # #, Error, Description, ERP table, Scale
+    W3 = [4, 19, 42, 18, 17]          # #, Error, Remediation, Evidence, Remediated
     hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
-    master_table = B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[])
-    txn_table = B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[])
+    master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
+    txn_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W2)
     def rem_of(n, total):
         return f"{n:,} of {total:,} ({n / total * 100:.0f}%)" if total else f"{n:,}"
 
@@ -632,11 +652,13 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
         ("The second posting reversed for every pair.",
          ERP, rem_of(d["t8_count"], d["t8_count"])),
     ]
+    REM_MASTER = dict(zip(ORIG_MASTER, REM_MASTER))
+    REM_TXN = dict(zip(ORIG_TXN, REM_TXN))
     rem_hdr = ["", "Error", "Remediation", "Evidence", "Remediated (rows)"]
-    rem_master_table = B.data_table(rem_hdr, [[numcell(i), e[0], r, ev, rows]
-        for i, (e, (r, ev, rows)) in enumerate(zip(MASTER_ERRORS, REM_MASTER), 1)], right=[])
-    rem_txn_table = B.data_table(rem_hdr, [[numcell(i), e[0], r, ev, rows]
-        for i, (e, (r, ev, rows)) in enumerate(zip(TXN_ERRORS, REM_TXN), len(MASTER_ERRORS) + 1)], right=[])
+    rem_master_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_MASTER[e[0]]]
+        for i, e in enumerate(MASTER_ERRORS, 1)], right=[]), W3)
+    rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_TXN[e[0]]]
+        for i, e in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W3)
 
     found = f"""
 {B.section("found", "Section 2", "What we found")}
