@@ -353,22 +353,16 @@ def chart_policy(d):
     return B.b64(fig)
 
 
-def _err_block(name, what, scale, test, cost, headers, rows):
-    """One error type, broken out visually: name, a plain sentence on what it is,
-    then Scale / Test / Operational cost, then a record or two that shows it."""
+def _err_block(num, name, what, location, headers, rows):
+    """One error type: number and name, a plain sentence on what it is, where in
+    the ERP it occurs, and a record or two from the system that shows it."""
     lbl = (f'style="color:{B.MED_GREY};font-weight:700;font-size:12px;text-transform:uppercase;'
-           f'letter-spacing:.5px;display:inline-block;width:150px;vertical-align:top;"')
-    sample = ""
-    if rows:
-        sample = (f'<div style="font-size:11px;color:{B.MED_GREY};font-weight:700;text-transform:uppercase;'
-                  f'letter-spacing:.5px;margin:12px 0 -6px;">Sample records</div>'
-                  + B.data_table(headers, rows))
-    return (f'<div style="margin:24px 0 28px;">'
-            f'<div style="font-size:16px;margin-bottom:6px;"><strong><u>{name}</u></strong></div>'
-            f'<div style="margin-bottom:10px;">{what}</div>'
-            f'<div style="margin-bottom:5px;"><span {lbl}>Scale</span><span>{scale}</span></div>'
-            f'<div style="margin-bottom:5px;"><span {lbl}>Test</span><span>{test}</span></div>'
-            f'<div style="margin-bottom:5px;"><span {lbl}>Operational cost</span><span>{cost}</span></div>'
+           f'letter-spacing:.5px;display:inline-block;width:110px;vertical-align:top;"')
+    sample = B.data_table(headers, rows) if rows else ""
+    return (f'<div style="margin:26px 0 30px;">'
+            f'<div style="font-size:16px;margin-bottom:6px;"><strong><u>#{num} {name}</u></strong></div>'
+            f'<div style="margin-bottom:8px;">{what}</div>'
+            f'<div style="margin-bottom:4px;"><span {lbl}>Location</span><span>{location}</span></div>'
             f'{sample}</div>')
 
 
@@ -432,6 +426,132 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     S = d["samples"]
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
     tc = ", ".join(f"{n} ({r:,})" for n, r in d["txn_comp"])
+    tw = d["threeway"]
+
+    # (number, name, what it is, location, sample key, scale, operational cost, test, what counts as a finding)
+    ERRORS = [
+        (1, "Dead records never deactivated",
+         "Parts the shop no longer uses are still marked active. Nobody deletes them, because deleting feels risky and nobody owns the task.",
+         "Item master", "dead",
+         f"{d['dead_pct']*100:.0f}% of the item master ({d['n_dead']:,} items); {d['dead_with_rop']:,} still carry a reorder point",
+         "False reorder signals, wasted count effort",
+         "Active items with no issue or receipt in 24+ months",
+         "Count, and the reorder points still set on them"),
+        (2, "Stale lead times",
+         "The lead time on the item record was set at go-live and never revisited. The only true value is what actually happened on past purchase orders.",
+         "Item master; tested against purchase orders", "lead",
+         f"{d['drift_gt3']*100:.0f}% of live items off by more than 3 days, {d['drift_gt7']*100:.0f}% by more than 7",
+         "Late reorders, line stops, expedite freight",
+         "Master lead time vs median actual from PO history, per item",
+         "Items where the gap exceeds a week, weighted by spend"),
+        (3, "Stale reorder points",
+         "Reorder points and safety stocks set for the volumes and lead times of years ago, and never recomputed as usage changed.",
+         "Item master; tested against the inventory ledger", "rop",
+         f"{d['params_changed']:,} of {d['n_live']:,} live items moved materially when recomputed",
+         "Stockouts on fast movers, excess on slow ones",
+         "Reorder point vs recent usage over actual lead time",
+         "Items where the point is too low (stockouts) or too high (excess)"),
+        (4, "BOM omissions",
+         "The bill of materials is the recipe for a product. When it is missing the screws and washers, they get used on the floor but never subtracted.",
+         "Bill of materials; surfaces in the inventory ledger as write-offs", "bom",
+         f"{d['omit_items']:,} components missing from BOMs, across {d['omit_products']} of {d['n_products']} products",
+         "Phantom on-hand; usage lost to write-offs",
+         "Items with chronic negative adjustments that appear on no BOM",
+         "The list, and the write-down value"),
+        (5, "Duplicate item records",
+         "The same physical part exists under two or more item numbers, created when someone could not find the existing record or used a different naming convention.",
+         "Item master; carried into the inventory ledger, purchase orders and bill of materials wherever the numbers are used", "dup",
+         f"{d['dup_clusters']} clusters ({d['dup_records']} records)",
+         "Split, unforecastable demand history",
+         "Normalize descriptions, compare within item class, score similarity",
+         "Candidate pairs above a threshold, reviewed by hand"),
+        (6, "UOM mismatch",
+         "The unit a part is bought in does not match the unit it is used in, and the ERP has no conversion: bought by the box of 100, issued by the each.",
+         "Item master; purchase orders and inventory ledger receipts booked in the purchase unit", "uom",
+         f"{d['uom_items']} items",
+         "Inflated on-hand and demand",
+         "Purchase UOM differs from stock UOM with no conversion factor",
+         "Items, and the on-hand balances that are therefore meaningless"),
+        (7, "Supplier fragmentation",
+         "One supplier exists under several names or IDs, so its spend and lead-time history are split across them.",
+         "Supplier master; purchase orders booked under each alias", "sup",
+         f"{d['sup_fragments']} vendors under {d['sup_records']} records",
+         "Fragmented spend and lead-time history",
+         "Normalize supplier names, group",
+         "Groups with more than one ID"),
+        (8, "Missing and placeholder fields",
+         "Required fields left blank because the ERP did not force them, or filled with placeholders such as an item class of MISC.",
+         "Item master", "missing",
+         f"{d['blank_pct']*100:.0f}% of live items with a blocking blank; {d['misc_pct']*100:.0f}% classed MISC",
+         "Blocks planning and costing",
+         "Fill rates by column, from the profiling pass",
+         "Items whose blanks block a process (no cost, no reorder point)"),
+        (9, "Unrecorded consumption",
+         "Material leaves the shelf and nobody records it. The ERP still thinks it is there.",
+         "Inventory ledger (adjustments); cycle counts", "unrec",
+         f"{d['t1_items']:,} items, roughly {d['t1_volume']:,} units a year",
+         "Balances drift; chronic write-offs",
+         "Adjustment frequency and direction per item",
+         "Items adjusted downward three or more times in 12 months"),
+        (10, "Adjustments as a catch-all",
+         "The adjustment exists to correct genuine count errors. Here it became the way everything got fixed: unrecorded issues, mis-receipts, returns, scrap and mistakes, usually with no reason code.",
+         "Inventory ledger", "adjshare",
+         f"{d['adj_share']*100:.0f}% of quantity moved; {d['adj_blank_share']*100:.0f}% with a blank or generic reason",
+         "Cause of movement unknowable",
+         "Adjustment quantity as share of all movement",
+         "Anything above 5% is a process problem"),
+        (11, "Free-text purchases",
+         "A buyer needing something quickly could not find the part, so ordered it under a generic code like NONSTOCK and typed a description.",
+         "Purchase orders", "ft",
+         f"{d['ft_pct']*100:.0f}% of PO lines; {d['ft_stocked']} of {d['ft_total']} match a stocked item",
+         "Demand lost to the forecast",
+         "Generic item codes on PO lines; match descriptions to master",
+         "Lines that match a stocked item"),
+        (12, "Batched and backdated postings",
+         "Transactions entered later than they happened: Friday's deliveries posted on Monday, job reporting done at the end of the week.",
+         "Purchase orders (received dates); inventory ledger (receipts); production orders (completion dates)", "batch",
+         f"{d['peak_wd_share']*100:.0f}% of receipts posted on a {d['peak_wd_name']}",
+         "Lead times biased upward",
+         "Day-of-week distribution of receipt dates",
+         "Share of receipts posted on the peak day"),
+        (13, "Open documents never closed",
+         "A purchase order partly received with the balance never coming, or a finished job never closed, so the ERP still believes material is inbound.",
+         "Purchase orders; production orders", "open",
+         f"{d['open_po_lines']:,} PO lines open past 90 days; {_money(d['open_po_value'])} of on-order that will never arrive",
+         "Phantom on-order; stockouts",
+         "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
+         "Count and on-order value"),
+        (14, "Wrong references",
+         "The transaction is real but points at the wrong thing: a similar part number, or the wrong job.",
+         "Inventory ledger (issues); production orders", "wrong",
+         f"{d['t6_count']} confirmed issues",
+         "Consumption charged to the wrong part",
+         "Issues to jobs whose BOM doesn't include the item",
+         "List for review"),
+        (15, "Quantity and unit errors",
+         "A quantity keyed with an extra zero, a box entered as an each, a decimal in the wrong place.",
+         "Inventory ledger (issues and receipts); purchase orders", "qty",
+         f"{d['t7_count']} confirmed",
+         "Distorted demand and on-hand",
+         "Per-item outliers using median and spread, not averages",
+         "List for review"),
+        (16, "Duplicate postings",
+         "The same receipt or issue entered twice, usually within minutes, often because a screen froze and someone clicked again.",
+         "Inventory ledger", "dupost",
+         f"{d['t8_count']} confirmed",
+         "Movement double-counted",
+         "Same item, qty, date within minutes",
+         "List, usually small"),
+    ]
+    blocks = "".join(_err_block(n, name, what, loc, *S[key])
+                     for n, name, what, loc, key, *_ in ERRORS)
+    scale_table = B.data_table(
+        ["Error", "Scale", "Operational cost"],
+        [[f"#{n} {name}", scale, cost] for n, name, _w, _l, _k, scale, cost, _t, _f in ERRORS], right=[])
+    tests_table = B.data_table(
+        ["Error", "Test", "What counts as a finding"],
+        [[f"#{n} {name}", test, finding] for n, name, _w, _l, _k, _s, _c, test, finding in ERRORS], right=[])
+
     found = f"""
 {B.section("found", "Section 2", "What we found")}
 <p>This audit examined one company's ERP system end to end. On the master side, the records that
@@ -449,110 +569,10 @@ the system.</p>
     B.kpi_card("16", "Error types tested", "8 master-level, 8 transaction-level"),
 )}
 
-<p>The errors fall in two tiers. Master-level errors are few records that many transactions depend
-on; transaction-level errors are many individually wrong lines. For each we say what it is, give
-the scale, the test that found it and the operational cost, and show a record or two from the
-system.</p>
+{blocks}
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
-
-{_err_block("Dead records never deactivated",
-    "Parts the shop no longer uses are still marked active. Nobody deletes them, because deleting feels risky and nobody owns the task.",
-    f"{d['dead_pct']*100:.0f}% of the item master ({d['n_dead']:,} items), {d['dead_with_rop']:,} of them still carrying a reorder point",
-    "Active items with no issue or receipt in 24+ months",
-    "Clutter, false reorder signals, wasted count effort", *S["dead"])}
-
-{_err_block("Stale lead times",
-    "The lead time on the item record was set at go-live and never revisited. The only true value is what actually happened on past purchase orders.",
-    f"{d['drift_gt3']*100:.0f}% of live items off by more than 3 days, {d['drift_gt7']*100:.0f}% by more than 7; one supplier's actual lead time roughly doubled over the history",
-    "Master lead time vs median actual from PO history, per item",
-    "Under-set reorder points, line stops, expedite freight", *S["lead"])}
-
-{_err_block("Stale reorder points",
-    "Reorder points and safety stocks set for the volumes and lead times of years ago, and never recomputed as usage changed.",
-    f"{d['params_changed']:,} of {d['n_live']:,} live items' reorder points moved materially when recomputed from actual usage and lead time",
-    "Reorder point vs recent usage over actual lead time",
-    "Stockouts on the fast movers, excess stock on the slow ones", *S["rop"])}
-
-{_err_block("BOM omissions",
-    "The bill of materials is the recipe for a product. When it is missing the screws and washers, they get used on the floor but never subtracted.",
-    f"{d['omit_items']:,} components missing from BOMs, across {d['omit_products']} of {d['n_products']} products",
-    "Items with chronic negative adjustments that appear on no BOM",
-    "Backflush never consumes them: phantom on-hand, and the usage escapes as write-offs", *S["bom"])}
-
-{_err_block("Duplicate item records",
-    "The same physical part exists under two or more item numbers, created when someone could not find the existing record or used a different naming convention.",
-    f"{d['dup_clusters']} clusters ({d['dup_records']} records), concentrated in hardware, fittings, bearings and electrical",
-    "Normalize descriptions, compare within item class, score similarity",
-    "Demand history split across records; neither half is forecastable; two reorder points for one part", *S["dup"])}
-
-{_err_block("UOM mismatch",
-    "The unit a part is bought in does not match the unit it is used in, and the ERP has no conversion: bought by the box of 100, issued by the each.",
-    f"{d['uom_items']} items bought by the box, spool, length or gallon and stocked by the each, foot or ounce",
-    "Purchase UOM differs from stock UOM with no conversion factor",
-    "Inflated on-hand and demand; a box received is counted as one each", *S["uom"])}
-
-{_err_block("Supplier fragmentation",
-    "One supplier exists under several names or IDs, so its spend and lead-time history are split across them.",
-    f"{d['sup_fragments']} vendors carried under {d['sup_records']} supplier records",
-    "Normalize supplier names, group",
-    "Spend and lead-time history fragmented across records", *S["sup"])}
-
-{_err_block("Missing and placeholder fields",
-    "Required fields left blank because the ERP did not force them, or filled with placeholders such as an item class of MISC.",
-    f"{d['blank_pct']*100:.0f}% of live items with a blocking blank (cost, supplier or reorder point); {d['misc_pct']*100:.0f}% classed MISC",
-    "Fill rates by column, from the profiling pass",
-    "Blocks planning, costing and reporting", *S["missing"])}
-
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
-
-{_err_block("Unrecorded consumption",
-    "Material leaves the shelf and nobody records it. The ERP still thinks it is there.",
-    f"{d['t1_items']:,} items, roughly {d['t1_volume']:,} units a year leaving with no record",
-    "Adjustment frequency and direction per item",
-    "Balances drift until the annual count; the shortfall shows up as chronic write-offs", *S["unrec"])}
-
-{_err_block("Adjustments as a catch-all",
-    "The adjustment exists to correct genuine count errors. Here it became the way everything got fixed: unrecorded issues, mis-receipts, returns, scrap and mistakes, usually with no reason code.",
-    f"{d['adj_share']*100:.0f}% of all quantity moved flows through adjustments; {d['adj_blank_share']*100:.0f}% carry a blank or generic reason code",
-    "Adjustment quantity as share of all movement",
-    "The cause of a movement is unknowable; write-offs hide the real problems", *S["adjshare"])}
-
-{_err_block("Free-text purchases",
-    "A buyer needing something quickly could not find the part, so ordered it under a generic code like NONSTOCK and typed a description.",
-    f"{d['ft_pct']*100:.0f}% of PO lines; {d['ft_stocked']} of {d['ft_total']} correspond to an item already in the master",
-    "Generic item codes on PO lines; match descriptions to master",
-    "Demand for stocked items lost to the forecast; spend untraceable to a part", *S["ft"])}
-
-{_err_block("Batched and backdated postings",
-    "Transactions entered later than they happened: Friday's deliveries posted on Monday, job reporting done at the end of the week.",
-    f"{d['peak_wd_share']*100:.0f}% of receipts posted on a {d['peak_wd_name']} (an even spread would be about 20%)",
-    "Day-of-week distribution of receipt dates",
-    "Computed lead times biased upward by the posting lag", *S["batch"])}
-
-{_err_block("Open documents never closed",
-    "A purchase order partly received with the balance never coming, or a finished job never closed, so the ERP still believes material is inbound.",
-    f"{d['open_po_lines']:,} PO lines open past 90 days, {_money(d['open_po_value'])} of on-order that will never arrive",
-    "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
-    "The buyer holds back real orders believing material is inbound, and stocks out", *S["open"])}
-
-{_err_block("Wrong references",
-    "The transaction is real but points at the wrong thing: a similar part number, or the wrong job.",
-    f"{d['t6_count']} confirmed issues posted against a similar item or the wrong job",
-    "Issues to jobs whose BOM doesn't include the item",
-    "Consumption charged to the wrong part and the wrong job", *S["wrong"])}
-
-{_err_block("Quantity and unit errors",
-    "A quantity keyed with an extra zero, a box entered as an each, a decimal in the wrong place.",
-    f"{d['t7_count']} confirmed order-of-magnitude and box/each keying errors, concentrated on the UOM-mismatch items",
-    "Per-item outliers using median and spread, not averages",
-    "Single keystrokes that distort an item's demand and on-hand by 10&times; or more", *S["qty"])}
-
-{_err_block("Duplicate postings",
-    "The same receipt or issue entered twice, usually within minutes, often because a screen froze and someone clicked again.",
-    f"{d['t8_count']} confirmed transactions posted twice",
-    "Same item, qty, date within minutes",
-    "Movement double-counted", *S["dupost"])}
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Scale and operational cost</p>
+{scale_table}
 
 <p>Of the {d['chronic_items']:,} items with three or more downward adjustments in the last year,
 {d['chronic_on_bom']*100:.0f}% are BOM-omitted components: the adjustments are the shop absorbing usage
@@ -562,6 +582,12 @@ inventory and the BOM gaps are the same problem.</p>
 
     did = f"""
 {B.section("did", "Section 3", "What we did")}
+<p>The audit ran one test for each of the sixteen error types against the item master, the bill
+of materials, the supplier master and the transaction history. The table gives each test and what
+counted as a finding. The queries and their output were kept, so the shop can rerun them.</p>
+{tests_table}
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">The remediation</p>
 <p>The remediation ran over ten weeks. Nothing in the source data was overwritten;
 every correction is a reference record that can be audited. Review decisions were
 made by the shop's own people, and not everything was resolved.</p>
