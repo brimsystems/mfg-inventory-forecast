@@ -582,7 +582,7 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
                "Open Documents Never Closed"]
     MASTER_ERRORS.sort(key=lambda e: ORDER_M.index(e[0]))
     TXN_ERRORS.sort(key=lambda e: ORDER_T.index(e[0]))
-    W2 = [4, 19, 35, 18, 24]          # #, Error, Description, ERP table, Scale
+    W2 = [4, 19, 40, 16, 21]          # #, Error, Description, ERP table, Scale
     W3 = [4, 19, 42, 18, 17]          # #, Error, Remediation, Evidence, Remediated
     hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
     master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
