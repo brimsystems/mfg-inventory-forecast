@@ -175,7 +175,11 @@ def gather():
     d["dup_merged"] = int(dv.get("MERGE", 0))
     d["dup_rejected"] = int(dv.get("REJECT", 0))
     d["lead_recomputed"] = len(lead)
-    changed = (params["new_reorder_point"] - params["old_reorder_point"].fillna(0)).abs() > 1
+    # a reorder point is stale when the recomputed value differs materially:
+    # by at least 30% of the old value and at least 5 units
+    old = params["old_reorder_point"].fillna(0)
+    delta = (params["new_reorder_point"] - old).abs()
+    changed = (delta >= 5) & (delta >= 0.30 * old.clip(lower=1))
     d["params_changed"] = int(changed.sum())
     d["uom_added"] = len(uomc)
     d["bom_changes"] = len(bomlog)
@@ -443,57 +447,61 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
     tc = ", ".join(f"{n} ({r:,})" for n, r in d["txn_comp"])
 
-    def rows_of(n, total, what):
-        return f"{n:,} of {total:,} {what}"
+    def rows_of(n, total):
+        return f"{n:,} of {total:,} ({n / total * 100:.1f}%)" if total else f"{n:,}"
 
-    # (name, one-sentence description, scale as rows affected, test, what counts as a finding,
-    #  operational cost). Operational cost is not rendered here; it is kept for the Results section.
+    # (name, one-sentence description, ERP table, scale as rows affected, test,
+    #  what counts as a finding, operational cost). The ERP table is the table the
+    #  scale denominator counts, so equal denominators always share a location.
+    #  Operational cost is not rendered here; it is kept for the Results section.
+    IM, IM_LIVE, BOM, SUP = "Item master", "Item master (live items)", "Bill of materials", "Supplier master"
+    LEDGER, LEDGER_ADJ, PO, PROD = "Inventory ledger", "Inventory ledger (adjustments)", "Purchase orders", "Production orders"
     MASTER_ERRORS = [
         ("Dead records never deactivated",
          "Items with no activity for years that are still flagged active in the item master.",
-         rows_of(d["n_dead"], d["n_master"], "item master records"),
+         IM, rows_of(d["n_dead"], d["n_master"]),
          "Active items with no issue or receipt in 24+ months",
          "Count, and the reorder points still set on them",
          "False reorder signals, wasted count effort"),
         ("Stale lead times",
          "Supplier lead times on the item record that no longer match how long deliveries actually take.",
-         rows_of(d["n_lead_off"], d["n_lead_items"], "live item records with purchase history"),
+         IM_LIVE, rows_of(d["n_lead_off"], d["n_live"]),
          "Master lead time vs median actual from PO history, per item",
          "Items where the gap exceeds a week, weighted by spend",
          "Late reorders, line stops, expedite freight"),
         ("Stale reorder points",
          "Reorder points and safety stocks that were never recomputed as usage and lead times changed.",
-         rows_of(d["params_changed"], d["n_live"], "live item records"),
+         IM_LIVE, rows_of(d["params_changed"], d["n_live"]),
          "Reorder point vs recent usage over actual lead time",
          "Items where the point is too low (stockouts) or too high (excess)",
          "Stockouts on fast movers, excess on slow ones"),
         ("BOM omissions",
          "Components used in production that are missing from the product's bill of materials.",
-         rows_of(d["omit_items"], d["n_bom_rows"] + d["omit_items"], "bill of materials rows (the missing rows)"),
+         BOM, rows_of(d["omit_items"], d["n_bom_rows"] + d["omit_items"]),
          "Items with chronic negative adjustments that appear on no BOM",
          "The list, and the write-down value",
          "Phantom on-hand; usage lost to write-offs"),
         ("Duplicate item records",
          "The same physical part carried under two or more item numbers.",
-         rows_of(d["dup_records"], d["n_master"], "item master records"),
+         IM, rows_of(d["dup_records"], d["n_master"]),
          "Normalize descriptions, compare within item class, score similarity",
          "Candidate pairs above a threshold, reviewed by hand",
          "Split, unforecastable demand history"),
         ("UOM mismatch",
          "Items bought in one unit of measure and stocked in another, with no conversion factor recorded.",
-         rows_of(d["uom_items"], d["n_master"], "item master records"),
+         IM, rows_of(d["uom_items"], d["n_master"]),
          "Purchase UOM differs from stock UOM with no conversion factor",
          "Items, and the on-hand balances that are therefore meaningless",
          "Inflated on-hand and demand"),
         ("Supplier fragmentation",
          "One supplier carried under several supplier records with different names or IDs.",
-         rows_of(d["sup_records"], d["n_sup_rows"], "supplier master records"),
+         SUP, rows_of(d["sup_records"], d["n_sup_rows"]),
          "Normalize supplier names, group",
          "Groups with more than one ID",
          "Fragmented spend and lead-time history"),
         ("Missing and placeholder fields",
          "Required item fields left blank or filled with a placeholder value.",
-         rows_of(d["n_blank"], d["n_live"], "live item records"),
+         IM_LIVE, rows_of(d["n_blank"], d["n_live"]),
          "Fill rates by column, from the profiling pass",
          "Items whose blanks block a process (no cost, no reorder point)",
          "Blocks planning and costing"),
@@ -501,60 +509,61 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
     TXN_ERRORS = [
         ("Unrecorded consumption",
          "Material consumed on the floor without a transaction recording it.",
-         rows_of(d["n_unrec_adj_rows"], d["n_tx"], "ledger rows (the write-offs that stand in for the missing issues)"),
+         LEDGER, rows_of(d["n_unrec_adj_rows"], d["n_tx"]),
          "Adjustment frequency and direction per item",
          "Items adjusted downward three or more times in 12 months",
          "Balances drift; chronic write-offs"),
         ("Adjustments as a catch-all",
          "Inventory adjustments used to correct all kinds of discrepancies rather than genuine count errors, usually without a reason code.",
-         rows_of(d["n_adj_blank_rows"], d["n_adj_rows"], "adjustment rows"),
+         LEDGER_ADJ, rows_of(d["n_adj_blank_rows"], d["n_adj_rows"]),
          "Adjustment quantity as share of all movement",
          "Anything above 5% is a process problem",
          "Cause of movement unknowable"),
         ("Free-text purchases",
          "Purchase order lines entered under a generic item code with a typed description instead of the stocked item number.",
-         rows_of(d["n_ft_lines"], d["n_po"], "purchase order lines"),
+         PO, rows_of(d["n_ft_lines"], d["n_po"]),
          "Generic item codes on PO lines; match descriptions to master",
          "Lines that match a stocked item",
          "Demand lost to the forecast"),
         ("Batched and backdated postings",
          "Transactions posted days after they happened, in batches.",
-         rows_of(d["n_batch_rows"], d["n_po"], "purchase order lines (receipt dates)"),
+         PO, rows_of(d["n_batch_rows"], d["n_po"]),
          "Day-of-week distribution of receipt dates",
          "Share of receipts posted on the peak day",
          "Lead times biased upward"),
         ("Open documents never closed",
          "Purchase order lines and jobs left open after they were effectively complete.",
-         rows_of(d["open_po_lines"], d["n_po"], "purchase order lines") + f"; {d['n_open_jobs']:,} of {d['n_prod']:,} production orders",
+         f"{PO}; {PROD.lower()}",
+         rows_of(d["open_po_lines"], d["n_po"]) + "; " + rows_of(d["n_open_jobs"], d["n_prod"]),
          "PO lines open longer than 2&times; supplier lead time; jobs open past due date",
          "Count and on-order value",
          "Phantom on-order; stockouts"),
         ("Wrong references",
          "Transactions posted against the wrong item or job.",
-         rows_of(d["t6_count"], d["n_tx"], "ledger rows"),
+         LEDGER, rows_of(d["t6_count"], d["n_tx"]),
          "Issues to jobs whose BOM doesn't include the item",
          "List for review",
          "Consumption charged to the wrong part"),
         ("Quantity and unit errors",
          "Transaction quantities keyed with the wrong magnitude or unit.",
-         rows_of(d["t7_count"], d["n_tx"], "ledger rows"),
+         LEDGER, rows_of(d["t7_count"], d["n_tx"]),
          "Per-item outliers using median and spread, not averages",
          "List for review",
          "Distorted demand and on-hand"),
         ("Duplicate postings",
          "The same transaction entered twice.",
-         rows_of(d["t8_count"], d["n_tx"], "ledger rows"),
+         LEDGER, rows_of(d["t8_count"], d["n_tx"]),
          "Same item, qty, date within minutes",
          "List, usually small",
          "Movement double-counted"),
     ]
-    d["op_cost"] = {n: c for n, _d, _s, _t, _f, c in MASTER_ERRORS + TXN_ERRORS}   # reserved for Results
-    hdr = ["Error", "Description", "Scale (rows affected)"]
-    master_table = B.data_table(hdr, [[n, desc, sc] for n, desc, sc, _t, _f, _c in MASTER_ERRORS], right=[])
-    txn_table = B.data_table(hdr, [[n, desc, sc] for n, desc, sc, _t, _f, _c in TXN_ERRORS], right=[])
+    d["op_cost"] = {n: c for n, _d, _l, _s, _t, _f, c in MASTER_ERRORS + TXN_ERRORS}   # reserved for Results
+    hdr = ["Error", "Description", "ERP table", "Scale (rows affected)"]
+    master_table = B.data_table(hdr, [[n, desc, loc, sc] for n, desc, loc, sc, _t, _f, _c in MASTER_ERRORS], right=[])
+    txn_table = B.data_table(hdr, [[n, desc, loc, sc] for n, desc, loc, sc, _t, _f, _c in TXN_ERRORS], right=[])
     tests_table = B.data_table(
         ["Error", "Test", "What counts as a finding"],
-        [[n, t, f] for n, _d, _s, t, f, _c in MASTER_ERRORS + TXN_ERRORS], right=[])
+        [[n, t, f] for n, _d, _l, _s, t, f, _c in MASTER_ERRORS + TXN_ERRORS], right=[])
 
     found = f"""
 {B.section("found", "Section 2", "What we found")}
@@ -578,6 +587,11 @@ the system.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
 {txn_table}
+
+<p>Two of the counts are rows that should exist rather than rows that do. For unrecorded consumption
+the affected rows are the write-off adjustments that stand in for the issues that were never entered;
+for BOM omissions they are the component rows missing from the bill of materials, counted against
+the complete bill.</p>
 
 <p>Of the {d['chronic_items']:,} items with three or more downward adjustments in the last year,
 {d['chronic_on_bom']*100:.0f}% are BOM-omitted components: the adjustments are the shop absorbing usage

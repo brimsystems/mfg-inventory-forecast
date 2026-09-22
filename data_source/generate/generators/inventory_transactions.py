@@ -66,7 +66,8 @@ def build_inventory_transactions(production_orders, prod_map, item_master, item_
         })
 
     # ── BACKFLUSH from completed production orders ──────────────────────────
-    done = production_orders[production_orders["status"] == "COMPLETED"]
+    # backflush fires on reported completion, whether or not the job was closed
+    done = production_orders[production_orders["qty_completed"] > 0]
     for r in done.itertuples(index=False):
         comps = prod_map.get(r.product_number, {})
         cd = pd.to_datetime(r.completed_date).date()

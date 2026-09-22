@@ -256,10 +256,12 @@ def _closures(po, rng):
              "closed_date": _week_date(1, rng),
              "confirmation_source": rng.choice(["receiving records", "buyer confirmation", "supplier statement"])}
             for r in op.itertuples(index=False)]
-    # a sample of completed jobs left open, closed on confirmation
-    for _ in range(int(len(op) * 0.5)):
-        rows.append({"document_type": "JOB", "document_id": f"JOB-{int(rng.integers(1,7000)):06d}",
-                     "line": 1, "closed_date": _week_date(int(rng.integers(1, 3)), rng),
+    # finished jobs that were never closed, closed on production confirmation
+    prod = pd.read_csv(RAW / "erp" / "production_orders.csv", low_memory=False)
+    stuck = prod[(prod["status"] == "OPEN") & (prod["qty_completed"] > 0)]
+    for r in stuck.itertuples(index=False):
+        rows.append({"document_type": "JOB", "document_id": r.order_id, "line": 1,
+                     "closed_date": _week_date(int(rng.integers(1, 3)), rng),
                      "confirmation_source": "production confirmation"})
     return pd.DataFrame(rows)
 

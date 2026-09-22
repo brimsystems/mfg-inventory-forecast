@@ -56,4 +56,13 @@ def build_production_orders(builds, products, rng):
                 "completed_date":    completed_date.isoformat() if done else None,
                 "status":            "COMPLETED" if done else "OPEN",
             })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+
+    # T5: a share of finished jobs are never closed in the system. The work is
+    # reported complete (quantity and date are recorded) but the status stays
+    # OPEN. Drawn from an independent stream so the rest of the build is unchanged.
+    local = np.random.default_rng(C.RANDOM_SEED + 5)
+    finished = df.index[df["qty_completed"] > 0]
+    left_open = local.choice(finished, size=int(len(finished) * C.T5_OPEN_JOB_SHARE), replace=False)
+    df.loc[left_open, "status"] = "OPEN"
+    return df

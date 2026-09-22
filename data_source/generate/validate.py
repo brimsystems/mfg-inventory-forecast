@@ -122,6 +122,8 @@ def run():
     old = po[po["od"] < C.END_DATE - timedelta(days=90)]
     open_old = old[old["status"] == "OPEN"]
     _chk("PO lines open > 90 days (%)", len(open_old) / max(1, len(old)) * 100, 5, 8)
+    finished = prod[prod["qty_completed"] > 0]
+    _chk("Completed jobs left open (%)", (finished["status"] == "OPEN").mean() * 100, 6, 10)
 
     # shared logins on floor / receiving
     floor = tx[tx["type"].isin(["ISSUE", "BACKFLUSH", "RECEIPT"])]
