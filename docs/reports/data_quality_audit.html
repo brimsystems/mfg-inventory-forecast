@@ -140,32 +140,22 @@ the total and only distort where the cost sits, and those are marked as such.</p
 
 <div class="section-title-block" id="did"><div class="section-label">Section 3</div><h2 class="section-title">Actions</h2></div>
 <div class="section-title-block sub" id="remediation"><div class="section-label">Section 3.1</div><h2 class="section-title">Error Remediation</h2></div>
-<p><strong>How the tests were run.</strong> The work ran in a fixed order. Before looking for
-anything specific, we profiled every component of the ERP plainly: row counts by year, the fill rate
-of every column, the distinct values in every code field, and the date ranges. That pass is what
-surfaced the blank cost and supplier fields and the MISC item class before any test was written,
-and it set the baseline every later comparison is measured against. Only then did we run one test
-per error type, the sixteen in the tables below. Every test was written as a query against the
-extracted tables, and the query and its output were kept, so each finding traces to a stated rule
-and the shop can rerun it later.</p>
-
-<p><strong>Where precision has a floor.</strong> Two tests were built to be robust to the errors
-they sit on top of. Actual lead times were computed from receipt history using the median and a
-trimmed 80th percentile rather than the mean, because receipts are batched to Mondays and
-month-end, and that posting lag puts a floor of a few days on how precisely any lead time can be
-known. Quantity errors were found as per-item outliers against each item's own median and spread
-rather than against averages, so a genuinely lumpy item is not flagged for being lumpy. Duplicate
-detection normalized descriptions (case, punctuation, fraction and decimal forms, unit tokens),
-compared only within an item class, and scored on description similarity, cost proximity and shared
-supplier, with a sample of candidate pairs checked by hand.</p>
-
-<p>Nothing in the source data was overwritten by any of this. Every finding, every review decision
-and every correction was recorded in a reference table (the dead-item dispositions, the duplicate
-and supplier crosswalks, the UOM conversions, the lead-time computations, the chronic-adjustment
-list, the BOM change log, the document closures, the spreadsheet reconciliation, the free-text
-attribution and the posting corrections), so each one is auditable and reversible. The tables below give, for each error, how it was
-remediated and whose input that took, the evidence it rested on, and how many of the affected
-rows were remediated.</p>
+<p>The remediation ran in a fixed order. We began by exploring and profiling every component of the
+ERP: row counts by year, fill rates by column, the distinct values in every code field and the date
+ranges, which surfaced the blank fields and placeholder classes before any test was written. We then
+ran one test for each of the sixteen error types, written as queries against the extracted tables so
+that each finding traces to a stated rule and can be rerun. Where the ERP could not settle a finding
+on its own, we brought in evidence from outside it: the physical cycle counts against the system's
+on-hand balances, the purchasing manager's spreadsheet against the ERP for the components she tracks,
+and expected consumption from jobs and bills of materials against what was actually issued, with
+crosswalks built for the duplicate items and the fragmented suppliers. Findings that rested on
+judgment rather than fact, such as duplicate pairs, free-text attributions, dead-item dispositions
+and BOM additions, went to the people who own them, the buyer, the stockroom lead, the engineering
+manager and the assembly supervisor, for confirmation before anything was changed. Lead times were
+recomputed with a method robust to batched receipt dates, and every correction was recorded in a
+reference table rather than written over the source, so each one is auditable and reversible. The
+tables below give, for each error, how it was remediated and whose input that took, the evidence it
+rested on, and how many of the affected rows were remediated.</p>
 <p style="font-size:18px;font-weight:700;color:#322B4B;margin-top:30px;">Master-level errors</p>
 <table class="data-table" style="table-layout:fixed;"><colgroup><col style="width:4%;"><col style="width:19%;"><col style="width:42%;"><col style="width:18%;"><col style="width:17%;"></colgroup><thead><tr><th style="text-align:left;"></th><th style="text-align:left;">Error</th><th style="text-align:left;">Remediation</th><th style="text-align:left;">Evidence</th><th style="text-align:left;">Remediated (rows)</th></tr></thead><tbody><tr><td style="vertical-align:middle;text-align:center;">#1</td><td style="text-align:left;">Dead Records Never Deactivated</td><td style="text-align:left;">Deactivated in the item master after a line-by-line review. The purchasing manager and the service parts coordinator kept 108 as seasonal or safety-critical spares and held 183 for a later decision; the rest were deactivated.</td><td style="text-align:left;">ERP records only</td><td style="text-align:left;">689 of 980 (70%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#2</td><td style="text-align:left;">Stale Lead Times</td><td style="text-align:left;">Recomputed per item from receipt history using the median and a trimmed 80th percentile, then written to the master. Mechanical, with no judgment needed; the tracked items were checked against the buyer's spreadsheet.</td><td style="text-align:left;">ERP purchase history, checked against the buyer's spreadsheet</td><td style="text-align:left;">1,061 of 1,061 (100%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#3</td><td style="text-align:left;">Stale Reorder Points</td><td style="text-align:left;">Recomputed from actual usage over the corrected lead time at the ABC service level and loaded; the purchasing manager reviewed the A-class values before they went live.</td><td style="text-align:left;">ERP purchase and issue history, checked against the buyer's spreadsheet</td><td style="text-align:left;">884 of 884 (100%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#4</td><td style="text-align:left;">Duplicate Item Records</td><td style="text-align:left;">Candidate pairs scored, then merged to one surviving number through a crosswalk. The buyer and the stockroom lead reviewed every pair: 145 records retired to a survivor, 5 pairs rejected as genuinely different parts.</td><td style="text-align:left;">ERP records, every pair reviewed by the buyer</td><td style="text-align:left;">145 of 241 (60%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#5</td><td style="text-align:left;">UOM Mismatch</td><td style="text-align:left;">A purchase-to-stock conversion factor added to each item, taken from the pack size on its receipts and confirmed by the stockroom lead; on-hand restated in stock units.</td><td style="text-align:left;">ERP records and the pack sizes on receipts</td><td style="text-align:left;">48 of 48 (100%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#6</td><td style="text-align:left;">Missing and Placeholder Fields</td><td style="text-align:left;">Blocking blanks filled from the ordering history (cost from the last price paid, supplier from the ordering record) and from the reorder-point recomputation; MISC items reclassified by the buyer; required fields enforced from week 6.</td><td style="text-align:left;">ERP records only</td><td style="text-align:left;">174 of 174 (100%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#7</td><td style="text-align:left;">BOM Omissions</td><td style="text-align:left;">Missing components added back to the product and subassembly BOMs (64 change-log entries), each confirmed by the engineering manager from engineering review or by the assembly supervisor from floor observation.</td><td style="text-align:left;">Expected vs actual consumption (jobs &times; BOM against issues) and floor observation</td><td style="text-align:left;">64 of 64 (100%)</td></tr><tr><td style="vertical-align:middle;text-align:center;">#8</td><td style="text-align:left;">Supplier Fragmentation</td><td style="text-align:left;">Alias records mapped to one canonical supplier through a crosswalk (3 vendors, 7 records); the buyer confirmed each grouping, and new orders book to the canonical record.</td><td style="text-align:left;">ERP records only</td><td style="text-align:left;">4 of 7 (57%)</td></tr></tbody></table>
 
