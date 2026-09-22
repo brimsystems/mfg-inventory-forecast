@@ -52,6 +52,13 @@ def run():
 
     resid = (bt.assign(e=bt["actual"] - bt["pred"]).groupby("item")["e"].std())
     n_records = crosswalk.groupby("canonical_item_number")["item_number"].count()
+    # items whose demand history was materially recovered through T1 attribution
+    attr_path = REPO / "ml" / "data" / "data_quality" / "txn" / "t1_attribution.parquet"
+    attributed_vol = pd.Series(dtype=float)
+    if attr_path.exists():
+        at = pd.read_parquet(attr_path)
+        at = at[at["confirmed"] & at["probable_item"].notna()]
+        attributed_vol = at.groupby("probable_item")["quantity"].sum()
     desc = item_master.set_index("item_number")["description"]
     seg_code = {s: i for i, s in enumerate(["smooth", "erratic", "lumpy", "intermittent"])}
     abc_code = {"A": 0, "B": 1, "C": 2}
@@ -96,6 +103,7 @@ def run():
 
         merged = int(n_records.get(item, 1)) > 1
         lead_corrected = (a["corrected_lead_days"] - a["master_lead_time_days"]) >= STALE_GAP
+        attr_adjusted = float(attributed_vol.get(item, 0.0)) >= 0.05 * max(1.0, a["annual_consumption"])
 
         if on_hand <= rop:
             priority = "REORDER"
@@ -113,7 +121,8 @@ def run():
             "reorder_point": int(round(rop)), "suggested_qty": suggested_qty,
             "cover_days": int(round(cover_days)), "unit_cost": round(float(cost), 2),
             "priority": priority, "flag_merged": merged, "flag_lead_corrected": lead_corrected,
-            "reason": _reason(a, s, merged, lead_corrected, nmn),
+            "flag_attribution": attr_adjusted,
+            "reason": _reason(a, s, merged, lead_corrected, attr_adjusted, nmn),
         })
 
     rec = pd.DataFrame(rows)
@@ -129,8 +138,10 @@ def run():
     print()
 
 
-def _reason(a, s, merged, lead_corrected, next_month):
+def _reason(a, s, merged, lead_corrected, attr_adjusted, next_month):
     parts = []
+    if attr_adjusted:
+        parts.append("Demand history adjusted for recovered free-text purchases")
     if lead_corrected:
         parts.append(f"Lead time corrected {int(a['master_lead_time_days'])} to {int(round(a['corrected_lead_days']))} days")
     if merged:

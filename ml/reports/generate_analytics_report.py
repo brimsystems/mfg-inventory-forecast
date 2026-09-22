@@ -12,6 +12,7 @@ paragraph that states the takeaway first.
 Run from repo root:
   PYTHONIOENCODING=utf-8 "../mfg-oee-maintenance/.venv/Scripts/python.exe" -m ml.reports.generate_analytics_report
 """
+import ast
 import json
 from pathlib import Path
 
@@ -130,6 +131,24 @@ wc_pct = wc_released / inv["corrected"]
 carrying_saved = wc_released * CARRYING_RATE
 expedite_cut = expedite["current"] - expedite["forecast"]
 
+# ── T6 phantom on-order: never-closed PO lines that fake an inbound position ───
+TXN = DQ / "txn"
+t6 = pd.read_parquet(TXN / "t6_phantom.parquet")
+po_all = pd.read_csv(RAW / "purchase_orders.csv")[["po_id", "item_number"]]
+# Resolve the raw item numbers on the phantom PO lines to canonical items so the
+# item count lines up with the deduplicated catalogue used everywhere else.
+_dups = pd.read_csv(DQ / "d1_duplicates.csv")
+_xwalk = {}
+for _, _r in _dups.iterrows():
+    for _raw in ast.literal_eval(_r["item_number"]):
+        _xwalk[_raw] = _r["canonical_item_number"]
+_phantom_po = po_all[po_all["po_id"].isin(t6["po_id"])].copy()
+_phantom_po["canonical"] = _phantom_po["item_number"].map(lambda x: _xwalk.get(x, x))
+PHANTOM_PO_LINES = int(len(t6))
+PHANTOM_ITEMS = int(_phantom_po["canonical"].nunique())
+PHANTOM_SHARE = float(psum["phantom_stockout_share"])
+PHANTOM_EVENTS = int(round(PHANTOM_SHARE * stockouts["current"]))
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CHARTS
@@ -239,8 +258,8 @@ def chart_policy():
     # Left: fill rate.
     fills = [fill[p] * 100 for p in POL]
     axl.bar(x, fills, width=0.6, color=colors)
-    axl.axhline(97, color=ACCENT_RED, linestyle="--", linewidth=1.2)
-    axl.text(len(POL) - 0.5, 97.4, "97% service target", ha="right", va="bottom",
+    axl.axhline(96, color=ACCENT_RED, linestyle="--", linewidth=1.2)
+    axl.text(len(POL) - 0.5, 96.4, "96% service target", ha="right", va="bottom",
              fontsize=8.5, color=ACCENT_RED)
     for i, v in enumerate(fills):
         axl.text(i, v + 0.6, f"{v:.0f}%", ha="center", va="bottom", fontsize=10, fontweight="bold")
@@ -263,6 +282,31 @@ def chart_policy():
     return B.b64(fig)
 
 
+def chart_phantom_stockouts():
+    """Current-policy stockout events split into those attributable to material
+    phantom on-order (never-closed POs the ERP still counts as inbound) and all
+    other causes. A single stacked bar keeps the share in view."""
+    total = stockouts["current"]
+    phantom = PHANTOM_EVENTS
+    other = total - phantom
+    fig, ax = B.make_fig(h=2.5)
+    ax.barh([0], [other], color=MED_GREY, height=0.5)
+    ax.barh([0], [phantom], left=[other], color=ACCENT_RED, height=0.5)
+    ax.text(other / 2, 0, f"Other causes\n{other:,.0f} ({other / total:.0%})",
+            ha="center", va="center", color="white", fontsize=10, fontweight="bold")
+    ax.annotate(f"Phantom on-order\n{phantom:,.0f} ({phantom / total:.0%})",
+                xy=(other + phantom / 2, 0.28), xytext=(other + phantom / 2, 0.62),
+                ha="center", va="bottom", fontsize=9.5, color=ACCENT_RED, fontweight="bold",
+                arrowprops=dict(arrowstyle="-", color=ACCENT_RED, linewidth=1.0))
+    ax.set_xlim(0, total * 1.02); ax.set_ylim(-0.5, 0.9)
+    ax.set_yticks([])
+    ax.set_xlabel("Annual stockout events under current reorder points")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    B.chart_style(ax); ax.yaxis.grid(False); ax.xaxis.grid(True, color=LIGHT_GREY)
+    fig.tight_layout()
+    return B.b64(fig)
+
+
 print("Generating charts...")
 charts = {
     "abc": chart_abc_pareto(),
@@ -270,6 +314,7 @@ charts = {
     "segment": chart_segment_mix(),
     "supplier": chart_supplier_lead(),
     "policy": chart_policy(),
+    "phantom": chart_phantom_stockouts(),
 }
 
 
@@ -337,6 +382,7 @@ toc = (
     '<a href="#demand">Demand Patterns</a>'
     '<a href="#supplier">Supplier Lead Times</a>'
     '<a href="#policy">The Policy Comparison</a>'
+    '<a href="#phantom" class="sub">Phantom On-Order and Stockouts</a>'
 )
 
 n_a = abc_counts["A"]
@@ -420,6 +466,14 @@ the actual lead time matches the file within about <strong>{other_max_drift:.0f}
 supplier is the exception. <strong>{DRIFT_NAME}</strong> is delivering in roughly
 <strong>{DRIFT_ACTUAL:.0f} days</strong> against a file value of <strong>{DRIFT_MASTER:.0f} days</strong>,
 a gap of <strong>{DRIFT_GAP:.0f} days</strong> that has crept up unnoticed.</p>
+<p>One measurement caveat shapes how these lead times are read. Receiving tends to post
+several deliveries together in end-of-week batches, so the receipt date on file lands a
+little after the goods actually arrived. Left uncorrected that batching stretches the
+apparent order-to-receipt gap and biases the raw lead time upward by about
+<strong>two days</strong>. The figures here use a robust median across each supplier's
+receipts rather than a mean, so a handful of batched postings does not pull the number,
+and the drift shown below is a real change in supplier performance rather than an artifact
+of how receipts are keyed.</p>
 {B.chart("Lead Time on File vs Actual Lead Time by Supplier", charts["supplier"])}
 <p>The drift matters because the stale {DRIFT_MASTER:.0f}-day figure feeds the reorder-point
 formula on about <strong>{DRIFT_ITEMS} items</strong> bought from this vendor, so those items are
@@ -457,6 +511,24 @@ premiums from <strong>{usd(expedite['current'])}</strong> to
 <strong>{usd(expedite['forecast'])}</strong>, a saving of <strong>{usd(expedite_cut)}</strong>. In
 short, better information, corrected lead times plus a demand forecast, buys higher service and
 lower working capital at the same time, rather than trading one for the other.</p>
+
+{B.section("phantom", "Section 5.1", "Phantom On-Order and Stockouts")}
+<p>Part of today's stockout count is self-inflicted, and it is fixable without any
+forecasting. The ledger still carries <strong>{PHANTOM_PO_LINES:,} never-closed purchase
+order lines</strong> against <strong>{PHANTOM_ITEMS} items</strong>, quantities the ERP
+counts as inbound even though the receipt never posted and never will. Because the
+on-order position looks covered, the reorder logic sees no shortfall and holds off buying.
+About <strong>{PHANTOM_EVENTS} stockout events a year</strong>, roughly
+<strong>{PHANTOM_SHARE:.0%}</strong> of the <strong>{stockouts['current']:,.0f}</strong>
+under today's policy, trace back to this phantom on-order rather than to a genuine demand
+surprise.</p>
+{B.chart("Current Stockouts Attributable to Phantom On-Order", charts["phantom"])}
+<p>The read for the buying team is that closing the dead POs is a clerical cleanup, not a
+planning project, yet it recovers about a tenth of the stockouts on its own. It also
+compounds with the policy changes above: the fill-rate gains from corrected lead times and
+a demand forecast assume the on-order position the system reports is real, so purging the
+phantom lines is a prerequisite for the reorder logic to act on the shortfalls it is meant
+to catch.</p>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)

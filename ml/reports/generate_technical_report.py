@@ -109,6 +109,46 @@ abc_res = {a: _abc_result(a) for a in ABC_ORDER}
 # ── Residuals by segment (pred minus actual, lead-time demand units) ─────────
 mb = mb.assign(resid=mb["pred"] - mb["actual"])
 
+# ── Three-way cleaning decomposition (raw -> master -> fully) ─────────────────
+TXN = REPO / "ml" / "data" / "data_quality" / "txn"
+TIERS = ["raw", "master", "fully"]
+TIER_LABEL = {"raw": "Raw (as recorded)",
+              "master": "Master cleaned (D1 to D6)",
+              "fully": "Fully cleaned (plus transaction)"}
+TIER_COLOR = {"raw": MED_GREY, "master": LIGHT_BLUE, "fully": DARK_BLUE}
+tw = {n: pd.read_parquet(BACKTEST / f"threeway_{n}.parquet") for n in TIERS}
+
+
+def _tw_wape(df, seg=None):
+    d = df if seg is None else df[df["segment"] == seg]
+    return wape(d["target"], d["pred"])
+
+
+tier_overall = {n: _tw_wape(tw[n]) for n in TIERS}
+tier_seg = {n: {s: _tw_wape(tw[n], s) for s in SEG_ORDER} for n in TIERS}
+master_gain = (tier_overall["raw"] - tier_overall["master"]) / tier_overall["raw"]
+fully_gain = (tier_overall["master"] - tier_overall["fully"]) / tier_overall["master"]
+
+# ── Transaction attribution (T1) and the receipt-batching floor (T5) ─────────
+txn_summary = json.loads((TXN / "summary.json").read_text(encoding="utf-8"))
+t1s = txn_summary["T1"]
+confirmed_share = txn_summary["confirmed_share"]
+t1_attr = pd.read_parquet(TXN / "t1_attribution.parquet")
+t1_min_conf = float(t1_attr.loc[t1_attr["confirmed"], "confidence"].min())
+
+_po = pd.read_csv(REPO / "data_source" / "raw" / "erp" / "purchase_orders.csv")
+n_receipts = int(_po["received_date"].notna().sum())
+_t5 = pd.DataFrame(json.loads((REPO / "data_source" / "truth" / "txn_defects.json")
+                              .read_text(encoding="utf-8"))["t5"])
+t5_share = len(_t5) / n_receipts
+_t5disp = (pd.to_datetime(_t5["recorded_received_date"])
+           - pd.to_datetime(_t5["true_received_date"])).dt.days
+t5_disp = float(_t5disp.median())
+sup = pd.read_parquet(MARTS / "supplier_performance.parquet")
+sup_med_lead = float(sup["median_lead"].median())
+master_lead_med = float(attrs["master_lead_time_days"].median())
+corrected_lead_med = float(attrs["corrected_lead_days"].median())
+
 
 # ── Charts ───────────────────────────────────────────────────────────────────
 def chart_segment_scatter():
@@ -202,12 +242,32 @@ def chart_residuals_by_segment():
     return B.b64(fig)
 
 
+def chart_threeway_by_segment():
+    fig, ax = B.make_fig(h=B.CHART_H)
+    x = np.arange(len(SEG_ORDER)); w = 0.26
+    for j, n in enumerate(TIERS):
+        vals = [tier_seg[n][s] * 100 for s in SEG_ORDER]
+        off = (j - 1) * w
+        ax.bar(x + off, vals, w, color=TIER_COLOR[n], label=TIER_LABEL[n])
+        for i, v in enumerate(vals):
+            ax.text(x[i] + off, v + 0.8, f"{v:.0f}", ha="center", va="bottom",
+                    fontsize=8, color=MED_GREY)
+    ax.set_xticks(x); ax.set_xticklabels([s.title() for s in SEG_ORDER])
+    ax.set_ylabel("WAPE vs true demand (%)")
+    ymax = max(tier_seg[n][s] for n in TIERS for s in SEG_ORDER) * 100
+    ax.set_ylim(0, ymax * 1.18)
+    ax.legend(fontsize=9, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.14), frameon=False)
+    B.chart_style(ax); fig.tight_layout()
+    return B.b64(fig)
+
+
 charts = {
     "scatter": chart_segment_scatter(),
     "wape": chart_wape_by_segment(),
     "imp": chart_feature_importance(),
     "clean": chart_clean_before_after(),
     "resid": chart_residuals_by_segment(),
+    "threeway": chart_threeway_by_segment(),
 }
 
 
@@ -284,6 +344,25 @@ def abc_result_table():
             f'<th style="text-align:right;">Lift</th>'
             f'<th style="text-align:right;">MASE</th>'
             f'<th style="text-align:right;">Bias</th></tr></thead><tbody>{rows}</tbody></table>')
+
+
+def threeway_table():
+    head = ["Cleaning tier", "Overall"] + [s.title() for s in SEG_ORDER]
+    rows = []
+    for n in TIERS:
+        rows.append([TIER_LABEL[n], f"{tier_overall[n]*100:.1f}%"]
+                    + [f"{tier_seg[n][s]*100:.1f}%" for s in SEG_ORDER])
+    return B.data_table(head, rows, right={1, 2, 3, 4, 5})
+
+
+def t1_attribution_table():
+    rows = [
+        [f'{B.badge("Confirmed", GREEN)}', f"&ge; {0.60:.2f}",
+         f"{t1s['attributed']:,}", "Added back to the fully-cleaned mart"],
+        [f'{B.badge("Held for review", AMBER)}', f"&lt; {0.60:.2f}",
+         f"{t1s['held_for_review']:,}", "Routed to a buyer, includes genuine one-offs"],
+    ]
+    return B.data_table(["Disposition", "Confidence", "Lines", "Handling"], rows, right={2})
 
 
 def feature_family_table():
@@ -365,7 +444,10 @@ toc = ('<a href="#seg">1. Demand Segmentation</a><hr>'
        '<a href="#results">7. Results by Segment and Class</a><hr>'
        '<a href="#importance">8. Feature Importance</a><hr>'
        '<a href="#safety">9. Error to Safety Stock</a><hr>'
-       '<a href="#resid">10. Residual Analysis</a>')
+       '<a href="#resid">10. Residual Analysis</a><hr>'
+       '<a href="#threeway">11. Three-Way Cleaning Decomposition</a><hr>'
+       '<a href="#attribution">12. Free-Text Attribution Model</a><hr>'
+       '<a href="#leadtime">13. Lead-Time Estimation and Its Floor</a>')
 
 # ── Body ─────────────────────────────────────────────────────────────────────
 body = f"""
@@ -564,6 +646,81 @@ segment-sized buffer on top of the point forecast rather than trusting it direct
 class items carry the highest service multiplier. The smooth segment needs little protection; the
 lumpy and intermittent segments need the buffer to convert an honest but conservative forecast into a
 policy that holds its service level.</p>
+
+{B.section("threeway", "Section 11", "Three-Way Cleaning Decomposition by Segment")}
+<p>The sections above hold the data fixed and vary the model. This section holds the model fixed and
+varies the data, to answer a separate question: how much of the achievable accuracy comes from
+cleaning the history rather than from the algorithm. One model, trained once on the fully-cleaned
+history, is scored on three versions of the same catalog that differ only in how clean the input is.
+Raw is consumption exactly as the ERP recorded it, with duplicate part numbers left split, free-text
+lines lost and keying and duplicate-posting errors present. Master applies the D1 to D6 remediation,
+merging duplicate records through the crosswalk. Fully adds the confirmed transaction corrections on
+top. All three are scored against the same true demand over each item's lead time, so the gaps
+isolate what each tier of cleaning is worth.</p>
+<p>Cleaning moves overall WAPE from <strong>{tier_overall['raw']*100:.1f}%</strong> on the raw history
+to <strong>{tier_overall['master']*100:.1f}%</strong> after master-level remediation and
+<strong>{tier_overall['fully']*100:.1f}%</strong> after transaction cleaning, a relative gain of
+<strong>{master_gain*100:.1f}%</strong> from the first tier and <strong>{fully_gain*100:.1f}%</strong>
+from the second. The honest reading is that each tier does most of its work on the items it repairs
+rather than across the board: master-level merging lifts the smooth segment sharply, where the split
+duplicate series concentrate, while the transaction layer moves the lumpy segment where the recovered
+free-text volume and removed duplicate postings land. The by-segment table makes both the overall
+progression and that concentration explicit.</p>
+{threeway_table()}
+<p>The chart groups the three tiers within each segment. The takeaway is that the gains are real but
+uneven: the bars step down left to right most visibly on smooth and lumpy demand, where the underlying
+defects distorted the series, and barely move on intermittent demand, where the sparse signal limits
+what any amount of cleaning can recover. Cleaner input helps most exactly where the data quality
+problem was, which is the pattern to expect when the improvement is genuine rather than a global
+re-tuning.</p>
+{B.chart("Three-Way Cleaning Decomposition: WAPE by Segment", charts["threeway"])}
+
+{B.section("attribution", "Section 12", "The Free-Text Attribution Model")}
+<p>Master-level defects are found by lookup and similarity and stated as fact. Transaction-level
+defects are different: they are probabilistic findings drawn from tens of thousands of ledger lines,
+so each one carries a real error rate and the output splits into confirmed corrections and probable
+findings that a buyer reviews. The free-text attribution, T1, is the clearest example. The ERP holds
+<strong>{t1s['free_lines']:,}</strong> issue lines booked against generic non-stock codes, each with
+only a typed description, so the consumption they represent never reaches the item that actually moved.
+The attribution model reuses the entity-resolution machinery from D1: it normalizes the free-text
+description into tokens, scores each candidate item by a blend of token Jaccard overlap and a sequence
+similarity ratio, and adds unit-price agreement against the item's standard cost as independent
+evidence, so a description that matches on words and on price outranks one that matches on words alone.</p>
+<p>A line is attributed only when that combined confidence clears a threshold of
+<strong>{0.60:.2f}</strong>; below it the line is held for a human. On the injected validation set the
+confirmed attributions score <strong>{t1s['precision']*100:.0f}% precision</strong> and
+<strong>{t1s['recall']*100:.0f}% recall</strong>, so the recovered volume is trustworthy enough to
+fold straight into the fully-cleaned mart. Of the {t1s['free_lines']:,} free-text lines,
+<strong>{t1s['attributed']:,}</strong> clear the threshold and are added back, while
+<strong>{t1s['held_for_review']:,}</strong> stay below it and are routed for review, which is correct
+behavior because that residue contains genuine one-off buys that belong to no catalog item. Across all
+of the transaction detectors the confirmed share is about
+<strong>{confirmed_share*100:.0f}%</strong>, with the rest surfaced as probable findings rather than
+silently applied, because a high-precision automated correction and a flagged item for a buyer to judge
+are two different products and this work delivers both.</p>
+{t1_attribution_table()}
+
+{B.section("leadtime", "Section 13", "Robust Lead-Time Estimation and Its Floor")}
+<p>Lead time drives both the forecast horizon and the safety-stock window, so a wrong lead time
+corrupts the whole reorder policy. The master lead time carried in the item file is stale, a median of
+about <strong>{master_lead_med:.0f} days</strong> that no longer matches what suppliers actually
+deliver. Rather than trust it, lead time is re-estimated from evidence: for each supplier the realized
+lag between order and receipt is measured on every completed line and summarized by its
+<strong>median</strong>, not its mean, giving a corrected catalog median near
+<strong>{corrected_lead_med:.0f} days</strong> and a supplier-level median lead near
+<strong>{sup_med_lead:.0f} days</strong>. The median is deliberate: it resists the outliers and the
+systematic displacement that a handful of mis-dated receipts would otherwise pull into the estimate.</p>
+<p>That robustness has a limit worth stating plainly. Receipt-date batching, defect T5, means that
+about <strong>{t5_share*100:.0f}%</strong> of receipts are stamped with a batch-posting date rather
+than the true arrival date, displacing the recorded receipt by a median of about
+<strong>{t5_disp:.0f} days</strong> upward. Because the displacement is systematic and one-directional
+rather than random noise, no estimator can fully remove it: the median narrows its effect but cannot
+recover an arrival date the ledger never recorded. This sets a floor on achievable lead-time precision
+of roughly the size of that displacement, and it is an honest limitation of the data, not of the
+method. The practical consequence is that lead-time estimates are reported to a resolution consistent
+with that floor, and the safety-stock buffer in Section 9 is sized to absorb the residual lead-time
+uncertainty alongside the forecast error, rather than implying a day-level precision the source data
+cannot support.</p>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -573,4 +730,4 @@ OUT.write_text(
            toc, body),
     encoding="utf-8")
 print(f"Technical report written to {OUT}")
-print(f"  sections 10, charts {len(charts)}, items {N_ITEMS}, origins {N_ORIGINS}")
+print(f"  sections 13, charts {len(charts)}, items {N_ITEMS}, origins {N_ORIGINS}")

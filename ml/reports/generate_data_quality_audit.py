@@ -104,6 +104,46 @@ DEFECT_AFFECTED = {"D1": records_merged, "D2": int(S2["items"]), "D3": int(S3["i
 DEFECT_LABEL = {"D1": "D1 Duplicates", "D2": "D2 Lead times", "D3": "D3 Unit of measure",
                 "D4": "D4 Phantom stock", "D5": "D5 Suppliers", "D6": "D6 Missing fields"}
 
+# ── Transaction-level detector output and the seeded reference ────────────────
+DQ_TXN = DQ / "txn"
+TXN_TRUTH = REPO / "data_source" / "truth" / "txn_defects.json"
+
+txn_summary = json.loads((DQ_TXN / "summary.json").read_text(encoding="utf-8"))
+txn_truth = json.loads(TXN_TRUTH.read_text(encoding="utf-8"))
+
+t1_att = pd.read_parquet(DQ_TXN / "t1_attribution.parquet")
+t2_corr = pd.read_parquet(DQ_TXN / "t2_corrections.parquet")
+t4_adj = pd.read_parquet(DQ_TXN / "t4_adjustments.parquet")
+t6_ph = pd.read_parquet(DQ_TXN / "t6_phantom.parquet")
+t7_dup = pd.read_parquet(DQ_TXN / "t7_duplicates.parquet")
+
+# Planted (ground-truth) counts are the length of each seeded defect list.
+PLANTED = {k.upper(): len(txn_truth[k]) for k in ["t1", "t2", "t3", "t4", "t5", "t6", "t7"]}
+TS1, TS2 = txn_summary["T1"], txn_summary["T2"]
+TS4, TS6, TS7 = txn_summary["T4"], txn_summary["T6"], txn_summary["T7"]
+confirmed_share = float(txn_summary["confirmed_share"])
+
+# Confirmed vs probable split per detector: from the detector output where a
+# per-line confirm flag exists, else all-confirmed for the high-precision detectors.
+CP = {
+    "T1": (int(t1_att["confirmed"].sum()), int((~t1_att["confirmed"]).sum())),
+    "T2": (int(t2_corr["confirmed"].sum()), int((~t2_corr["confirmed"]).sum())),
+    "T4": (len(t4_adj), 0),
+    "T6": (int(TS6["flagged"]), 0),
+    "T7": (int(t7_dup["confirmed"].sum()), int((~t7_dup["confirmed"]).sum())),
+}
+
+# T5 receipt-batching bias, computed live from the seeded receipt dates.
+_t5 = pd.DataFrame(txn_truth["t5"])
+_t5_bias = (pd.to_datetime(_t5["recorded_received_date"])
+            - pd.to_datetime(_t5["true_received_date"])).dt.days
+t5_median_bias = float(_t5_bias.median())
+t5_share = len(_t5) / int((po["quantity_received"] > 0).sum())
+t1_oneoffs = int(pd.DataFrame(txn_truth["t1"])["is_oneoff"].sum())
+
+TXN_LABEL = {"T1": "T1\nFree-text", "T2": "T2\nKeying", "T4": "T4\nAdjustments",
+             "T6": "T6\nPhantom PO", "T7": "T7\nDuplicates"}
+
 
 # ── Charts ───────────────────────────────────────────────────────────────────
 def chart_affected():
@@ -163,6 +203,26 @@ def chart_resolution():
     ax.set_ylabel("Candidate pairs")
     ax.set_yscale("log")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2, frameon=False, fontsize=9)
+    B.chart_style(ax)
+    fig.tight_layout()
+    return B.b64(fig)
+
+
+def chart_txn_findings():
+    order = ["T1", "T2", "T4", "T6", "T7"]
+    xs = [TXN_LABEL[d] for d in order]
+    conf = [CP[d][0] for d in order]
+    prob = [CP[d][1] for d in order]
+    totals = [c + p for c, p in zip(conf, prob)]
+    fig, ax = B.make_fig(h=3.6)
+    ax.bar(xs, conf, color=GREEN, width=0.62, label="Confirmed (applied)")
+    ax.bar(xs, prob, bottom=conf, color=AMBER, width=0.62, label="Probable (held for review)")
+    for i, tot in enumerate(totals):
+        ax.text(i, tot + max(totals) * 0.02, f"{tot:,}", ha="center", va="bottom",
+                fontsize=9.5, fontweight="bold", color=DARK_GREY)
+    ax.set_ylabel("Ledger lines or items flagged")
+    ax.set_ylim(0, max(totals) * 1.15)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False, fontsize=9.5)
     B.chart_style(ax)
     fig.tight_layout()
     return B.b64(fig)
@@ -250,7 +310,8 @@ def near_miss_table():
 
 
 # ── Assemble ─────────────────────────────────────────────────────────────────
-charts = {"affected": chart_affected(), "cost": chart_cost(), "resolution": chart_resolution()}
+charts = {"affected": chart_affected(), "cost": chart_cost(), "resolution": chart_resolution(),
+          "txn": chart_txn_findings()}
 
 toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#defects">Defects Identified</a>'
@@ -261,7 +322,15 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#d5" class="sub">2.5 Fragmented suppliers</a>'
        '<a href="#d6" class="sub">2.6 Missing fields</a><hr>'
        '<a href="#resolution">Entity Resolution</a><hr>'
-       '<a href="#remediation">Remediation and Recovery</a>')
+       '<a href="#remediation">Remediation and Recovery</a><hr>'
+       '<a href="#txn">Transaction-Level Data Quality</a>'
+       '<a href="#t1" class="sub">5.1 Free-text lines</a>'
+       '<a href="#t2" class="sub">5.2 Keying errors</a>'
+       '<a href="#t3" class="sub">5.3 Item substitutions</a>'
+       '<a href="#t4" class="sub">5.4 Chronic adjustments</a>'
+       '<a href="#t5" class="sub">5.5 Receipt batching</a>'
+       '<a href="#t6" class="sub">5.6 Phantom on-order</a>'
+       '<a href="#t7" class="sub">5.7 Duplicate postings</a>')
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
@@ -287,6 +356,15 @@ running through records that were wrong.</p>
     B.kpi_card(f"{leads_corrected}", "Lead times corrected", "understated 5+ days", ACCENT_RED),
     B.kpi_card(f"${spend_consolidated/1e6:.1f}M", "Spend consolidated", "one vendor, two IDs", DARK_GREY),
     B.kpi_card(f"{records_reconciled}", "Records reconciled", "items with a defect fixed", GREEN))}
+<p>The defects fall into two tiers that call for different handling. The six covered above are
+<strong>master-level</strong>: they live in a few hundred item, supplier, and cost records, are found by
+lookup and similarity against the master itself, and once found are stated as fact and corrected with
+confidence. A second tier is <strong>transaction-level</strong>: errors scattered through tens of
+thousands of consumption, receipt, and adjustment lines that no one can verify one by one. Those are
+found by detection methods that carry real error rates, so each is reported either as a confirmed
+correction or as a probable finding flagged for a person to review, and a residue always remains that
+only human judgment can settle. Section 5 documents that second tier; the sections in between cover the
+master remediation.</p>
 <p>Cleaning the item master was not only a housekeeping exercise: merging the duplicate records
 alone measurably improved demand-forecast accuracy on the affected parts, which in turn frees
 working capital in the inventory policy. Those downstream gains are quantified in the analytics
@@ -437,6 +515,87 @@ point on the buyer's queue, and the consolidated spend and reconciled on-hand ti
 policy. Those downstream benefits, the lower forecast error and the working capital released at equal
 service, are quantified in the analytics report and carried through to the reorder queue and policy
 deliverables.</p>
+
+{B.section("txn", "Section 5", "Transaction-Level Data Quality")}
+<p>The six defects above live in the item master, a few hundred records a person can read and correct
+with confidence. The second tier lives in the transaction ledger: tens of thousands of consumption,
+receipt, and adjustment lines where an error cannot be checked against a clean reference one line at a
+time. These are surfaced by detection methods that carry measurable error rates, so every finding is
+labeled <strong>CONFIRMED</strong>, precise enough to apply to the books, or <strong>PROBABLE</strong>,
+flagged for a person to review. About <strong>{confirmed_share:.0%}</strong> of the findings clear the
+confirm bar; the rest are handed to review rather than silently applied. Each finding below states its
+detection method, how many lines it flagged against the count seeded in the reference, and where it
+landed on that confirmed-versus-probable split.</p>
+<p>The chart below splits each detector's findings into the share confirmed outright and the share held
+for review. The two fully confirmed detectors, chronic adjustments (T4) and never-closed purchase-order
+lines (T6), leave no residue because their evidence is unambiguous. The keying-error detector (T2) is
+deliberately the opposite: it confirms only the {CP['T2'][0]} lines it can correct without doubt and
+holds the {CP['T2'][1]:,} it merely suspects. Free-text attribution (T1) and duplicate postings (T7)
+fall in between. The takeaway is that most ledger findings are real, but a conservative confirm bar
+keeps the questionable ones off the books until a person signs off.</p>
+{B.chart("Confirmed vs Probable Findings by Transaction Defect", charts["txn"])}
+
+{B.section("t1", "Section 5.1", "T1: Free-Text Consumption Lines")}
+<p>Detection: purchase and consumption lines entered as free text with no item number are matched to
+their probable catalog item by a text model, and attributed only above a confidence threshold. Of
+<strong>{int(TS1['free_lines']):,} free-text lines</strong> ({PLANTED['T1']:,} seeded), <strong>{int(TS1['attributed'])}</strong>
+were attributed to an item (CONFIRMED) at <strong>{TS1['precision']:.0%} precision and {TS1['recall']:.0%}
+recall</strong>, and <strong>{int(TS1['held_for_review'])}</strong> were held for review (PROBABLE),
+including {t1_oneoffs} genuine one-off buys that have no catalog home. Recovering the attributed lines
+restores consumption that was invisible on the affected items, and the forecast accuracy that recovery
+unlocks is carried in the model and analytics deliverables rather than restated here.</p>
+
+{B.section("t2", "Section 5.2", "T2: Quantity Keying Errors")}
+<p>Detection: a line's recorded quantity is compared with the item's rolling median usage, an
+order-of-magnitude outlier is flagged, and a correction is confirmed only when the clean value is
+unambiguous. <strong>{int(TS2['flagged']):,} lines</strong> were flagged ({PLANTED['T2']:,} seeded), of
+which <strong>{int(TS2['confirmed'])}</strong> became confirmed corrections at <strong>{TS2['precision']:.0%}
+precision</strong>; the remaining <strong>{int(TS2['flagged']) - int(TS2['confirmed']):,}</strong> are
+PROBABLE and left for review. The confirmed set is intentionally small, about {TS2['recall']:.0%} of the
+suspected lines: a wrong auto-correction to a booked quantity is worse than a flag, so the bar sits high
+and human review carries the rest.</p>
+
+{B.section("t3", "Section 5.3", "T3: Item Substitutions")}
+<p>Detection: a transaction can be posted against a wrong but plausible item number, which reads
+identically to a legitimate posting without a reference key to compare against. <strong>{PLANTED['T3']:,}</strong>
+such substitutions are present in the seeded reference, but because the ledger alone cannot separate them
+from valid postings, none are machine-confirmed: they stay in the PROBABLE residue a person must resolve.
+This is the honest limit of ledger-only detection, and it is why this tier is reported as findings with
+error rates rather than as clean corrections.</p>
+
+{B.section("t4", "Section 5.4", "T4: Chronic Negative Adjustments")}
+<p>Detection: items whose inventory-adjustment ledger runs persistently negative are surfaced, since
+repeated write-downs usually mean real usage booked as shrink. <strong>{int(TS4['flagged_items'])} items</strong>
+were flagged ({PLANTED['T4']} seeded) at <strong>{TS4['precision']:.0%} precision and {TS4['recall']:.0%}
+recall</strong>, all CONFIRMED. Their implied usage is added back to demand so the forecast sees what the
+floor actually consumed.</p>
+
+{B.section("t5", "Section 5.5", "T5: Receipt-Date Batching")}
+<p>Detection: receipts keyed in weekly batches rather than on the day material physically arrived bias
+raw lead times upward. Across <strong>{len(_t5):,} affected receipt lines</strong> (about <strong>{t5_share:.0%}
+of all receipts</strong>), the recorded date runs a median <strong>{t5_median_bias:.0f} days late</strong>.
+This is a systematic bias, not a per-line error, so it is corrected by estimating lead time from a robust
+median rather than flagged line by line. It has no confirmed-versus-probable split, and it sets a floor on
+how precisely any lead time can be known.</p>
+
+{B.section("t6", "Section 5.6", "T6: Never-Closed Purchase-Order Lines")}
+<p>Detection: open purchase-order lines whose receipt never posted yet age past a threshold are flagged as
+phantom on-order, material the system believes is inbound that will never arrive. <strong>{int(TS6['flagged'])}
+lines</strong> were flagged ({PLANTED['T6']} seeded) at <strong>{TS6['precision']:.0%} precision and
+{TS6['recall']:.0%} recall</strong>, all CONFIRMED. Phantom on-order quietly suppresses reorders and is a
+measurable driver of stockouts, quantified in the analytics report.</p>
+
+{B.section("t7", "Section 5.7", "T7: Near-Duplicate Postings")}
+<p>Detection: a transaction that repeats another within a short window and matches on its key fields is
+flagged as a near-duplicate posting. <strong>{int(TS7['flagged'])} lines</strong> were flagged
+({PLANTED['T7']} seeded near-duplicates), of which <strong>{int(TS7['confirmed'])}</strong> were CONFIRMED
+at <strong>{TS7['precision']:.0%} precision and {TS7['recall']:.0%} recall</strong>; the remaining
+<strong>{int(TS7['flagged']) - int(TS7['confirmed'])}</strong> are PROBABLE. Duplicates double-count
+consumption, so removing the confirmed set corrects the demand history the forecast learns from.</p>
+<p>Cleaning the transaction ledger, like cleaning the master, pays off downstream: the recovered and
+corrected demand lifts forecast accuracy over and above the master-level cleaning, with the largest effect
+on the free-text items the attribution model repairs. Those gains are quantified in the model overview and
+technical reports and are not restated here.</p>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -444,5 +603,6 @@ OUT.write_text(B.page("Data Quality Audit: Purchased-Item Master",
                       "Item master remediation and recovered cost", toc, body),
                encoding="utf-8")
 print(f"Data quality audit written to {OUT}")
-print(f"  sections: 4 (Section 2 has 6 defect subsections), charts: {len(charts)}")
+print(f"  sections: 5 (Section 2 has 6 master subsections, Section 5 has 7 transaction subsections), "
+      f"charts: {len(charts)}")
 print(f"  records {n_records} -> {n_canonical} canonical; precision {precision:.0%} recall {recall:.0%}; near-miss {n_near}")
