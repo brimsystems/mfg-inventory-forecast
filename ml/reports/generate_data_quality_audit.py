@@ -1008,6 +1008,9 @@ def run():
                   toc, body)
     for a, b in [("defects", "errors"), ("Defects", "Errors"), ("defect", "error"), ("Defect", "Error")]:
         html = html.replace(a, b)
+    # subsection titles sized to match the bold table titles (18px)
+    html = html.replace("</style></head>",
+                        ".section-title-block.sub .section-title{font-size:18px;font-weight:700;}</style></head>", 1)
     OUT.write_text(html, encoding="utf-8")
     print(f"Data quality audit written to {OUT}  ({len(html)//1024} KB)")
 
