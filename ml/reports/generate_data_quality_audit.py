@@ -492,8 +492,6 @@ def build(d):
         '<a href="#found">Findings</a>',
         '<a href="#did">Error Remediation</a>',
         '<a href="#results">Results</a>',
-        '<a class="sub" href="#trust">Trust in the system</a>',
-        '<a class="sub" href="#cost">What the messy data cost</a>',
         '<a href="#process">Process Changes</a>',
     ])
 
@@ -619,55 +617,10 @@ def build(d):
 
     results = f"""
 {B.section("results", "Section 3", "Results")}
-<p>Over ten weeks we audited the shop's ERP end to end, tested it for sixteen kinds of data quality
-error, and corrected what the record could support: {d['dead_deactivated']} dead item records
-deactivated, {d['n_lead_off']:,} lead times and {d['params_changed']:,} reorder points recomputed
-from actual history, {d['dup_merged']} duplicate records merged, {d['bom_changes']} missing
-components restored to the bills of {d['omit_products']} products, {d['closed_po']:,} phantom
-purchase order lines closed, and {d['uom_items']} unit-of-measure conversions added. Seven ERP
-controls were switched on so the errors cannot re-enter, and a cycle-count program replaced the
-annual physical. The largest achievements are that the balances the shop plans against can now be
-trusted ({_money(tr['reliable_value']['after'])} of inventory, {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}%
-of the book value, at a reliable balance, from nothing),
-that {_money(tr['on_order_genuine']['before_total'] - tr['on_order_genuine']['before'])} of on-order value
-that was never coming is off the books, and that the purchasing manager's {d['spreadsheet_rows']}
-line-critical components are managed in the ERP instead of a spreadsheet. Section 3.1 gives one
-measure per control; Section 3.2 gives what the errors cost in {YR}.</p>
+<p>As a result of the data quality audit and remediation of errors, numerous measures of data system
+reliability improved significantly, as detailed in the table below.</p>
 
-{B.section("trust", "Section 3.1", "Trust in the system")}
 {trust_table}
-<p>Before is the start of the engagement ({tr['before_date']}); after is the end of week 10
-({tr['after_date']}). Percentages where the base is items or spend; dollars for on-order and
-inventory value. Rows that stay short of 100% (dead items held at the buyer's request, the
-{d['dup_rejected']} duplicate pairs rejected as genuinely different parts, and free-text lines the
-buyer could not attribute) are left that way. The lead-time row treats the 80th percentile of
-receipts as actual delivery, since that is what the shop plans against. The second-round row is
-measured on the first quarter of the cycle-count program that followed the engagement.</p>
-
-{B.section("cost", "Section 3.2", f"What the messy data cost in {YR}")}
-<p>Two tables, one by financial cost type and one by operational. Each line is tagged
-<em>measured</em> (visible in the ERP record) or <em>estimated</em> (the rate stated inline). No
-forward-looking figures are given: what the cleanup saves from here on is for the reorder-policy
-work that follows this audit.</p>
-
-{sub("Financial")}
-{fin_cost_table}
-<p>The largest measured line is purchases placed while the same part already sat on the shelf under
-another number, which follows entirely from the duplicate records (Section 1, #4); the write-offs
-follow mostly from unrecorded consumption on components missing from the bills (#7, #9). The expedite
-line is stated only for the {cm['expedite']['traced_lines']} rush lines the record ties to a stale
-lead time, an unrecorded pull or a phantom on-order balance (#2, #9, #16); the remaining
-{_money(cm['expedite']['total'] - cm['expedite']['traced'])} of rush spend was demand the stale reorder
-points did not cover and is not attributed.</p>
-
-{sub("Operational")}
-{ops_cost_table}
-<p>The stoppages and stockouts do not trace cleanly to one error. {d['shortages25_on_omitted']} of the
-{d['shortages25']} shortage episodes fell on the components missing from the bills (#7, #9), which the
-ERP never saw demand for; most of the rest fell on items whose lead time or reorder point was stale
-(#2, #3), where the record cannot separate the error from ordinary supplier variance, so no share is
-claimed. The purchase orders placed on bad information are the stale reorder points (#3) and the
-duplicate records (#4) acting on every regular buy.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
