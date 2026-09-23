@@ -110,8 +110,13 @@ supplier measured on it looks slower than it is.</p>
 
 <p>Two other master-level errors are small in the master and large downstream. The 64
 components missing from the bills of 30 of the 80 products are
-consumed on every job that builds those products without ever being subtracted, which makes them the
-single largest source of shortages and write-offs in the ledger. And the 241 duplicate
+consumed on every job that builds those products without ever being subtracted: 696
+of the 2,163 jobs in 2025 built one of those products, and 1,290
+pulls of hardware, fasteners, fittings and consumables worth $67,300 left the
+stockroom with no record, about a quarter of those items' consumption. In dollars it is small, which is
+why it persisted; in the ledger it is the origin of the chronic write-offs, and it put
+69 of the year's 578 shortage episodes on components the ERP
+never saw demand for. And the 241 duplicate
 records, each reordering on its own point against one shared pile, produced 258
 purchase lines in 2025 for parts the shop already held.</p>
 
@@ -193,11 +198,12 @@ points did not cover and is not attributed.</p>
 
 <p style="font-size:18px;font-weight:700;color:#322B4B;margin-top:34px;">Operational</p>
 <table class="data-table" style="table-layout:fixed;"><colgroup><col style="width:20%;"><col style="width:34%;"><col style="width:28%;"><col style="width:18%;"></colgroup><thead><tr><th style="text-align:left;">Cost type</th><th style="text-align:left;">What happened in 2025</th><th style="text-align:left;">2025 count</th><th style="text-align:left;">Basis</th></tr></thead><tbody><tr><td style="text-align:left;">Line stoppages waiting on material</td><td style="text-align:left;">Assembly stopped for parts the system said were in stock or on order</td><td style="text-align:left;">408 holds<br><em>4,863 job-days lost, typically 7 per hold</em></td><td style="text-align:left;">Measured from production order holds</td></tr><tr><td style="text-align:left;">Stockouts on stocked items</td><td style="text-align:left;">Demand that could not be met from the shelf</td><td style="text-align:left;">578 events<br><em>on 387 items</em></td><td style="text-align:left;">Measured from issue and shortage records</td></tr><tr><td style="text-align:left;">Late shipments</td><td style="text-align:left;">Jobs that missed their due date because of a material shortage</td><td style="text-align:left;">408 jobs<br><em>46% of the 891 late jobs in the year</em></td><td style="text-align:left;">Measured from completion records</td></tr><tr><td style="text-align:left;">Inaccurate promises to customers</td><td style="text-align:left;">Delivery dates built on lead times that read 7 days short</td><td style="text-align:left;">2,022 of 2,163 jobs<br><em>built products with at least one component on a stale lead time</em></td><td style="text-align:left;">Measured from the lead time gap by product</td></tr><tr><td style="text-align:left;">Purchase orders placed on bad information</td><td style="text-align:left;">Orders triggered by stale reorder points or placed on duplicate numbers</td><td style="text-align:left;">2,976 lines<br><em>of 5,422 regular lines were triggered by a reorder point later found stale; 258 were placed on a duplicate number</em></td><td style="text-align:left;">Measured from PO lines</td></tr><tr><td style="text-align:left;">Time lost to firefighting</td><td style="text-align:left;">Buyer and stockroom hours on expediting and reconciliation</td><td style="text-align:left;">900 hours<br><em>18 hours a week across the purchasing manager and the stockroom lead</em></td><td style="text-align:left;">Estimated from interviews</td></tr></tbody></table>
-<p>The stoppages and stockouts trace mostly to two error types: components consumed but never
-recorded because they were missing from the bills (#7, #9), and reorders placed on lead times that
-read a week short (#2); on-order balances that were never coming (#16) account for only a handful.
-The purchase orders placed on bad information are the stale reorder points (#3) and the duplicate
-records (#4) acting on every regular buy.</p>
+<p>The stoppages and stockouts do not trace cleanly to one error. 69 of the
+578 shortage episodes fell on the components missing from the bills (#7, #9), which the
+ERP never saw demand for; most of the rest fell on items whose lead time or reorder point was stale
+(#2, #3), where the record cannot separate the error from ordinary supplier variance, so no share is
+claimed. The purchase orders placed on bad information are the stale reorder points (#3) and the
+duplicate records (#4) acting on every regular buy.</p>
 
 <div class="section-title-block" id="process"><div class="section-label">Section 4</div><h2 class="section-title">Process Changes</h2></div>
 <p>The sixteen errors trace back to two root conditions rather than sixteen separate causes: the ERP

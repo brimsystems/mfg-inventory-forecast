@@ -268,6 +268,11 @@ def gather():
     d["still_unreliable_pct"] = d["rel_after"]["unreliable"]["pct"] / 100
     d["probable_unreviewed"] = d["ft_unreviewed"]
 
+    aff = set(cross.get("m3_affected_products", []))
+    jobs25 = prod[pd.to_datetime(prod["due_date"]).dt.year == 2025]
+    d["jobs25"] = int(len(jobs25)); d["jobs25_on_affected"] = int(jobs25["product_number"].isin(aff).sum())
+    shorts = pd.read_csv(TRUTH / "shortages.csv"); shorts = shorts[shorts["date"].str[:4] == "2025"]
+    d["shortages25"] = int(len(shorts)); d["shortages25_on_omitted"] = int(shorts["item_number"].isin(t1_nums).sum())
     d["samples"] = _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
     return d
 
@@ -656,11 +661,12 @@ points did not cover and is not attributed.</p>
 
 {sub("Operational")}
 {ops_cost_table}
-<p>The stoppages and stockouts trace mostly to two error types: components consumed but never
-recorded because they were missing from the bills (#7, #9), and reorders placed on lead times that
-read a week short (#2); on-order balances that were never coming (#16) account for only a handful.
-The purchase orders placed on bad information are the stale reorder points (#3) and the duplicate
-records (#4) acting on every regular buy.</p>
+<p>The stoppages and stockouts do not trace cleanly to one error. {d['shortages25_on_omitted']} of the
+{d['shortages25']} shortage episodes fell on the components missing from the bills (#7, #9), which the
+ERP never saw demand for; most of the rest fell on items whose lead time or reorder point was stale
+(#2, #3), where the record cannot separate the error from ordinary supplier variance, so no share is
+claimed. The purchase orders placed on bad information are the stale reorder points (#3) and the
+duplicate records (#4) acting on every regular buy.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
@@ -906,8 +912,13 @@ supplier measured on it looks slower than it is.</p>
 
 <p>Two other master-level errors are small in the master and large downstream. The {d['omit_items']}
 components missing from the bills of {d['omit_products']} of the {d['n_products']} products are
-consumed on every job that builds those products without ever being subtracted, which makes them the
-single largest source of shortages and write-offs in the ledger. And the {d['dup_records']} duplicate
+consumed on every job that builds those products without ever being subtracted: {d['jobs25_on_affected']}
+of the {d['jobs25']:,} jobs in {d['fin']['year']} built one of those products, and {d['fin']['unrecorded']['events']:,}
+pulls of hardware, fasteners, fittings and consumables worth {_money(d['fin']['unrecorded']['value'])} left the
+stockroom with no record, about a quarter of those items' consumption. In dollars it is small, which is
+why it persisted; in the ledger it is the origin of the chronic write-offs, and it put
+{d['shortages25_on_omitted']} of the year's {d['shortages25']} shortage episodes on components the ERP
+never saw demand for. And the {d['dup_records']} duplicate
 records, each reordering on its own point against one shared pile, produced {d['fin']['duplicates']['lines_while_sibling_held_stock']}
 purchase lines in {d['fin']['year']} for parts the shop already held.</p>
 
