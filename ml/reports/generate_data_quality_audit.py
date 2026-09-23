@@ -287,6 +287,15 @@ def gather():
                           "master": _wape(BACKTEST / "threeway_master.parquet"),
                           "fully": _wape(BACKTEST / "threeway_fully.parquet"), "n": len(dup_items)}
     d["model"] = json.loads((BACKTEST / "model_metrics.json").read_text())
+    xw_seed = pd.read_csv(REPO / "data_pipeline" / "seeds" / "item_crosswalk.csv").set_index("item_number")["canonical_item_number"].to_dict()
+    unrec_items = {xw_seed.get(n, n) for n in t1_nums}
+    def _wape_on(path, items):
+        t_ = pd.read_parquet(path)
+        t_ = t_[t_["item"].isin(items)]
+        return float((t_["target"] - t_["pred"]).abs().sum() / max(1e-9, t_["target"].abs().sum()))
+    d["threeway_unrec"] = {"raw": _wape_on(BACKTEST / "threeway_raw.parquet", unrec_items),
+                           "fully": _wape_on(BACKTEST / "threeway_fully.parquet", unrec_items), "n": len(unrec_items)}
+    d["decision"] = json.loads((REPO / "ml" / "data" / "policy" / "decision_summary.json").read_text())
     # a part's history is complete when none of its demand was split across a
     # duplicate number, hidden under a generic code or never recorded at all
     ft_items = {r["true_item_number"] for r in pod.get("t3", []) if r.get("is_stocked")}
@@ -393,33 +402,48 @@ def _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
 
 
 # ── charts ───────────────────────────────────────────────────────────────────
-def chart_reorder_inputs(d, tr):
-    """Every input a reorder decision needs, before and after, on one scale."""
-    fig, ax = B.make_fig(3.9)
-    rows = [
-        ("Items with a complete demand history", d["history_complete_before"], 1.0),
-        ("Forecast accuracy on that history\n(100 minus WAPE)", 1 - d["threeway"]["raw"], 1 - d["threeway"]["fully"]),
-        ("Inventory value at a trusted balance", tr["reliable_value"]["before"] / tr["reliable_value"]["before_total"],
-         tr["reliable_value"]["after"] / tr["reliable_value"]["after_total"]),
-        ("Items whose lead time matches delivery", tr["lead_matches"]["before"], tr["lead_matches"]["after"]),
-        ("On-order value genuinely inbound", tr["on_order_genuine"]["before"] / tr["on_order_genuine"]["before_total"],
-         tr["on_order_genuine"]["after"] / tr["on_order_genuine"]["after_total"]),
-    ]
-    names = [r[0] for r in rows][::-1]
-    before = [r[1] * 100 for r in rows][::-1]
-    after = [r[2] * 100 for r in rows][::-1]
-    y = np.arange(len(rows)); h = 0.36
-    b1 = ax.barh(y + h / 2, before, height=h, color=B.MED_GREY, label="Before")
-    b2 = ax.barh(y - h / 2, after, height=h, color=B.DARK_BLUE, label="After")
+def chart_accuracy(d):
+    """Forecast error before and after, overall and where the repairs concentrate."""
+    fig, ax = B.make_fig(3.4)
+    tw, td, tu = d["threeway"], d["threeway_dups"], d["threeway_unrec"]
+    groups = ["All live items", f"Items carried under\nduplicate numbers ({td['n']})",
+              f"Items with unrecorded\nconsumption ({tu['n']})"]
+    before = [tw["raw"] * 100, td["raw"] * 100, tu["raw"] * 100]
+    after = [tw["fully"] * 100, td["fully"] * 100, tu["fully"] * 100]
+    x = np.arange(len(groups)); w = 0.36
+    b1 = ax.bar(x - w / 2, before, width=w, color=B.MED_GREY, label="Before cleaning")
+    b2 = ax.bar(x + w / 2, after, width=w, color=B.DARK_BLUE, label="After cleaning")
     for bars, vals in ((b1, before), (b2, after)):
         for bar, v in zip(bars, vals):
-            ax.text(v + 1.5, bar.get_y() + bar.get_height() / 2, f"{v:.0f}%", va="center", fontsize=9)
-    ax.set_yticks(y); ax.set_yticklabels(names, fontsize=9.5)
-    ax.set_xlim(0, 118); ax.set_xlabel("Share (%)")
-    ax.xaxis.grid(True, color=B.LIGHT_GREY, linewidth=0.8); ax.yaxis.grid(False); ax.set_axisbelow(True)
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
+            ax.text(bar.get_x() + bar.get_width() / 2, v + 1, f"{v:.0f}%", ha="center", fontsize=9, fontweight="bold")
+    ax.set_xticks(x); ax.set_xticklabels(groups, fontsize=9.5)
+    ax.set_ylabel("Forecast error, WAPE (%)")
+    ax.set_ylim(0, max(before) * 1.22)
+    B.chart_style(ax)
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=2, fontsize=9)
+    return B.b64(fig)
+
+
+def chart_decision(d):
+    """The same forecast through dirty inputs and clean ones: what the reorder decision delivers."""
+    import matplotlib.pyplot as plt
+    dc = d["decision"]
+    fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.3))
+    panels = [
+        ("Fill rate (%)", dc["dirty"]["fill_rate"] * 100, dc["clean"]["fill_rate"] * 100, "{:.1f}%"),
+        ("Stockout item-weeks", dc["dirty"]["stockout_item_weeks"], dc["clean"]["stockout_item_weeks"], "{:,.0f}"),
+        ("Average inventory ($000)", dc["dirty"]["avg_inventory_value"] / 1000, dc["clean"]["avg_inventory_value"] / 1000, "${:,.0f}K"),
+    ]
+    for ax, (title, dv, cv, fmt) in zip(axes, panels):
+        bars = ax.bar(["Dirty inputs", "Clean inputs"], [dv, cv], color=[B.MED_GREY, B.DARK_BLUE], width=0.6)
+        for bar, v in zip(bars, [dv, cv]):
+            ax.text(bar.get_x() + bar.get_width() / 2, v * 1.02, fmt.format(v), ha="center", fontsize=9, fontweight="bold")
+        ax.set_title(title, fontsize=10, color=B.DARK_GREY, pad=8)
+        ax.set_ylim(0, max(dv, cv) * 1.2)
+        B.chart_style(ax)
+        ax.tick_params(axis="x", labelsize=9)
+        ax.set_yticks([])
+    fig.tight_layout(w_pad=2.0)
     return B.b64(fig)
 
 
@@ -669,28 +693,43 @@ inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliab
 
 {sub("What the clean data makes possible")}
 <p>The purpose of a trustworthy history is what can be built on it, and the first thing the shop
-wants to build is a demand forecast that sets its reorder points. A reorder decision needs four
-things to be right at once: the demand history the forecast is trained on, the forecast itself, the
-on-hand balance the forecast is compared against, and the lead time it has to cover. Before the
-cleanup all four were compromised, and any model would have been trained on a history that was not
-the parts' own and then compared against numbers nobody trusted. The chart puts each input on one
-scale, before and after.</p>
+wants to build is a demand forecast that sets its reorder points. The cleanup improved forecast
+accuracy modestly and improved the decisions built on the forecast substantially, and the reason is
+in the findings: only three of the sixteen errors touch the demand history a model learns from
+(duplicate records, free-text purchases and unrecorded consumption). The other thirteen corrupt
+what the forecast is used for. Before the cleanup, even a perfect forecast would have been applied
+to a stale lead time, a book balance that had drifted from the shelf, on-order that was never
+coming, and a reorder point nobody trusted; the forecast would have been right and the purchase
+would still have been wrong.</p>
 
-{B.chart("What a reorder decision needs, before and after the cleanup", chart_reorder_inputs(d, tr))}
-<p>Only {d['history_complete_before']*100:.0f}% of live items had a demand history a model could learn
-from before the cleanup; on the rest, some of the part's demand sat under a duplicate number, under a
-generic purchase code, or was never recorded. Merging the duplicates, returning the free-text
-purchases to their items and completing the bills brings that to 100%. On that corrected history the
-same forecasting model's error over the lead time falls from {d['threeway']['raw']*100:.0f}% to
-{d['threeway']['fully']*100:.0f}% (weighted absolute percentage error, which stays defined for the
-third of parts with months of zero demand). That gain is modest by design: most of the errors this
-audit found do not change how predictable demand is, they corrupt the decision the forecast feeds,
-and that is where the larger movement sits. The balance a forecast is compared against is now
-trusted for {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}% of inventory
-value against none before, the lead time it must cover matches delivery on
-{tr['lead_matches']['after']*100:.0f}% of items against {tr['lead_matches']['before']*100:.0f}%, and the
-on-order it nets against is entirely real. A forecast on the old data would have been a good guess
-compared against fiction; on the new data it is a decision.</p>
+{B.chart("Forecast error before and after the cleanup, same model and features", chart_accuracy(d))}
+<p>The first chart is the accuracy gain, measured as weighted absolute percentage error over the lead
+time on a held-out year (it reads like the familiar percentage error for a steady part and stays
+defined for the third of parts with months of zero demand). Across all live items the same model's
+error falls from {d['threeway']['raw']*100:.0f}% to {d['threeway']['fully']*100:.0f}%, a
+{(d['threeway']['raw']-d['threeway']['fully'])/d['threeway']['raw']*100:.0f}% relative gain, diluted by
+the two thirds of items whose history needed no repair. Where the repairs were made the gain is
+large: on the {d['threeway_dups']['n']} parts that had been carried under more than one number the
+error halves, from {d['threeway_dups']['raw']*100:.0f}% to {d['threeway_dups']['fully']*100:.0f}%, and on
+the {d['threeway_unrec']['n']} parts whose consumption had gone unrecorded it falls from
+{d['threeway_unrec']['raw']*100:.0f}% to {d['threeway_unrec']['fully']*100:.0f}%.</p>
+
+{B.chart("The same forecast through dirty inputs and through clean ones, over the holdout year", chart_decision(d))}
+<p>The second chart is the test that matters. It holds the forecast fixed, the model's own
+predictions for every item, and runs the same reorder rule through the year twice. Through the dirty
+inputs, reorders are timed on the master lead time, the book balance drifts away from the shelf by
+the pulls that went unrecorded and the postings that went wrong, phantom on-order counts as inbound,
+and every duplicate record holds its own safety stock. Through the clean inputs, the same forecast
+runs against the recomputed lead time, the physical balance and genuine on-order, one record per
+part. Demand and supplier delivery are identical in both. The clean inputs lift the fill rate from
+{d['decision']['dirty']['fill_rate']*100:.0f}% to {d['decision']['clean']['fill_rate']*100:.0f}% and cut the
+weeks an item spends stocked out from {d['decision']['dirty']['stockout_item_weeks']:,} to
+{d['decision']['clean']['stockout_item_weeks']:,}, while holding
+{(d['decision']['clean']['avg_inventory_value']/d['decision']['dirty']['avg_inventory_value']-1)*100:.0f}% more
+inventory, because the dirty inputs had been running the shop short: a lead time a week too optimistic
+and an on-order balance that was never coming both delay the reorder. The forecast on the old data
+would have been a good guess applied to fiction; on the new data it is a decision the shop can act
+on.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
