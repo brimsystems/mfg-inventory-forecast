@@ -865,31 +865,12 @@ or supplier delivery time calculated from these receipts is artificially long.</
 
     did = f"""
 {B.section("did", "Section 2", "Error Remediation")}
-<p>Every error that the record could settle on its own was closed in full: all {d['n_lead_off']:,}
-stale lead times and {d['params_changed']:,} reorder points recomputed, all {d['uom_items']} missing
-conversions and {d['n_blank']} blank fields filled, all {d['bom_changes']} missing BOM rows restored,
-and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
-({d['n_posting_corrections']:,} posting corrections). Two rows read short of 100% by decision rather
-than by omission: the purchasing manager kept {d['dead_kept']} dead records as insurance spares, and
-the buyer rejected {d['dup_rejected']} duplicate pairs as different parts, so those records stay
-separate. The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
-only where the buyer confirmed a stocked item ({d['ft_confirmed']:,} of {d['n_ft_lines']:,}; the rest
-were real one-off buys). The {d['n_batch_rows']:,} batched receipt dates were left as posted, because
-the true dates are not recoverable, so any lead time computed from the raw history will stay biased
-and the computation was made robust to it instead. And the unrecorded consumption and catch-all
-adjustments were fixed at the source rather than in the history, so the ledger as posted still carries
-them; the corrected history lives in the reference tables, not in the ERP.</p>
-
-<p>Two results of the remediation do not appear in Section 3 and deserve to. First, the crosswalks
-and attributions make the 36-month history usable for planning: with duplicate records merged and
-free-text purchases returned to their items, the error of a demand forecast built on that history
-falls from {d['threeway']['raw']*100:.1f}% to {d['threeway']['master']*100:.1f}% (weighted absolute
-error over lead time, same model, same features), and to {d['threeway']['fully']*100:.1f}% once the
-small amount of unrecorded usage is restored. Second, the reconciliation of the purchasing manager's spreadsheet
-against the ERP on the {d['spreadsheet_rows']} line-critical components found the two disagreeing on
-{d['recon_disagree']}, and the spreadsheet closer to the truth on {d['recon_buyer_right']} of them.
-The shadow system was a better record than the system of record for half the parts that stop the
-line, which is the clearest case for the ownership changes in Section 4.</p>
+<p>Most of the data quality errors identified in Section 1 were closed in full. A few were partially
+closed: {d['dead_kept']} dead records were kept in as insurance spares, and not all duplicate pair or
+free-text line attributions could be confirmed as correct. No remediation attempt was made on a few
+of the errors, namely batched receipts (dates not recoverable), as well as unrecorded consumption and
+catch-all adjustments (fixed at source rather than in the history), and so while the ledger still
+carries them, the records are cleaned going forward.</p>
 
 <p>The tables below give, for each error, how it was remediated and whose input that took, the
 evidence it rested on, and how many of the affected rows were remediated.</p>
