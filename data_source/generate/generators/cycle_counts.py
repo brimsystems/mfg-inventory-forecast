@@ -14,7 +14,7 @@ real one every time, which is one of the ways that error surfaces.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ from .. import config as C
 SIGN = {"RECEIPT": 1, "RETURN": 1, "ISSUE": -1, "BACKFLUSH": -1, "SCRAP": -1, "ADJUST": 1}
 
 
-def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, rng):
+def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, abc_by_item, rng):
     days = sim["days"]
     day_idx = {d.date(): i for i, d in enumerate(days)}
 
@@ -63,6 +63,28 @@ def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, rng):
             if d not in day_idx:
                 continue
             phys = max(sim["physical"][item_meta[num]["item_id"]][day_idx[d]], 0.0) * weight_of(num)
+            counted = max(0, int(round(phys * (1 + rng.normal(0, C.COUNT_NOISE_SD)))))
+            pending.append((d.isoformat(), num, counted, "CYCLE"))
+
+    # after remediation the program runs on the ABC schedule: A items every
+    # month, B items once a quarter, C items at their annual turn (not yet due).
+    # Retired duplicate numbers drop out; the survivor is counted for the pile.
+    retired = {n for cl in dup_map.values() for n in cl["records"] if n != cl["primary"]}
+    for num, meta in item_meta.items():
+        if meta["dead"] or num in retired:
+            continue
+        cls = abc_by_item.get(meta["item_id"], "C")
+        if cls == "A":
+            dates = [date(2026, m, int(rng.integers(2, 27))) for m in (1, 2, 3)]
+        elif cls == "B":
+            dates = [C.REMEDIATION_END + timedelta(days=int(rng.integers(7, 85)))]
+        else:
+            dates = []
+        for d in dates:
+            d = d - timedelta(days=max(0, d.weekday() - 4))     # a working day
+            if d not in day_idx or d > C.END_DATE:
+                continue
+            phys = max(sim["physical"][meta["item_id"]][day_idx[d]], 0.0) * weight_of(num)
             counted = max(0, int(round(phys * (1 + rng.normal(0, C.COUNT_NOISE_SD)))))
             pending.append((d.isoformat(), num, counted, "CYCLE"))
 

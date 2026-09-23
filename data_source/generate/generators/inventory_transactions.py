@@ -116,7 +116,8 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     rng.shuffle(other_pool); other_pool = other_pool[:30]
     vol = (tx[tx["type"].isin(["ISSUE", "BACKFLUSH"])].assign(q=lambda d: d["qty"].abs())
            .groupby("item_number")["q"].sum() / 36.0)
-    months = C.month_starts()
+    # catch-all adjustments end with the remediation: a reason code is required from then on
+    months = [m for m in C.month_starts() if m <= C.REMEDIATION_END]
     produced, events_n, extra = 0.0, 0, []
     avg_mag = remaining / max(1, len(live_nums) * 6)
     while produced < remaining and events_n < 30000 and live_nums:

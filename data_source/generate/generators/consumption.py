@@ -78,7 +78,8 @@ def build_consumption_events(production_orders, bom_true, bom_recorded, service_
             if day > C.END_DATE:
                 continue
             num = route(iid)
-            unrecorded = (iid in omitted) and (rng.random() < C.T1_UNRECORDED_SHARE)
+            # the bills are completed in remediation, after which the pull is recorded
+            unrecorded = (iid in omitted) and day <= C.REMEDIATION_END and (rng.random() < C.T1_UNRECORDED_SHARE)
             rows.append((num, iid, day, s, "MANUAL", f"WO-{int(rng.integers(100000, 999999))}", not unrecorded))
 
     ev = pd.DataFrame(rows, columns=["item_number", "item_id", "date", "qty", "channel", "job_id", "recorded"])

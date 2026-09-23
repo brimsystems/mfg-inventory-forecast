@@ -165,7 +165,7 @@ def run():
     # the count program reads the ledger balance and posts what it finds
     print("[8/9] Cycle counts       (WMS)")
     unreliable = _unreliable_nums(item_meta, defects, omit_items, dup_map)
-    cycle_counts, count_adj = build_cycle_counts(sim, transactions, item_meta, dup_map, unreliable, rng)
+    cycle_counts, count_adj = build_cycle_counts(sim, transactions, item_meta, dup_map, unreliable, abc_by_item, rng)
     transactions = post_count_adjustments(transactions, count_adj, item_meta, rng)
     on_hand = _on_hand_from_tx(transactions, item_meta)
     print("[9/9] Buyer spreadsheet  (Purchasing)")
