@@ -913,7 +913,7 @@ evidence it rested on, and how many of the affected rows were remediated.</p>
     # reduced, but not prevented
     CONFIG_IMPACT = {
         "reason codes required on adjustments":
-            "Closes #13. Addresses #9: a chronic write-off now names its cause, so the pattern is visible.",
+            "Closes #13. Addresses #9: a chronic write-off names its cause, so the pattern is visible.",
         "required fields enforced on item creation":
             "Closes #6.",
         "UOM conversions added for box/spool/length items":
