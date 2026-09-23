@@ -113,6 +113,33 @@ supplier measured on it looks slower than it is.</p>
 
 
 <div class="section-title-block" id="did"><div class="section-label">Section 2</div><h2 class="section-title">Error Remediation</h2></div>
+<p>Every error that the record could settle on its own was closed in full: all 1,008
+stale lead times and 871 reorder points recomputed, all 48 missing
+conversions and 168 blank fields filled, all 8 missing BOM rows restored,
+and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
+(2,235 posting corrections). Three rows read short of 100% for reasons that
+are not failures: dead records because the purchasing manager kept 108 as insurance
+spares and is still deciding 186; duplicates because the count includes the surviving
+record of each pair (161 retired, 5 pairs rejected as different parts);
+suppliers because the 3 canonical records remain once their aliases are mapped.
+The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
+only where the buyer confirmed a stocked item (922 of 2,280; the rest
+were real one-off buys). The 12,056 batched receipt dates were left as posted, because
+the true dates are not recoverable, so any lead time computed from the raw history will stay biased
+and the computation was made robust to it instead. And the unrecorded consumption and catch-all
+adjustments were fixed at the source rather than in the history, so the ledger as posted still carries
+them; the corrected history lives in the reference tables, not in the ERP.</p>
+
+<p>Two results of the remediation do not appear in Section 3 and deserve to. First, the crosswalks
+and attributions make the 36-month history usable for planning: with duplicate records merged and
+free-text purchases returned to their items, the error of a demand forecast built on that history
+falls from 44% to 39% (weighted absolute
+error over lead time, same model, same features), and to 39% once the
+unrecorded usage is restored. Second, the reconciliation of the purchasing manager's spreadsheet
+against the ERP on the 120 line-critical components found the two disagreeing on
+82, and the spreadsheet closer to the truth on 66 of them.
+The shadow system was a better record than the system of record for half the parts that stop the
+line, which is the clearest case for the ownership changes in Section 4.</p>
 
 <p>The tables below give, for each error, how it was remediated and whose input that took, the
 evidence it rested on, and how many of the affected rows were remediated.</p>
