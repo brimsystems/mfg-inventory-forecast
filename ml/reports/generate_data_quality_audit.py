@@ -275,6 +275,18 @@ def gather():
     shorts = pd.read_csv(TRUTH / "shortages.csv"); shorts = shorts[shorts["date"].str[:4] == "2025"]
     d["shortages25"] = int(len(shorts)); d["shortages25_on_omitted"] = int(shorts["item_number"].isin(t1_nums).sum())
     d["threeway"] = json.loads((BACKTEST / "threeway_overall.json").read_text())
+    # the same model on the merged duplicate items only, raw history vs fully cleaned
+    dup_items = set(pd.read_parquet(BACKTEST / "clean_before_after.parquet")["item"])
+    def _wape(path):
+        t = pd.read_parquet(path)
+        if "split" in t.columns and (t["split"] == "test").any():
+            t = t[t["split"] == "test"]
+        t = t[t["item"].isin(dup_items)]
+        return float((t["target"] - t["pred"]).abs().sum() / max(1e-9, t["target"].abs().sum()))
+    d["threeway_dups"] = {"raw": _wape(BACKTEST / "threeway_raw.parquet"),
+                          "master": _wape(BACKTEST / "threeway_master.parquet"),
+                          "fully": _wape(BACKTEST / "threeway_fully.parquet"), "n": len(dup_items)}
+    d["model"] = json.loads((BACKTEST / "model_metrics.json").read_text())
     d["n_posting_corrections"] = d["t6_count"] + d["t7_count"] + d["t8_count"]
     d["samples"] = _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
     return d
@@ -376,6 +388,48 @@ def _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
 
 
 # ── charts ───────────────────────────────────────────────────────────────────
+def chart_threeway(d):
+    """The same model, the same features, three versions of the history."""
+    fig, ax = B.make_fig(3.6)
+    tw, td = d["threeway"], d["threeway_dups"]
+    groups = ["All live items", f"The {td['n']} merged duplicate items"]
+    tiers = [("As recorded", "raw", B.MED_GREY), ("Records merged", "master", B.LIGHT_BLUE),
+             ("Fully cleaned", "fully", B.DARK_BLUE)]
+    x = np.arange(len(groups)); w = 0.26
+    for k, (label, key, color) in enumerate(tiers):
+        vals = [tw[key] * 100, td[key] * 100]
+        bars = ax.bar(x + (k - 1) * w, vals, width=w, color=color, label=label)
+        for b_, v in zip(bars, vals):
+            ax.text(b_.get_x() + b_.get_width() / 2, v + 0.8, f"{v:.0f}%", ha="center", fontsize=9, fontweight="bold")
+    ax.set_xticks(x); ax.set_xticklabels(groups)
+    ax.set_ylabel("Forecast error, WAPE (%)")
+    ax.set_ylim(0, max(tw["raw"], td["raw"]) * 100 * 1.25)
+    B.chart_style(ax)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=3, fontsize=9)
+    return B.b64(fig)
+
+
+def chart_model_vs_baseline(d):
+    """The chosen model against the best simple method, by demand pattern, on the cleaned history."""
+    fig, ax = B.make_fig(3.6)
+    segs = d["model"]["segments"]
+    names = [s_["segment"].capitalize() for s_ in segs] + ["All items"]
+    model = [s_["wape_model"] * 100 for s_ in segs] + [d["model"]["overall"]["model"] * 100]
+    base = [s_["wape_baseline"] * 100 for s_ in segs] + [d["model"]["overall"]["baseline"] * 100]
+    x = np.arange(len(names)); w = 0.36
+    b1 = ax.bar(x - w / 2, base, width=w, color=B.MED_GREY, label="Best simple method")
+    b2 = ax.bar(x + w / 2, model, width=w, color=B.DARK_BLUE, label="Demand model")
+    for bars, vals in ((b1, base), (b2, model)):
+        for b_, v in zip(bars, vals):
+            ax.text(b_.get_x() + b_.get_width() / 2, v + 0.8, f"{v:.0f}%", ha="center", fontsize=8.5)
+    ax.set_xticks(x); ax.set_xticklabels(names)
+    ax.set_ylabel("Forecast error, WAPE (%)")
+    ax.set_ylim(0, max(base) * 1.25)
+    B.chart_style(ax)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=2, fontsize=9)
+    return B.b64(fig)
+
+
 def chart_reliability(d):
     fig, ax = B.make_fig(3.4)
     cats = ["Before", "After"]
@@ -619,6 +673,39 @@ resolved, and {tr['reliable_value']['after']/tr['reliable_value']['after_total']
 inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliable_value']['before_total']*100:.0f}%).</p>
 
 {trust_table}
+
+{sub("What the clean data makes possible")}
+<p>The purpose of a trustworthy history is what can be built on it, and the first thing the shop
+wants to build is a demand forecast to set its reorder points. Before the cleanup that was not a
+realistic project, for reasons the findings make plain: the history a model would learn from was
+split across duplicate numbers for {d['dup_clusters']} parts and hidden under generic codes on
+{d['n_ft_lines']:,} purchase lines, so the series for a part was not the part's demand; the
+consumption of components missing from the bills never reached the ledger at all; and even a
+perfect forecast could not drive a reorder, because the on-hand balance it would be compared
+against and the lead time it would have to cover were both wrong. The two charts below show the
+difference the cleanup made, measured the same way throughout: forecast error over the lead time on
+a held-out year, as weighted absolute percentage error (WAPE), which reads like the familiar
+percentage error for a steady part but stays defined for the third of items whose demand has months
+of zero.</p>
+
+{B.chart("Forecast error of the same model on three versions of the history", chart_threeway(d))}
+<p>The first chart holds the model and its features fixed and changes only the history it reads.
+Across all live items the error falls from {d['threeway']['raw']*100:.1f}% on the history as recorded
+to {d['threeway']['master']*100:.1f}% once the duplicate records are merged and the free-text
+purchases returned to their items, and to {d['threeway']['fully']*100:.1f}% once the unrecorded
+consumption is restored. On the {d['threeway_dups']['n']} parts that had been carried under more
+than one number the effect is larger, from {d['threeway_dups']['raw']*100:.0f}% to
+{d['threeway_dups']['fully']*100:.0f}%, because on those parts the recorded history was not the
+demand at all.</p>
+
+{B.chart("Demand model against the best simple method, on the cleaned history", chart_model_vs_baseline(d))}
+<p>The second chart is the test that matters for the reorder work: on the cleaned history, a
+gradient-boosted model beats the best simple method for each demand pattern (a moving average or
+last year's month, whichever did better), from {d['model']['overall']['baseline']*100:.0f}% to
+{d['model']['overall']['model']*100:.0f}% error overall, with the largest gains on the erratic and lumpy
+parts that stop the line. A forecast at that accuracy, compared against a balance the shop now
+trusts and a lead time that matches delivery, is what the reorder-policy work that follows this
+audit is built on.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
