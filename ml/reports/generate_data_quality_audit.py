@@ -887,23 +887,23 @@ evidence it rested on, and how many of the affected rows were remediated.</p>
 
     CONFIG_DESC = {
         "reason codes required on adjustments":
-            "The ERP now refuses an adjustment without a reason code from a fixed list (count variance, damage, "
+            "The ERP refuses an adjustment without a reason code from a fixed list (count variance, damage, "
             "scrap, receiving error, return), so every write-off carries its cause.",
         "required fields enforced on item creation":
             "A new item cannot be saved without a standard cost, a primary supplier, a unit of measure and a "
             "reorder point, or an explicit not-stocked flag.",
         "UOM conversions added for box/spool/length items":
-            "Each item bought and stocked in different units now carries a conversion factor, and receipts "
+            "Each item bought and stocked in different units carries a conversion factor, and receipts "
             "convert to stock units automatically: a box of 100 lands as 100 each.",
         "generic item codes restricted":
-            "NONSTOCK, MISC and SHOPSUPPLY can no longer be used on a purchase line for anything that exists in "
-            "the item master; the buyer is prompted to search the master first, and a generic code needs a "
+            "NONSTOCK, MISC and SHOPSUPPLY cannot be used on a purchase line for anything that exists in the "
+            "item master; the buyer is prompted to search the master first, and a generic code needs a "
             "one-line justification.",
         "negative on-hand blocked":
             "An issue that would take a balance below zero is rejected at entry, so a missing receipt, a wrong "
             "item or a keyed quantity is caught the moment it happens rather than at the annual count.",
         "individual logins issued for floor and receiving":
-            "The shared ASSY1, FAB1 and RECV logins were retired and every floor and receiving user has their "
+            "The shared ASSY1, FAB1 and RECV logins are retired and every floor and receiving user has their "
             "own, so each transaction names who posted it.",
         "part-creation approval routing enabled":
             "A request to create an item routes to the item-master owner, who checks for an existing record "
@@ -915,9 +915,9 @@ evidence it rested on, and how many of the affected rows were remediated.</p>
         "reason codes required on adjustments":
             "Closes #13. Addresses #9: a chronic write-off now names its cause, so the pattern is visible.",
         "required fields enforced on item creation":
-            "Closes #6 for every item created from now on; the existing blanks were filled in remediation.",
+            "Closes #6.",
         "UOM conversions added for box/spool/length items":
-            "Closes #5. Addresses #11: a box keyed as eaches can no longer distort a balance.",
+            "Closes #5. Addresses #11: a box keyed as each can no longer distort a balance.",
         "generic item codes restricted":
             "Closes #14.",
         "negative on-hand blocked":
@@ -934,67 +934,72 @@ evidence it rested on, and how many of the affected rows were remediated.</p>
     PROCESS = [
         ("A named owner for the item and supplier masters",
          "The purchasing manager owns both masters. No item or supplier record is created, merged or "
-         "deactivated without her approval, and she clears the approval queue weekly. Prevents new duplicates "
-         "(#4, #8), blank-field items (#6) and dead records accumulating unnoticed (#1).",
+         "deactivated without her approval, and she clears the approval queue weekly.",
+         "Addresses #1, #4, #6 and #8: a new dead record, duplicate, blank-field item or supplier alias is "
+         "stopped at the approval queue.",
          "Purchasing manager", "Weekly queue; continuous"),
         ("A cycle-count program on the ABC schedule",
          "A items counted monthly, B items quarterly, C items annually, unreliable items first. Variances are "
-         "posted with a reason and investigated above a threshold, and the annual physical is retired. Keeps "
-         "balances trustworthy and catches unrecorded consumption (#9) as it happens rather than once a year.",
+         "posted with a reason and investigated above a threshold, and the annual physical is retired.",
+         "Addresses #9 and #13: unrecorded consumption is caught within the count cycle rather than once a "
+         "year, and every correction carries its cause.",
          "Stockroom lead", "Monthly / quarterly / annual by class"),
         ("A monthly parameter refresh from the forecast",
          "Lead times are recomputed from the last twelve months of receipts, and reorder points and safety "
          "stocks from the forecast at the ABC service level, then loaded. The buyers review the A-class "
-         "changes before they go live. Prevents lead times and reorder points going stale again (#2, #3).",
+         "changes before they go live.",
+         "Addresses #2 and #3: a lead time or reorder point can be no more than a month out of date.",
          "Purchasing manager, with the buyers", "Monthly"),
         ("A monthly open-document review",
          "Open PO lines older than twice the supplier's lead time and jobs past their due date are listed, "
-         "then closed or chased. Keeps on-order honest and stops orders being held back against material "
-         "that is not coming (#16).",
+         "then closed or chased.",
+         "Addresses #16: no line or job stays open unnoticed for more than a month, so on-order stays honest.",
          "Buyer (PO lines); production scheduler (jobs)", "Monthly"),
         ("A quarterly dead-item review",
          "Items with no issue or receipt in 24 months are listed each quarter and deactivated unless the "
-         "service parts coordinator or the production lead keeps them, with a reason recorded. Stops the "
-         "master silting up again (#1).",
+         "service parts coordinator or the production lead keeps them, with a reason recorded.",
+         "Closes #1: a dead record cannot stay active past the next quarterly review.",
          "Purchasing manager", "Quarterly"),
         ("A BOM review for every new product and option",
          "Engineering signs off a complete bill, including hardware, fittings, consumables and finishing, "
-         "before a product is released, and floor observation feeds corrections back. Stops backflush "
-         "omissions and the phantom inventory they create (#7, #9).",
+         "before a product is released, and floor observation feeds corrections back.",
+         "Closes #7 for new products. Addresses #9: a complete bill leaves nothing to be consumed unrecorded.",
          "Engineering manager", "Per product release"),
         ("Same-day posting of receipts and job completions",
          "Receiving posts each delivery the day it arrives and job completions are reported daily, with "
-         "supervisors spot-checking timeliness. Keeps computed lead times honest (#15).",
+         "supervisors spot-checking timeliness.",
+         "Closes #15.",
          "Stockroom lead; assembly supervisor", "Daily"),
         ("The data-quality measures tracked monthly",
          "The tests from this audit are rerun each month and the key shares (adjustments, blank reason codes, "
-         "free-text lines, open documents, duplicates created) are tracked against targets and reviewed. "
-         "Catches any of the sixteen errors returning before they compound.",
+         "free-text lines, open documents, duplicates created) are tracked against targets and reviewed.",
+         "Addresses all sixteen: any error that returns is caught before it compounds.",
          "ERP administrator; reviewed by the operations manager", "Monthly"),
     ]
-    process_table = _widths(B.data_table(["Change", "What it does", "Owner", "Cadence"],
-                                         [list(r) for r in PROCESS], right=[]), [20, 46, 18, 16])
+    process_table = _widths(B.data_table(["Change", "What it does", "Impact", "Owner", "Cadence"],
+                                         [list(r) for r in PROCESS], right=[]), [17, 33, 24, 14, 12])
 
     keep = f"""
 {B.section("process", "Section 4", "Process Changes")}
-<p>The sixteen errors trace back to two root conditions rather than sixteen separate causes: the ERP
-allowed them, and nobody owned the routine upkeep that would have caught them. The corrections in
-Section 2 fix what those two conditions produced; the changes in this section stop them producing it
-again, and they fall into two groups that are different kinds of work. The first group are settings.
-Each was changed by the ERP administrator during the engagement, took effect for every user at once,
-and stops the error at the point of entry. This is the easier lift: the changes are already in place,
-they hold on their own, and they need nothing further from the shop. The table gives what each one
-does and which errors it <em>closes</em> (the error can no longer occur) or <em>addresses</em> (the
-error is caught or reduced, but not prevented).</p>
+<p>The remediation efforts in Section 2 fixed the majority of the data quality issues identified
+through this audit. The changes in this section prevent them from reoccurring. These changes fall
+into two categories.</p>
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Changes Easily Implemented in the ERP</p>
+<p>The first category is the ERP system settings. These settings are administered once, take effect
+for every user immediately, and stop the errors at the point of entry. This category is a relatively
+easy lift: the changes hold on their own and nothing further will need to be done, though there can
+potentially be friction in the near term as users adjust to more limited data entry options within
+the ERP. The table below lists the settings changes, including what they do and the error(s) they
+<em>close</em> (the error can no longer occur) or <em>address</em> (the error is caught or reduced,
+but not prevented).</p>
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Changes to ERP System Settings</p>
 {config_table}
 
-<p>The second group are habits. No setting can make someone count a shelf, review a bill of materials,
-close a purchase order or refresh a reorder point, so each of these needs a named owner and a cadence,
-and each will lapse without them. That makes this the harder lift: it depends on organizational
-alignment and on the owners' buy-in rather than on a configuration screen. The shop has committed to
-the owners and cadences below, and keeping them is what protects the results in Section 3.</p>
+<p>The second group are process changes that will require ongoing ownership, organizational
+alignment, and a disciplined cadence of completion. That makes this category the harder lift. The
+shop has committed to the owners and cadences below, and keeping them is what protects the results
+in Section 3.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Changes Requiring Ongoing Processes and Ownership</p>
 {process_table}
