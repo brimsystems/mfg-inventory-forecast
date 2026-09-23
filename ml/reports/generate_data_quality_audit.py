@@ -761,8 +761,8 @@ measures of the ERP system's accuracy and reliability improved significantly.</p
     ERP = "ERP records only"
     REM_MASTER = [
         (f"Deactivated in the item master after a line-by-line review. The purchasing manager and the service "
-         f"parts coordinator kept {d['dead_kept']} as seasonal or safety-critical spares and held {d['dead_held']} "
-         f"for a later decision; the rest were deactivated.",
+         f"parts coordinator kept {d['dead_kept']} as seasonal or safety-critical spares; the rest were deactivated, "
+         f"including those whose one recent posting the buyer confirmed as a misposting.",
          ERP, rem_of(d["dead_deactivated"], d["n_dead"])),
         ("Recomputed per item from receipt history using the median and a trimmed 80th percentile, then written "
          "to the master. Mechanical, with no judgment needed; the tracked items were checked against the buyer's "
@@ -871,7 +871,7 @@ conversions and {d['n_blank']} blank fields filled, all {d['bom_changes']} missi
 and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
 ({d['n_posting_corrections']:,} posting corrections). Three rows read short of 100% for reasons that
 are not failures: dead records because the purchasing manager kept {d['dead_kept']} as insurance
-spares and is still deciding {d['dead_held']}; duplicates because the count includes the surviving
+spares; duplicates because the count includes the surviving
 record of each pair ({d['dup_merged']} retired, {d['dup_rejected']} pairs rejected as different parts);
 suppliers because the {d['sup_fragments']} canonical records remain once their aliases are mapped.
 The genuinely partial results are the ones the record cannot support. Free-text lines were attributed

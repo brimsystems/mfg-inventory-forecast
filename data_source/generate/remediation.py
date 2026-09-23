@@ -108,8 +108,9 @@ def _dead_dispositions(im, dead_nums, tx, rng):
             disp, reason, by = "KEPT", rng.choice(
                 ["seasonal service part", "safety-critical spare", "long-lead insurance item"]), \
                 rng.choice(["service parts coordinator", "production lead"])
-        elif recent or roll < C.M1_RESCUE_SHARE + 0.18:
-            disp, reason, by = "HELD", "recent activity; confirm before deactivating", "buyer"
+        elif recent:
+            # the one recent posting was checked and found to be a misposting
+            disp, reason, by = "DEACTIVATED", "stray posting confirmed as a misposting; no genuine movement", "buyer"
         else:
             disp, reason, by = "DEACTIVATED", "no movement 24+ months", "purchasing manager"
         rows.append({"item_number": num, "disposition": disp, "reason": reason,
