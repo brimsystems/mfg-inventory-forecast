@@ -779,13 +779,13 @@ measures of the ERP system's accuracy and reliability improved significantly.</p
         (f"Candidate pairs scored, then merged to one surviving number through a crosswalk. The buyer and the "
          f"stockroom lead reviewed every pair: {d['dup_merged']} records retired to a survivor, {d['dup_rejected']} "
          f"pairs rejected as genuinely different parts.",
-         "ERP records, every pair reviewed by the buyer", rem_of(d["dup_merged"], d["dup_records"])),
+         "ERP records, every pair reviewed by the buyer", rem_of(d["dup_merged"], d["dup_records"] - d["dup_clusters"])),
         ("A purchase-to-stock conversion factor added to each item, taken from the pack size on its receipts and "
          "confirmed by the stockroom lead; on-hand restated in stock units.",
          "ERP records and the pack sizes on receipts", rem_of(d["uom_items"], d["uom_items"])),
         (f"Alias records mapped to one canonical supplier through a crosswalk ({d['sup_fragments']} vendors, "
          f"{d['sup_records']} records); the buyer confirmed each grouping, and new orders book to the canonical record.",
-         ERP, rem_of(d["sup_records"] - d["sup_fragments"], d["sup_records"])),
+         ERP, rem_of(d["sup_records"] - d["sup_fragments"], d["sup_records"] - d["sup_fragments"])),
         ("Blocking blanks filled from the ordering history (cost from the last price paid, supplier from the "
          "ordering record) and from the reorder-point recomputation; MISC items reclassified by the buyer; "
          "required fields enforced from week 6.",
@@ -869,12 +869,10 @@ or supplier delivery time calculated from these receipts is artificially long.</
 stale lead times and {d['params_changed']:,} reorder points recomputed, all {d['uom_items']} missing
 conversions and {d['n_blank']} blank fields filled, all {d['bom_changes']} missing BOM rows restored,
 and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
-({d['n_posting_corrections']:,} posting corrections). Three rows read short of 100% for reasons that
-are not failures: dead records because the purchasing manager kept {d['dead_kept']} as insurance
-spares; duplicates because the count includes the surviving
-record of each pair ({d['dup_merged']} retired, {d['dup_rejected']} pairs rejected as different parts);
-suppliers because the {d['sup_fragments']} canonical records remain once their aliases are mapped.
-The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
+({d['n_posting_corrections']:,} posting corrections). Two rows read short of 100% by decision rather
+than by omission: the purchasing manager kept {d['dead_kept']} dead records as insurance spares, and
+the stockroom lead rejected {d['dup_rejected']} duplicate pairs as different parts, so those records
+stay separate. The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
 only where the buyer confirmed a stocked item ({d['ft_confirmed']:,} of {d['n_ft_lines']:,}; the rest
 were real one-off buys). The {d['n_batch_rows']:,} batched receipt dates were left as posted, because
 the true dates are not recoverable, so any lead time computed from the raw history will stay biased
@@ -1026,8 +1024,10 @@ the owners and cadences below, and keeping them is what protects the results in 
   <li><strong>Lead-time precision floor.</strong> Because receipts were batched to Mondays and month-end,
       computed lead times carry a few days of irreducible noise; the recommended values use a trimmed
       high percentile to stay safe rather than precise.</li>
-  <li><strong>What the shop declined.</strong> A small set of dead items were kept active at the buyer's
-      insistence as insurance spares, against the recommendation to deactivate them.</li>
+  <li><strong>What the shop declined.</strong> {d['dead_kept']} dead items were kept active at the buyer's
+      insistence as insurance spares, against the recommendation to deactivate them, and
+      {d['dup_rejected']} duplicate pairs the stockroom lead judged to be different parts remain as separate
+      records.</li>
   <li><strong>What the cleanup is worth going forward is not measured here.</strong> This report claims
       only costs that trace to a specific error in the {YR} record. How much of the untraced rush spend
       and how many of the shortages clean data would have prevented is a forecast, and it belongs to
