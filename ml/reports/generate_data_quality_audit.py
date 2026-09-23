@@ -942,9 +942,8 @@ shown below.</p>
 
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
 produced across the eight ERP tables. This audit covered all of them. It found <strong>16</strong>
-different types of data quality error recurring over this period. Taken together, these errors cost
-the shop cash in expedites, stopped lines waiting for material, and left the books unable to say
-what it held or what it owed.</p>
+different types of data quality error recurring over this period. Taken together, these errors
+inflated costs, disrupted operational workflows, and distorted financial visibility.</p>
 
 {B.section("errors", "Section 2.1", "Data Quality Errors")}
 
