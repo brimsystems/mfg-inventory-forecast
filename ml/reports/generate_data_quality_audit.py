@@ -613,7 +613,10 @@ def build(d):
     results = f"""
 {B.section("results", "Section 3", "Results")}
 <p>As a result of the data quality audit, remediation of errors, and fresh cycle counts, numerous
-measures of the ERP system's accuracy and reliability improved significantly.</p>
+measures of the ERP system's accuracy and reliability improved significantly. Most importantly, the
+vast majority of active item records are actually live, 100% of most identified data errors were
+resolved, and {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}% of total
+inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliable_value']['before_total']*100:.0f}%).</p>
 
 {trust_table}
 """
