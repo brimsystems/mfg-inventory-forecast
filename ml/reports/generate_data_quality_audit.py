@@ -483,12 +483,12 @@ def chart_error_rates(d):
 # ── report ───────────────────────────────────────────────────────────────────
 def build(d):
     toc = "".join([
+        '<a href="#found">Data Quality Errors</a>',
+        '<a href="#did">Error Remediation</a>',
         '<a href="#results">Results</a>',
         '<a class="sub" href="#trust">Trust in the system</a>',
         '<a class="sub" href="#cost">What the messy data cost</a>',
-        '<a href="#found">Data Quality Errors</a>',
-        '<a href="#did">Error Remediation</a>',
-        '<a href="#process">Go-Forward Changes</a>',
+        '<a href="#process">Process Changes</a>',
     ])
 
     trust_before = d["rel_before"]["reliable"]["pct"]
@@ -612,7 +612,7 @@ def build(d):
     ops_cost_table = _widths(B.data_table(["Cost type", f"What happened in {YR}", f"{YR} count", "Basis"], ops_cost_rows, right=[]), [20, 34, 28, 18])
 
     results = f"""
-{B.section("results", "Section 1", "Results")}
+{B.section("results", "Section 3", "Results")}
 <p>Over ten weeks we audited the shop's ERP end to end, tested it for sixteen kinds of data quality
 error, and corrected what the record could support: {d['dead_deactivated']} dead item records
 deactivated, {d['n_lead_off']:,} lead times and {d['params_changed']:,} reorder points recomputed
@@ -625,10 +625,10 @@ trusted ({_money(tr['reliable_value']['after'])} of inventory, {tr['reliable_val
 of the book value, at a reliable balance, from nothing),
 that {_money(tr['on_order_genuine']['before_total'] - tr['on_order_genuine']['before'])} of on-order value
 that was never coming is off the books, and that the purchasing manager's {d['spreadsheet_rows']}
-line-critical components are managed in the ERP instead of a spreadsheet. Section 1.1 gives one
-measure per control; Section 1.2 gives what the errors cost in {YR}.</p>
+line-critical components are managed in the ERP instead of a spreadsheet. Section 3.1 gives one
+measure per control; Section 3.2 gives what the errors cost in {YR}.</p>
 
-{B.section("trust", "Section 1.1", "Trust in the system")}
+{B.section("trust", "Section 3.1", "Trust in the system")}
 {trust_table}
 <p>Before is the start of the engagement ({tr['before_date']}); after is the end of week 10
 ({tr['after_date']}). Percentages where the base is items or spend; dollars for on-order and
@@ -638,7 +638,7 @@ buyer could not attribute) are left that way. The lead-time row treats the 80th 
 receipts as actual delivery, since that is what the shop plans against. The second-round row is
 measured on the first quarter of the cycle-count program that followed the engagement.</p>
 
-{B.section("cost", "Section 1.2", f"What the messy data cost in {YR}")}
+{B.section("cost", "Section 3.2", f"What the messy data cost in {YR}")}
 <p>Two tables, one by financial cost type and one by operational. Each line is tagged
 <em>measured</em> (visible in the ERP record) or <em>estimated</em> (the rate stated inline). No
 forward-looking figures are given: what the cleanup saves from here on is for the reorder-policy
@@ -647,7 +647,7 @@ work that follows this audit.</p>
 {sub("Financial")}
 {fin_cost_table}
 <p>The largest measured line is purchases placed while the same part already sat on the shelf under
-another number, which follows entirely from the duplicate records (Section 2, #4); the write-offs
+another number, which follows entirely from the duplicate records (Section 1, #4); the write-offs
 follow mostly from unrecorded consumption on components missing from the bills (#7, #9). The expedite
 line is stated only for the {cm['expedite']['traced_lines']} rush lines the record ties to a stale
 lead time, an unrecorded pull or a phantom on-order balance (#2, #9, #16); the remaining
@@ -872,7 +872,7 @@ records (#4) acting on every regular buy.</p>
     rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_TXN[e[0]]]
         for i, e in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W3)
     found = f"""
-{B.section("found", "Section 2", "Data Quality Errors")}
+{B.section("found", "Section 1", "Data Quality Errors")}
 <p>This data quality audit examined the shop's entire ERP system end to end. The system consists of
 three master-level tables (Item, Supplier and Bill of Materials) and five transaction-level tables
 (Inventory Ledger, Purchase Orders, Service Orders, Production Orders and Cycle Counts), related as
@@ -928,7 +928,7 @@ chronic write-offs under #9 are part of the {d['n_adj_blank_rows']:,} unexplaine
 """
 
     did = f"""
-{B.section("did", "Section 3", "Error Remediation")}
+{B.section("did", "Section 2", "Error Remediation")}
 <p>Remediation ran in a fixed order. We profiled every table first (row counts by year, fill rates
 by column, the values in each code field, the date ranges), then ran one rerunnable test for each of
 the sixteen error types. Where the ERP could not settle a finding on its own we brought in evidence
@@ -1039,10 +1039,10 @@ evidence it rested on, and how many of the affected rows were remediated.</p>
                                          [list(r) for r in PROCESS], right=[]), [20, 46, 18, 16])
 
     keep = f"""
-{B.section("process", "Section 4", "Go-Forward Changes")}
+{B.section("process", "Section 4", "Process Changes")}
 <p>The sixteen errors trace back to two root conditions rather than sixteen separate causes: the ERP
 allowed them, and nobody owned the routine upkeep that would have caught them. The corrections in
-Section 3 fix what those two conditions produced; the changes in this section stop them producing it
+Section 2 fix what those two conditions produced; the changes in this section stop them producing it
 again, and they fall into two groups that are different kinds of work. The first group are settings.
 Each was changed by the ERP administrator during the engagement, took effect for every user at once,
 and stops the error at the point of entry. This is the easier lift: the changes are already in place,
@@ -1057,7 +1057,7 @@ error is caught or reduced, but not prevented).</p>
 close a purchase order or refresh a reorder point, so each of these needs a named owner and a cadence,
 and each will lapse without them. That makes this the harder lift: it depends on organizational
 alignment and on the owners' buy-in rather than on a configuration screen. The shop has committed to
-the owners and cadences below, and keeping them is what protects the results in Section 1.</p>
+the owners and cadences below, and keeping them is what protects the results in Section 3.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Changes Requiring Ongoing Processes and Ownership</p>
 {process_table}
@@ -1081,7 +1081,7 @@ the owners and cadences below, and keeping them is what protects the results in 
 """
 
     remains = ""
-    return results + found + did + keep + remains, toc
+    return found + did + results + keep + remains, toc
 
 
 def run():
