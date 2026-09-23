@@ -893,9 +893,9 @@ them; the corrected history lives in the reference tables, not in the ERP.</p>
 <p>Two results of the remediation do not appear in Section 3 and deserve to. First, the crosswalks
 and attributions make the 36-month history usable for planning: with duplicate records merged and
 free-text purchases returned to their items, the error of a demand forecast built on that history
-falls from {d['threeway']['raw']*100:.0f}% to {d['threeway']['master']*100:.0f}% (weighted absolute
-error over lead time, same model, same features), and to {d['threeway']['fully']*100:.0f}% once the
-unrecorded usage is restored. Second, the reconciliation of the purchasing manager's spreadsheet
+falls from {d['threeway']['raw']*100:.1f}% to {d['threeway']['master']*100:.1f}% (weighted absolute
+error over lead time, same model, same features), and to {d['threeway']['fully']*100:.1f}% once the
+small amount of unrecorded usage is restored. Second, the reconciliation of the purchasing manager's spreadsheet
 against the ERP on the {d['spreadsheet_rows']} line-critical components found the two disagreeing on
 {d['recon_disagree']}, and the spreadsheet closer to the truth on {d['recon_buyer_right']} of them.
 The shadow system was a better record than the system of record for half the parts that stop the
