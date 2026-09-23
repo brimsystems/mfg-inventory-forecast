@@ -274,6 +274,8 @@ def gather():
     d["jobs25"] = int(len(jobs25)); d["jobs25_on_affected"] = int(jobs25["product_number"].isin(aff).sum())
     shorts = pd.read_csv(TRUTH / "shortages.csv"); shorts = shorts[shorts["date"].str[:4] == "2025"]
     d["shortages25"] = int(len(shorts)); d["shortages25_on_omitted"] = int(shorts["item_number"].isin(t1_nums).sum())
+    d["threeway"] = json.loads((BACKTEST / "threeway_overall.json").read_text())
+    d["n_posting_corrections"] = d["t6_count"] + d["t7_count"] + d["t8_count"]
     d["samples"] = _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
     return d
 
@@ -871,6 +873,33 @@ supplier measured on it looks slower than it is.</p>
 
     did = f"""
 {B.section("did", "Section 2", "Error Remediation")}
+<p>Every error that the record could settle on its own was closed in full: all {d['n_lead_off']:,}
+stale lead times and {d['params_changed']:,} reorder points recomputed, all {d['uom_items']} missing
+conversions and {d['n_blank']} blank fields filled, all {d['bom_changes']} missing BOM rows restored,
+and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
+({d['n_posting_corrections']:,} posting corrections). Three rows read short of 100% for reasons that
+are not failures: dead records because the purchasing manager kept {d['dead_kept']} as insurance
+spares and is still deciding {d['dead_held']}; duplicates because the count includes the surviving
+record of each pair ({d['dup_merged']} retired, {d['dup_rejected']} pairs rejected as different parts);
+suppliers because the {d['sup_fragments']} canonical records remain once their aliases are mapped.
+The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
+only where the buyer confirmed a stocked item ({d['ft_confirmed']:,} of {d['n_ft_lines']:,}; the rest
+were real one-off buys). The {d['n_batch_rows']:,} batched receipt dates were left as posted, because
+the true dates are not recoverable, so any lead time computed from the raw history will stay biased
+and the computation was made robust to it instead. And the unrecorded consumption and catch-all
+adjustments were fixed at the source rather than in the history, so the ledger as posted still carries
+them; the corrected history lives in the reference tables, not in the ERP.</p>
+
+<p>Two results of the remediation do not appear in Section 3 and deserve to. First, the crosswalks
+and attributions make the 36-month history usable for planning: with duplicate records merged and
+free-text purchases returned to their items, the error of a demand forecast built on that history
+falls from {d['threeway']['raw']*100:.0f}% to {d['threeway']['master']*100:.0f}% (weighted absolute
+error over lead time, same model, same features), and to {d['threeway']['fully']*100:.0f}% once the
+unrecorded usage is restored. Second, the reconciliation of the purchasing manager's spreadsheet
+against the ERP on the {d['spreadsheet_rows']} line-critical components found the two disagreeing on
+{d['recon_disagree']}, and the spreadsheet closer to the truth on {d['recon_buyer_right']} of them.
+The shadow system was a better record than the system of record for half the parts that stop the
+line, which is the clearest case for the ownership changes in Section 4.</p>
 
 <p>The tables below give, for each error, how it was remediated and whose input that took, the
 evidence it rested on, and how many of the affected rows were remediated.</p>
