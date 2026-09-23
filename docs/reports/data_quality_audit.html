@@ -104,12 +104,11 @@ share of the ERP's total records, leaving it unreliable as the shop's central da
 movement in two years or more yet were still flagged as active, meaning reports, searches and reorder
 logic were polluted by inactive parts. Second, 69% of lead times
 and 59% of reorder points listed in the item master were stale,
-meaning that if they were relied upon, then reorders would be placed at the wrong time and in the
-wrong quantity. Third, the majority of receipts are posted in batches:
-57% of purchase order lines carry a posting date
+meaning that if they were relied upon when making reorder decisions, then they would be placed at the
+wrong time and in the wrong quantity. Third, the majority of receipts are posted in batches several
+days late: 57% of purchase order lines carry a posting date
 3 days on average after the material actually arrived, meaning every lead time
-computed from receipts reads 3 days longer than the delivery took, and every
-supplier's delivery measured on it looks slower than it is.</p>
+or supplier delivery time calculated from these receipts is artificially long.</p>
 
 
 <div class="section-title-block" id="did"><div class="section-label">Section 2</div><h2 class="section-title">Error Remediation</h2></div>
