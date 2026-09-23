@@ -836,7 +836,7 @@ shown below.</p>
 {B.chart("ERP Tables", chart_erd(d))}
 
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
-produced across the eight ERP tables. This audit reviewed 100% of them and found <strong>16</strong>
+produced across the eight ERP tables. This audit reviewed all of these records and found <strong>16</strong>
 different types of data quality error recur over this period. These errors touched a significant
 share of the ERP's total records, leaving it unreliable as the shop's central data record.</p>
 
