@@ -91,40 +91,31 @@ def build_bom(products, subs, plan, rng):
 
 def apply_m3_omissions(bom_true, plan, rng):
     """Remove component edges (hardware, fasteners, fittings, consumables,
-    finishing) from the RECORDED bom so backflush never consumes them. Returns
-    the recorded bom and the omission truth (list of (parent, component_item))."""
+    finishing) from the RECORDED bom so backflush never consumes them. The
+    omissions are the residue a shop with an annual physical would still carry:
+    one to three rows left off the bills of a few recent product releases and
+    option changes, and at most one on a shared subassembly. Returns the
+    recorded bom, the omission truth and the omitted component items."""
     comp_class = plan.set_index("item_id")["item_class"].to_dict()
     purchased = bom_true[bom_true["component_type"] == "purchased"].copy()
     purchased["cls"] = purchased["component_item"].map(comp_class)
     eligible = purchased[purchased["cls"].isin(C.M3_OMISSION_CLASSES)]
 
-    # Choose products (top-level parents) that will carry at least one omission.
     products = bom_true.loc[bom_true["parent_type"] == "product", "parent"].unique()
-    n_prod = int(round(len(products) * C.M3_PRODUCT_SHARE))
-    omit_products = set(rng.choice(products, size=n_prod, replace=False))
-
-    # Among eligible edges, omit a share of items-in-those-classes, biased to
-    # edges whose parent is (for products) in the omission set.
+    n_prod = max(1, int(round(len(products) * C.M3_PRODUCT_SHARE)))
     omit_idx = []
-    eligible_items = eligible["component_item"].unique()
-    n_items = int(round(len(eligible_items) * C.M3_ITEM_SHARE))
-    omit_items = set(rng.choice(eligible_items, size=n_items, replace=False))
-    for idx, r in eligible.iterrows():
-        if r["component_item"] not in omit_items:
-            continue
-        # Subassembly omissions are rarer, because a shared subassembly propagates
-        # its omission to every product that uses it and would otherwise put most
-        # products in scope.
-        if r["parent_type"] == "subassembly":
-            ok = rng.random() < 0.55
-        else:
-            ok = (r["parent"] in omit_products) and rng.random() < 0.8
-        if ok:
-            omit_idx.append(idx)
+    for prod in rng.choice(products, size=n_prod, replace=False):
+        edges = eligible[(eligible["parent"] == prod) & (eligible["parent_type"] == "product")]
+        k = min(len(edges), int(rng.integers(1, C.M3_ROWS_PER_PRODUCT + 1)))
+        if k:
+            omit_idx.extend(int(i) for i in rng.choice(edges.index.to_numpy(), size=k, replace=False))
+    subs = eligible[eligible["parent_type"] == "subassembly"]
+    if len(subs) and rng.random() < C.M3_SUBASSEMBLY_PROB:
+        omit_idx.append(int(rng.choice(subs.index.to_numpy())))
 
     bom_recorded = bom_true.drop(index=omit_idx).reset_index(drop=True)
     omissions = bom_true.loc[omit_idx, ["parent", "parent_type", "component_item", "qty_per"]]
-    return bom_recorded, omissions.reset_index(drop=True), sorted(omit_items)
+    return bom_recorded, omissions.reset_index(drop=True), sorted(set(int(i) for i in omissions["component_item"]))
 
 
 def effective_component_map(bom_recorded):

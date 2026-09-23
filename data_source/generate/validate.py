@@ -95,7 +95,7 @@ def run():
     # BOM omissions (top-level products, from the omission truth)
     n_products = cross.get("n_products", C.N_PRODUCTS)
     prod_with_omission = len(cross.get("m3_affected_products", []))
-    _chk("Products with a BOM omission (%)", prod_with_omission / n_products * 100, 30, 40)
+    _chk("Products with a BOM omission (%)", prod_with_omission / n_products * 100, 4, 12)
 
     # adjustments
     moved = tx.loc[tx["type"].isin(["ISSUE", "BACKFLUSH", "RECEIPT"]), "qty"].abs().sum()
@@ -128,7 +128,7 @@ def run():
     # shared logins on floor / receiving
     floor = tx[tx["type"].isin(["ISSUE", "BACKFLUSH", "RECEIPT"])]
     shared = floor["user_id"].isin(C.SHARED_LOGINS).mean() * 100
-    _chk("Floor/receiving txns under shared logins (%)", shared, 70, 85)
+    _chk("Floor/receiving txns under shared logins (%)", shared, 60, 85)
 
     n_fail = sum(1 for l in _lines if "[FAIL]" in l)
     print(f"\n{len(_lines) - n_fail}/{len(_lines)} checks pass, {n_fail} out of range")

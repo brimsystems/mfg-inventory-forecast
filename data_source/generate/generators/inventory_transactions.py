@@ -123,7 +123,7 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     cheap = ("Hardware", "Fasteners", "Fittings", "Consumables")
     omit_pool = [primary_num[int(i)] for i in set(int(x) for x in omitted_item_ids) if int(i) in primary_num]
     other_pool = [n for n in live_nums if cls_by_num.get(n) in cheap and n not in omit_pool]
-    rng.shuffle(other_pool); other_pool = other_pool[:30]
+    rng.shuffle(other_pool); other_pool = other_pool[:60]
     vol = (tx[tx["type"].isin(["ISSUE", "BACKFLUSH"])].assign(q=lambda d: d["qty"].abs())
            .groupby("item_number")["q"].sum() / 36.0)
     # catch-all adjustments end with the remediation: a reason code is required from then on
@@ -133,8 +133,13 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     while produced < remaining and events_n < 30000 and live_nums:
         events_n += 1
         neg = rng.random() < 0.62
-        if neg and omit_pool:
-            num = rng.choice(omit_pool) if (rng.random() < 0.72 or not other_pool) else rng.choice(other_pool)
+        # write-offs concentrate on the cheap items the floor pulls by hand, the
+        # omitted components among them; the rest scatter across the master
+        u = rng.random()
+        if neg and u < 0.10 and omit_pool:
+            num = rng.choice(omit_pool)
+        elif neg and u < 0.80 and other_pool:
+            num = rng.choice(other_pool)
         else:
             num = rng.choice(live_nums)
         cap = max(2, int(3 * vol.get(num, 1.0)))

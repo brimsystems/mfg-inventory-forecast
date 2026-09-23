@@ -218,7 +218,8 @@ def gather():
     d["n_adj_blank_rows"] = int((adj_rows["reason_code"].isna() |
         adj_rows["reason_code"].astype(str).isin(["", "nan", "ADJ", "VAR", "MISC", "COUNT"])).sum())
     t1_nums = {r["item_number"] for r in txn.get("t1", [])}
-    d["n_unrec_adj_rows"] = int(((tx["type"] == "ADJUST") & (tx["qty"] < 0) & tx["item_number"].isin(t1_nums)).sum())
+    not_count = ~tx["reason_code"].astype(str).isin(["COUNT", "CYCLE"])
+    d["n_unrec_adj_rows"] = int(((tx["type"] == "ADJUST") & (tx["qty"] < 0) & not_count & tx["item_number"].isin(t1_nums)).sum())
     d["n_ft_lines"] = int(len(ft))
     d["n_batch_rows"] = int(len(pod.get("t4", [])))
     d["n_tx"], d["n_po"], d["n_prod"] = int(len(tx)), int(len(po)), int(len(prod))
@@ -239,7 +240,7 @@ def gather():
     t78_ids = {r["txn_id"] for r in txn.get("t7", [])} | {r["txn_id"] for r in txn.get("t8", [])}
     blank_mask = (tx["type"] == "ADJUST") & (tx["reason_code"].isna() |
                   tx["reason_code"].astype(str).isin(["", "nan", "ADJ", "VAR", "MISC", "COUNT"]))
-    unrec_mask = (tx["type"] == "ADJUST") & (tx["qty"] < 0) & tx["item_number"].isin(t1_nums)
+    unrec_mask = (tx["type"] == "ADJUST") & (tx["qty"] < 0) & not_count & tx["item_number"].isin(t1_nums)
     ledger_err = int((blank_mask | unrec_mask | tx["txn_id"].isin(t78_ids)).sum()) + d["t6_count"]
     t4_keys = {(r["po_id"], int(r["line"])) for r in pod.get("t4", [])}
     t4_mask = pd.Series([k in t4_keys for k in zip(po["po_id"], po["line"].astype(int))], index=po.index)
@@ -488,7 +489,7 @@ def chart_error_rates(d):
 # ── report ───────────────────────────────────────────────────────────────────
 def build(d):
     toc = "".join([
-        '<a href="#found">Data Quality Errors</a>',
+        '<a href="#found">Findings</a>',
         '<a href="#did">Error Remediation</a>',
         '<a href="#results">Results</a>',
         '<a class="sub" href="#trust">Trust in the system</a>',
@@ -878,7 +879,7 @@ duplicate records (#4) acting on every regular buy.</p>
     rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_TXN[e[0]]]
         for i, e in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W3)
     found = f"""
-{B.section("found", "Section 1", "Data Quality Errors")}
+{B.section("found", "Section 1", "Findings")}
 <p>This data quality audit examined the shop's entire ERP system end to end. The system consists of
 three master-level tables (Item, Supplier and Bill of Materials) and five transaction-level tables
 (Inventory Ledger, Purchase Orders, Service Orders, Production Orders and Cycle Counts), related as
@@ -889,46 +890,11 @@ shown below.</p>
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
 produced across the eight ERP tables. This audit covered all of them. It found <strong>16</strong>
 different types of data quality error recur over this period. These errors touched a significant
-share of the ERP's records and left it unable to serve as the trusted central record of what the
-shop holds, buys and builds. They also directly disrupted operational workflows, inflated costs and
-distorted financial visibility, as detailed below.</p>
+share of the ERP's total records, leaving it unreliable as the shop's central data record.</p>
 
-<p>The tables below lay out the 16 different data quality error types that were found to recur over
-the three-year audit period.</p>
 
-<p>Three findings stand out for their scale. The item master was full of dead records: {d['dead_pct']*100:.0f}%
-of its records ({d['n_dead']:,} of {d['n_master']:,}) were items with no movement in two years or more
-that are still flagged active, and {d['dead_with_rop']} of them still carry a reorder point. The
-parameters the ERP reorders on are stale: the lead times on {d['n_lead_off']/d['n_live']*100:.0f}% of
-live items no longer match how long deliveries take, running {d['lead_gap_mean']:.0f} days shorter than
-actual on average, and the reorder points on {d['params_changed']/d['n_live']*100:.0f}% of live items
-differ from what current usage and lead times call for by a median of {d['rop_delta_median']:.0f}
-units, {d['rop_low_share']*100:.0f}% of them set too low and the rest too high. And the majority of
-receipts are posted in batches: {d['n_batch_rows']/d['n_po']*100:.0f}% of purchase order lines carry a
-posting date {d['t4_lag_mean']:.0f} days on average after the material arrived, so every lead time
-computed from receipt dates reads {d['t4_lag_mean']:.0f} days longer than the delivery took, every
-reorder point set from it carries {d['t4_lag_mean']:.0f} days of stock it does not need, and every
-supplier measured on it looks slower than it is.</p>
 
-<p>Two other master-level errors are small in the master and large downstream. The {d['omit_items']}
-components missing from the bills of {d['omit_products']} of the {d['n_products']} products are
-consumed on every job that builds those products without ever being subtracted: {d['jobs25_on_affected']}
-of the {d['jobs25']:,} jobs in {d['fin']['year']} built one of those products, and {d['fin']['unrecorded']['events']:,}
-pulls of hardware, fasteners, fittings and consumables worth {_money(d['fin']['unrecorded']['value'])} left the
-stockroom with no record, about a quarter of those items' consumption. In dollars it is small, which is
-why it persisted; in the ledger it is the origin of the chronic write-offs, and it put
-{d['shortages25_on_omitted']} of the year's {d['shortages25']} shortage episodes on components the ERP
-never saw demand for. And the {d['dup_records']} duplicate
-records, each reordering on its own point against one shared pile, produced {d['fin']['duplicates']['lines_while_sibling_held_stock']}
-purchase lines in {d['fin']['year']} for parts the shop already held.</p>
 
-<p>A further pattern distorts the financial view of the company: the ledger is corrected after the
-fact rather than kept right. Material leaves the stockroom without a transaction (#9), and the gap
-that opens between the books and the shelf is closed later by an adjustment carrying no reason code
-(#13), the same way damage, receiving errors and count errors are closed. The balance therefore reads
-high until someone corrects it, and the correction says nothing about why. The {d['n_unrec_adj_rows']:,}
-chronic write-offs under #9 are part of the {d['n_adj_blank_rows']:,} unexplained adjustments under
-#13: one is the leak, the other is why the leak went unnoticed.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level Table Errors</p>
 {master_table}
@@ -936,25 +902,29 @@ chronic write-offs under #9 are part of the {d['n_adj_blank_rows']:,} unexplaine
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level Table Errors</p>
 {txn_table}
 
+<p>Three findings stand out for their scale. First, the item master was full of dead records:
+{d['dead_pct']*100:.0f}% of its records ({d['n_dead']:,} of {d['n_master']:,}) were items with no
+movement in two years or more yet were still flagged as active, meaning reports, searches and reorder
+logic were polluted by inactive parts. Second, {d['n_lead_off']/d['n_live']*100:.0f}% of lead times
+and {d['params_changed']/d['n_live']*100:.0f}% of reorder points listed in the item master were stale,
+meaning reorders were placed at the wrong time and in the wrong quantity, on numbers no one had
+refreshed since go-live. Third, the majority of receipts are posted in batches:
+{d['n_batch_rows']/d['n_po']*100:.0f}% of purchase order lines carry a posting date
+{d['t4_lag_mean']:.0f} days on average after the material actually arrived, meaning every lead time
+computed from receipts reads {d['t4_lag_mean']:.0f} days longer than the delivery took, and every
+supplier measured on it looks slower than it is.</p>
+
 """
 
     did = f"""
 {B.section("did", "Section 2", "Error Remediation")}
-<p>Remediation ran in a fixed order. We profiled every table first (row counts by year, fill rates
-by column, the values in each code field, the date ranges), then ran one rerunnable test for each of
-the sixteen error types. Where the ERP could not settle a finding on its own we brought in evidence
-from outside it: the cycle counts against the book balances, the purchasing manager's spreadsheet
-against the ERP, and the consumption expected from jobs and bills of materials against what was
-actually issued. Findings that rested on judgment, such as duplicate pairs, free-text matches,
-dead-item dispositions and BOM additions, went to the people who own them for confirmation before
-anything was changed, and every correction was recorded in a reference table rather than written
-over the source, so each one is auditable and reversible.</p>
+
 <p>The tables below give, for each error, how it was remediated and whose input that took, the
 evidence it rested on, and how many of the affected rows were remediated.</p>
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level error remediation</p>
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level Table Error Remediation</p>
 {rem_master_table}
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level error remediation</p>
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level Table Error Remediation</p>
 {rem_txn_table}
 
 """
@@ -1099,9 +1069,7 @@ def run():
     d = gather()
     body, toc = build(d)
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    html = B.page("Data Quality Audit: Purchasing & Inventory",
-                  "Post-remediation report to the operations manager and controller",
-                  toc, body)
+    html = B.page("Data Quality Audit", "", toc, body)
     for a, b in [("defects", "errors"), ("Defects", "Errors"), ("defect", "error"), ("Defect", "Error")]:
         html = html.replace(a, b)
     # subsection titles sized to match the bold table titles (18px)

@@ -238,8 +238,12 @@ M2_DRIFT_SUPPLIER_RATIO  = (1.8, 2.4)  # end-of-history actual / master ratio
 # materials missing from subassembly and product BOMs, so backflush never
 # consumes them; omissions compound through levels.
 M3_OMISSION_CLASSES    = ["Hardware", "Fasteners", "Fittings", "Consumables", "Outside Service"]
-M3_ITEM_SHARE          = 0.30     # share of items in those classes omitted somewhere
-M3_PRODUCT_SHARE       = 0.24     # share of products directly targeted for omission
+# A shop running even an annual physical would not carry a systemic leak for
+# long; what survives is a handful of rows on recent product releases and option
+# changes that engineering never back-filled.
+M3_PRODUCT_SHARE       = 0.07     # share of products with a row or more left off the bill
+M3_ROWS_PER_PRODUCT    = 3        # one to this many rows missing per affected product
+M3_SUBASSEMBLY_PROB    = 0.5      # chance of one omission on a shared subassembly, which propagates
 
 # M4 Duplicate item records: same physical item under two or more numbers.
 M4_LIVE_SHARE          = 0.065    # share of live items in a duplicate cluster (5-8%)

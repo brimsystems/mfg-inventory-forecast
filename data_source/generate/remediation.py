@@ -218,7 +218,9 @@ def _chronic_adjustments(tx, txd, cross, rng):
     cut = pd.Timestamp(C.MODEL_SPAN_END) - pd.Timedelta(days=365)
     # chronic means three or more DOWNWARD adjustments in twelve months: the
     # signature of unrecorded consumption, dominated by BOM-omitted components.
-    down = adj[(adj["txn_date"] >= cut) & (adj["qty"] < 0)]
+    # a count correction carries its cause; chronic means the floor's own
+    # unexplained write-offs
+    down = adj[(adj["txn_date"] >= cut) & (adj["qty"] < 0) & ~adj["reason_code"].astype(str).isin(["COUNT", "CYCLE"])]
     g = down.groupby("item_number")["qty"]
     chron = pd.DataFrame({"adj_count_12m": g.count(), "net_qty": g.sum()}).reset_index()
     chron = chron[chron["adj_count_12m"] >= 3]
