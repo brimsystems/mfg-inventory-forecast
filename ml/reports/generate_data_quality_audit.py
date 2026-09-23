@@ -871,8 +871,8 @@ conversions and {d['n_blank']} blank fields filled, all {d['bom_changes']} missi
 and every wrong reference, keyed quantity and duplicate posting in the ledger corrected
 ({d['n_posting_corrections']:,} posting corrections). Two rows read short of 100% by decision rather
 than by omission: the purchasing manager kept {d['dead_kept']} dead records as insurance spares, and
-the stockroom lead rejected {d['dup_rejected']} duplicate pairs as different parts, so those records
-stay separate. The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
+the buyer rejected {d['dup_rejected']} duplicate pairs as different parts, so those records stay
+separate. The genuinely partial results are the ones the record cannot support. Free-text lines were attributed
 only where the buyer confirmed a stocked item ({d['ft_confirmed']:,} of {d['n_ft_lines']:,}; the rest
 were real one-off buys). The {d['n_batch_rows']:,} batched receipt dates were left as posted, because
 the true dates are not recoverable, so any lead time computed from the raw history will stay biased
@@ -1026,7 +1026,7 @@ the owners and cadences below, and keeping them is what protects the results in 
       high percentile to stay safe rather than precise.</li>
   <li><strong>What the shop declined.</strong> {d['dead_kept']} dead items were kept active at the buyer's
       insistence as insurance spares, against the recommendation to deactivate them, and
-      {d['dup_rejected']} duplicate pairs the stockroom lead judged to be different parts remain as separate
+      {d['dup_rejected']} duplicate pairs the buyer judged to be different parts remain as separate
       records.</li>
   <li><strong>What the cleanup is worth going forward is not measured here.</strong> This report claims
       only costs that trace to a specific error in the {YR} record. How much of the untraced rush spend

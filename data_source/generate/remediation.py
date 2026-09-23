@@ -126,15 +126,15 @@ def _duplicate_crosswalk(cross, im, rng):
     reject_idx = set(rng.choice(len(clusters), size=n_reject, replace=False))
     for ci, cl in enumerate(clusters):
         survivor = cl["primary"]
-        if ci in reject_idx:
-            other = [r for r in cl["records"] if r != survivor][:1]
-            for r in other:
-                rows.append({"retired_item_number": r, "survivor_item_number": survivor,
-                             "reason": "different part on review (revision/spec)", "reviewer": "buyer",
-                             "decision": "REJECT", "decision_date": _week_date(int(rng.integers(2, 4)), rng)})
-            continue
+        # in a rejected cluster one pair is judged a different part and stays
+        # separate; any other members of the cluster still merge to the survivor
+        rejected = [r for r in cl["records"] if r != survivor][:1] if ci in reject_idx else []
+        for r in rejected:
+            rows.append({"retired_item_number": r, "survivor_item_number": survivor,
+                         "reason": "different part on review (revision/spec)", "reviewer": "buyer",
+                         "decision": "REJECT", "decision_date": _week_date(int(rng.integers(2, 4)), rng)})
         for r in cl["records"]:
-            if r == survivor:
+            if r == survivor or r in rejected:
                 continue
             rows.append({"retired_item_number": r, "survivor_item_number": survivor,
                          "reason": "same physical item, alternate number/description",
