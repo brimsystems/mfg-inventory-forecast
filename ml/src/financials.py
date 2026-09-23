@@ -140,6 +140,8 @@ def run():
         "episodes": int(len(s)),
         "items": int(s["item_number"].nunique()),
         "by_cause": {k: int(v) for k, v in s["cause"].value_counts().items()},
+        "jobs_by_cause": {k: int(v) for k, v in s.groupby("cause")["jobs"].sum().items()},
+        "jobs_held": int(s["jobs"].sum()),
         "jobs": int(len(jobs)),
         "jobs_delayed": int(len(delayed)),
         "delay_days": int(delayed["delay_days"].sum()),
