@@ -199,6 +199,17 @@ def gather():
     prod = pd.read_csv(RAW / "erp" / "production_orders.csv", low_memory=False)
     d["n_lead_off"] = int((diff > 3).sum())
     d["n_lead_items"] = int(len(diff))
+    signed = (med - master_lead).dropna()
+    signed = signed[[n in live_nums for n in signed.index]]
+    stale_signed = signed[signed.abs() > 3]
+    d["lead_gap_mean"] = float(stale_signed.mean())                 # days, actual minus master
+    d["lead_longer_share"] = float((stale_signed > 0).mean())
+    rop_delta = (params["new_reorder_point"] - params["old_reorder_point"].fillna(0))[changed]
+    d["rop_delta_median"] = float(rop_delta.abs().median())
+    d["rop_low_share"] = float((rop_delta > 0).mean())              # point on file below the recomputed one
+    t4 = pd.DataFrame(pod.get("t4", []))
+    d["t4_lag_mean"] = float((pd.to_datetime(t4["recorded_received_date"]) -
+                              pd.to_datetime(t4["true_received_date"])).dt.days.mean()) if len(t4) else 0.0
     d["n_blank"] = int(live[["standard_cost", "reorder_point", "primary_supplier_id"]].isna().any(axis=1).sum())
     d["n_adj_rows"] = int(len(adj_rows))
     d["n_adj_blank_rows"] = int((adj_rows["reason_code"].isna() |
@@ -379,8 +390,8 @@ def chart_erd(d):
     import matplotlib.pyplot as plt
     from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
     rows = dict(d["master_comp"] + d["txn_comp"])
-    fig, ax = plt.subplots(figsize=(10.5, 5.0))
-    ax.set_xlim(0, 100); ax.set_ylim(0, 58); ax.axis("off")
+    fig, ax = plt.subplots(figsize=(10.5, 3.9))
+    ax.set_xlim(0, 100); ax.set_ylim(0, 44); ax.axis("off")
 
     def box(x, y, w, h, title, key, master):
         face = B.DARK_BLUE if master else B.MED_GREY
@@ -398,9 +409,9 @@ def chart_erd(d):
                                      linewidth=1.1, shrinkA=0, shrinkB=0, zorder=1))
 
     # masters on top, transactions below
-    box(5, 42, 24, 11, "Supplier master", "Supplier master", True)
-    box(38, 42, 24, 11, "Item master", "Item master", True)
-    box(71, 42, 24, 11, "Bill of materials", "Bill of materials", True)
+    box(5, 32, 24, 11, "Supplier master", "Supplier master", True)
+    box(38, 32, 24, 11, "Item master", "Item master", True)
+    box(71, 32, 24, 11, "Bill of materials", "Bill of materials", True)
     box(0.5, 6, 19, 11, "Cycle counts", "Cycle counts", False)
     box(20.5, 6, 19, 11, "Purchase orders", "Purchase order lines", False)
     box(40.5, 6, 19, 11, "Inventory ledger", "Inventory ledger", False)
@@ -408,21 +419,19 @@ def chart_erd(d):
     box(80.5, 6, 19, 11, "Service orders", "Service order lines", False)
 
     # masters that other masters rely on
-    head((29, 47.5), (38, 47.5))
-    head((62, 47.5), (71, 47.5))
+    head((29, 37.5), (38, 37.5))
+    head((62, 37.5), (71, 37.5))
     # every table keyed on the item number
-    seg([(50, 42), (50, 30)]); seg([(10, 30), (90, 30)])
+    seg([(50, 32), (50, 25)]); seg([(10, 25), (90, 25)])
     for x in (10, 30, 50, 90):
-        head((x, 30), (x, 17))
+        head((x, 25), (x, 17))
     # the supplier on a purchase order, the bill a job is built from
-    seg([(15, 42), (15, 36), (24, 36), (24, 30)]); head((24, 30), (24, 17))
-    seg([(85, 42), (85, 36), (76, 36), (76, 30)]); head((76, 30), (76, 17))
+    seg([(15, 32), (15, 28.5), (24, 28.5), (24, 25)]); head((24, 25), (24, 17))
+    seg([(85, 32), (85, 28.5), (76, 28.5), (76, 25)]); head((76, 25), (76, 17))
     # documents and the ledger update each other
     seg([(34, 20), (34, 21.5), (46, 21.5), (46, 20)]); head((34, 21.5), (34, 17)); head((46, 21.5), (46, 17))
     seg([(54, 20), (54, 21.5), (66, 21.5), (66, 20)]); head((54, 21.5), (54, 17)); head((66, 21.5), (66, 17))
     seg([(90, 3), (90, 2), (50, 2), (50, 3)]); head((90, 3), (90, 6)); head((50, 3), (50, 6))
-    ax.text(99.5, 57, "An arrow points from the table relied on to the table that depends on it; "
-            "two-headed where each updates the other.", ha="right", va="top", fontsize=7.6, color=B.DARK_GREY)
     return B.b64(fig)
 
 
@@ -869,42 +878,44 @@ shown below.</p>
 
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
 produced across the eight ERP tables. This audit covered all of them. It found <strong>16</strong>
-different types of data quality error recurring over this period. Taken together, these errors
-inflated costs, disrupted operational workflows, and distorted financial visibility.</p>
+different types of data quality error recur over this period. These errors touched a significant
+share of the ERP's records and left it unable to serve as the trusted central record of what the
+shop holds, buys and builds. They also directly disrupted operational workflows, inflated costs and
+distorted financial visibility, as detailed below.</p>
 
 {B.section("errors", "Section 2.1", "Data Quality Errors")}
 
-<p>The tables below present the 16 different data quality error types that were found to recur over
-the three-year audit period, with a description of each, the ERP table in which it was found, and
-its prevalence within that table. Three findings stand out for their scale. The item master is
-silted up: {d['dead_pct']*100:.0f}% of its records ({d['n_dead']:,} of {d['n_master']:,}) are items
-with no movement in two years or more that are still flagged active, and {d['dead_with_rop']} of
-them still carry a reorder point. The parameters the ERP reorders on are stale: the lead times on
-{d['n_lead_off']/d['n_live']*100:.0f}% of live items no longer match how long deliveries take, and
-the reorder points on {d['params_changed']/d['n_live']*100:.0f}% were never recomputed as usage and
-lead times changed. And receipts are posted in batches: {d['n_batch_rows']/d['n_po']*100:.0f}% of
-purchase order lines carry a posting date days after the material arrived, which biases every lead
-time computed from them.</p>
+<p>The tables below lay out the 16 different data quality error types that were found to recur over
+the three-year audit period.</p>
 
-<p>Two of the errors describe the same weakness in the ledger from opposite ends. Unrecorded
-consumption (#9) is material leaving the stockroom with no transaction, so the balance drifts above
-what is on the shelf until a count or a shelf-empty correction writes it down. Adjustments as a
-catch-all (#13) is the habit of fixing every discrepancy with an adjustment and no reason code, so
-those write-downs cannot be told apart from damage, receiving errors and count errors. The
-{d['n_unrec_adj_rows']:,} chronic write-offs that evidence #9 are therefore a subset of the
-{d['n_adj_blank_rows']:,} unexplained adjustments counted under #13: one is the leak, the other is
-why the leak went unnoticed. The remaining errors are data entry. The same part is carried under
-two or more numbers ({d['dup_records']} records) and the same supplier under several
-({d['sup_records']} records); costs, suppliers and reorder points are left blank ({d['n_blank']}
-items); issues are posted against the wrong item ({d['t6_count']:,}), quantities keyed an order of
-magnitude off ({d['t7_count']}) and postings entered twice ({d['t8_count']}); and purchases are typed
-in under a generic code instead of the item number ({d['n_ft_lines']:,} lines). Each is small on its
-own, and together they are why a balance cannot be trusted without a count.</p>
+<p>Three findings stand out for their scale. The item master was full of dead records: {d['dead_pct']*100:.0f}%
+of its records ({d['n_dead']:,} of {d['n_master']:,}) were items with no movement in two years or more
+that are still flagged active, and {d['dead_with_rop']} of them still carry a reorder point. The
+parameters the ERP reorders on are stale: the lead times on {d['n_lead_off']/d['n_live']*100:.0f}% of
+live items no longer match how long deliveries take, running {d['lead_gap_mean']:.0f} days shorter than
+actual on average, and the reorder points on {d['params_changed']/d['n_live']*100:.0f}% of live items
+differ from what current usage and lead times call for by a median of {d['rop_delta_median']:.0f}
+units, {d['rop_low_share']*100:.0f}% of them set too low and the rest too high. And the majority of
+receipts are posted in batches: {d['n_batch_rows']/d['n_po']*100:.0f}% of purchase order lines carry a
+posting date {d['t4_lag_mean']:.0f} days on average after the material arrived, so every lead time
+computed from receipt dates reads {d['t4_lag_mean']:.0f} days longer than the delivery took, every
+reorder point set from it carries {d['t4_lag_mean']:.0f} days of stock it does not need, and every
+supplier measured on it looks slower than it is.</p>
 
-<p>Two of the counts are rows that should exist rather than rows that do. For unrecorded consumption
-the affected rows are the write-off adjustments that stand in for the issues that were never entered;
-for BOM omissions they are the component rows missing from the bill of materials, counted against
-the complete bill.</p>
+<p>Two other master-level errors are small in the master and large downstream. The {d['omit_items']}
+components missing from the bills of {d['omit_products']} of the {d['n_products']} products are
+consumed on every job that builds those products without ever being subtracted, which makes them the
+single largest source of shortages and write-offs in the ledger. And the {d['dup_records']} duplicate
+records, each reordering on its own point against one shared pile, produced {d['fin']['duplicates']['lines_while_sibling_held_stock']}
+purchase lines in {d['fin']['year']} for parts the shop already held.</p>
+
+<p>A further pattern distorts the financial view of the company: the ledger is corrected after the
+fact rather than kept right. Material leaves the stockroom without a transaction (#9), and the gap
+that opens between the books and the shelf is closed later by an adjustment carrying no reason code
+(#13), the same way damage, receiving errors and count errors are closed. The balance therefore reads
+high until someone corrects it, and the correction says nothing about why. The {d['n_unrec_adj_rows']:,}
+chronic write-offs under #9 are part of the {d['n_adj_blank_rows']:,} unexplained adjustments under
+#13: one is the leak, the other is why the leak went unnoticed.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level Table Errors</p>
 {master_table}
