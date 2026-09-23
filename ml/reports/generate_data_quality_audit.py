@@ -372,56 +372,57 @@ def chart_reliability(d):
     ax.invert_yaxis()
     return B.b64(fig)
 
-def chart_erd():
-    """Entity relationship diagram: the eight ERP tables and the keys that join them."""
+def chart_erd(d):
+    """Entity relationship diagram: the eight ERP tables, their row counts, and
+    which tables depend on which. An arrow points from the table relied on to the
+    table that depends on it; two-headed where each updates the other."""
     import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyBboxPatch
-    fig, ax = plt.subplots(figsize=(10.5, 5.6))
-    ax.set_xlim(0, 100); ax.set_ylim(0, 62); ax.axis("off")
+    from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+    rows = dict(d["master_comp"] + d["txn_comp"])
+    fig, ax = plt.subplots(figsize=(10.5, 5.0))
+    ax.set_xlim(0, 100); ax.set_ylim(0, 58); ax.axis("off")
 
-    def box(x, y, w, h, title, fields, master):
+    def box(x, y, w, h, title, key, master):
         face = B.DARK_BLUE if master else B.MED_GREY
         ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0,rounding_size=0.8",
-                                    facecolor="white", edgecolor=face, linewidth=1.2))
-        ax.add_patch(FancyBboxPatch((x, y + h - 4.2), w, 4.2, boxstyle="round,pad=0,rounding_size=0.8",
                                     facecolor=face, edgecolor=face, linewidth=1.2))
-        ax.text(x + w / 2, y + h - 2.1, title, ha="center", va="center", fontsize=8.6, color="white", fontweight="bold")
-        for k, f in enumerate(fields):
-            ax.text(x + 1.4, y + h - 6.6 - k * 3.0, f, ha="left", va="center", fontsize=7.2, color=B.DARK_GREY)
+        ax.text(x + w / 2, y + h * 0.64, title, ha="center", va="center", fontsize=9.6, color="white", fontweight="bold")
+        ax.text(x + w / 2, y + h * 0.30, f"{rows[key]:,} records", ha="center", va="center", fontsize=8, color="white")
 
-    def line(pts, label=None, lx=None, ly=None):
+    def seg(pts):
         xs, ys = zip(*pts)
-        ax.plot(xs, ys, color=B.MED_GREY, linewidth=1.0, zorder=0)
-        if label:
-            ax.text(lx, ly, label, fontsize=7, color=B.DARK_GREY, ha="center", va="center",
-                    bbox=dict(facecolor="white", edgecolor="none", pad=1.2))
+        ax.plot(xs, ys, color=B.MED_GREY, linewidth=1.1, zorder=0, solid_capstyle="round")
 
-    # masters on top
-    box(3, 45, 25, 15, "Supplier master", ["supplier_id  (key)", "supplier_name, type", "payment_terms, status"], True)
-    box(37, 45, 26, 15, "Item master", ["item_number  (key)", "primary_supplier_id", "reorder_point, lead time, cost"], True)
-    box(72, 45, 25, 15, "Bill of materials", ["product_number  (key)", "component_item", "qty_per, uom, effective_date"], True)
-    # transactions below
-    box(0.5, 6, 19, 17, "Cycle counts", ["count_id  (key)", "item_number", "system vs counted qty", "program"], False)
-    box(20.5, 6, 19, 17, "Purchase orders", ["po_id, line  (key)", "item_number", "supplier_id", "qty ordered, received"], False)
-    box(40.5, 6, 19, 17, "Inventory ledger", ["txn_id  (key)", "item_number", "job_id  (PO, job, order)", "type, qty, reason_code"], False)
-    box(60.5, 6, 19, 17, "Production orders", ["order_id  (key)", "product_number", "qty, due, completed", "hold_reason"], False)
-    box(80.5, 6, 19, 17, "Service orders", ["order_id, line  (key)", "item_number", "customer_id", "qty, ship_date"], False)
+    def head(p0, p1):
+        ax.add_patch(FancyArrowPatch(p0, p1, arrowstyle="-|>", mutation_scale=13, color=B.MED_GREY,
+                                     linewidth=1.1, shrinkA=0, shrinkB=0, zorder=1))
 
-    # master-to-master keys
-    line([(28, 52.5), (37, 52.5)], "primary_supplier_id", 32.5, 55.2)
-    line([(63, 52.5), (72, 52.5)], "component_item", 67.5, 55.2)
-    # item_number fans from the item master to every transaction table that carries it
-    line([(50, 45), (50, 34)])
-    line([(10, 34), (90, 34)], "item_number", 50, 36.3)
+    # masters on top, transactions below
+    box(5, 42, 24, 11, "Supplier master", "Supplier master", True)
+    box(38, 42, 24, 11, "Item master", "Item master", True)
+    box(71, 42, 24, 11, "Bill of materials", "Bill of materials", True)
+    box(0.5, 6, 19, 11, "Cycle counts", "Cycle counts", False)
+    box(20.5, 6, 19, 11, "Purchase orders", "Purchase order lines", False)
+    box(40.5, 6, 19, 11, "Inventory ledger", "Inventory ledger", False)
+    box(60.5, 6, 19, 11, "Production orders", "Production orders", False)
+    box(80.5, 6, 19, 11, "Service orders", "Service order lines", False)
+
+    # masters that other masters rely on
+    head((29, 47.5), (38, 47.5))
+    head((62, 47.5), (71, 47.5))
+    # every table keyed on the item number
+    seg([(50, 42), (50, 30)]); seg([(10, 30), (90, 30)])
     for x in (10, 30, 50, 90):
-        line([(x, 34), (x, 23)])
-    # supplier_id to purchase orders, product_number to production orders
-    line([(15, 45), (15, 40), (26, 40), (26, 23)], "supplier_id", 20.5, 42)
-    line([(84, 45), (84, 40), (74, 40), (74, 23)], "product_number", 79, 42)
-    # documents the ledger posts against
-    line([(34, 23), (34, 26.5), (46, 26.5), (46, 23)], "po_id", 40, 28.3)
-    line([(54, 23), (54, 26.5), (66, 26.5), (66, 23)], "order_id", 60, 28.3)
-    line([(90, 6), (90, 2.5), (50, 2.5), (50, 6)], "order_id", 70, 2.5)
+        head((x, 30), (x, 17))
+    # the supplier on a purchase order, the bill a job is built from
+    seg([(15, 42), (15, 36), (24, 36), (24, 30)]); head((24, 30), (24, 17))
+    seg([(85, 42), (85, 36), (76, 36), (76, 30)]); head((76, 30), (76, 17))
+    # documents and the ledger update each other
+    seg([(34, 20), (34, 21.5), (46, 21.5), (46, 20)]); head((34, 21.5), (34, 17)); head((46, 21.5), (46, 17))
+    seg([(54, 20), (54, 21.5), (66, 21.5), (66, 20)]); head((54, 21.5), (54, 17)); head((66, 21.5), (66, 17))
+    seg([(90, 3), (90, 2), (50, 2), (50, 3)]); head((90, 3), (90, 6)); head((50, 3), (50, 6))
+    ax.text(99.5, 57, "An arrow points from the table relied on to the table that depends on it; "
+            "two-headed where each updates the other.", ha="right", va="top", fontsize=7.6, color=B.DARK_GREY)
     return B.b64(fig)
 
 
@@ -932,34 +933,58 @@ unreliable share is down to {d['rel_after']['unreliable']['pct']:.0f}%, each wit
 
     found = f"""
 {B.section("found", "Section 2", "Findings")}
-<p>This audit examined the shop's entire ERP system end to end. The system consists of three
-master-level tables (Item, Supplier and Bill of Materials) and five transaction-level tables
+<p>This data quality audit examined the shop's entire ERP system end to end. The system consists of
+three master-level tables (Item, Supplier and Bill of Materials) and five transaction-level tables
 (Inventory Ledger, Purchase Orders, Service Orders, Production Orders and Cycle Counts), related as
-shown in the entity relationship diagram below.</p>
+shown below.</p>
 
-{B.chart("The ERP tables examined and the keys that join them", chart_erd())}
+{B.chart("ERP Tables", chart_erd(d))}
 
-<p>The audit covered over <strong>{d['total_rows'] // 1000}K</strong> individual records across the
-eight tables over the past 36 months, plus the purchasing manager's spreadsheet of the
-{d['spreadsheet_rows']} components she tracks outside the system. It found <strong>16</strong>
-different data quality error types recurring over this period.</p>
+<p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
+produced across the eight ERP tables. This audit covered all of them. It found <strong>16</strong>
+different types of data quality error recurring over this period. Taken together, these errors cost
+the shop cash in expedites, stopped lines waiting for material, and left the books unable to say
+what it held or what it owed.</p>
 
 {B.section("errors", "Section 2.1", "Data Quality Errors")}
 
-<p>Presented below are the 16 different data quality error types that were found to recur over the
-audit period, including their description, which table in the ERP system they were found in, and
-their prevalence within that table.</p>
+<p>The tables below present the 16 different data quality error types that were found to recur over
+the three-year audit period, with a description of each, the ERP table in which it was found, and
+its prevalence within that table. Three findings stand out for their scale. The item master is
+silted up: {d['dead_pct']*100:.0f}% of its records ({d['n_dead']:,} of {d['n_master']:,}) are items
+with no movement in two years or more that are still flagged active, and {d['dead_with_rop']} of
+them still carry a reorder point. The parameters the ERP reorders on are stale: the lead times on
+{d['n_lead_off']/d['n_live']*100:.0f}% of live items no longer match how long deliveries take, and
+the reorder points on {d['params_changed']/d['n_live']*100:.0f}% were never recomputed as usage and
+lead times changed. And receipts are posted in batches: {d['n_batch_rows']/d['n_po']*100:.0f}% of
+purchase order lines carry a posting date days after the material arrived, which biases every lead
+time computed from them.</p>
 
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level errors</p>
-{master_table}
-
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level errors</p>
-{txn_table}
+<p>Two of the errors describe the same weakness in the ledger from opposite ends. Unrecorded
+consumption (#9) is material leaving the stockroom with no transaction, so the balance drifts above
+what is on the shelf until a count or a shelf-empty correction writes it down. Adjustments as a
+catch-all (#13) is the habit of fixing every discrepancy with an adjustment and no reason code, so
+those write-downs cannot be told apart from damage, receiving errors and count errors. The
+{d['n_unrec_adj_rows']:,} chronic write-offs that evidence #9 are therefore a subset of the
+{d['n_adj_blank_rows']:,} unexplained adjustments counted under #13: one is the leak, the other is
+why the leak went unnoticed. The remaining errors are data entry. The same part is carried under
+two or more numbers ({d['dup_records']} records) and the same supplier under several
+({d['sup_records']} records); costs, suppliers and reorder points are left blank ({d['n_blank']}
+items); issues are posted against the wrong item ({d['t6_count']:,}), quantities keyed an order of
+magnitude off ({d['t7_count']}) and postings entered twice ({d['t8_count']}); and purchases are typed
+in under a generic code instead of the item number ({d['n_ft_lines']:,} lines). Each is small on its
+own, and together they are why a balance cannot be trusted without a count.</p>
 
 <p>Two of the counts are rows that should exist rather than rows that do. For unrecorded consumption
 the affected rows are the write-off adjustments that stand in for the issues that were never entered;
 for BOM omissions they are the component rows missing from the bill of materials, counted against
 the complete bill.</p>
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level Table Errors</p>
+{master_table}
+
+<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level Table Errors</p>
+{txn_table}
 
 {B.section("costs", "Section 2.2", "Costs")}
 
