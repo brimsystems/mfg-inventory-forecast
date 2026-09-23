@@ -218,7 +218,8 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
             for n in nums:
                 book[n] -= book_by_num.get(n, ZERO)[t]
             # ── chronic write-offs on omitted items (T1) ─────────────────
-            if iid in omitted and t in month_adj_days and days[t].date() <= C.REMEDIATION_END \n                    and rng.random() < C.T1_MONTHLY_ADJ_PROB:
+            if (iid in omitted and t in month_adj_days and days[t].date() <= C.REMEDIATION_END
+                    and rng.random() < C.T1_MONTHLY_ADJ_PROB):
                 for n in nums:
                     gap = book[n] - max(physical, 0) * (weights[nums.index(n)])
                     if gap > 1:

@@ -252,9 +252,12 @@ def _bom_change_log(cross, im, rng):
 
 
 def _closures(po, rng):
-    op = po[po["status"] == "OPEN"]
+    # a line open more than 90 days at the end of the engagement is not coming;
+    # younger open lines are genuinely inbound and are left alone
+    stale = pd.to_datetime(po["order_date"]) < pd.Timestamp(C.REMEDIATION_END) - pd.Timedelta(days=90)
+    op = po[(po["status"] == "OPEN") & stale]
     rows = [{"document_type": "PO", "document_id": r.po_id, "line": r.line,
-             "closed_date": _week_date(1, rng),
+             "closed_date": _week_date(int(rng.integers(1, 4)), rng),
              "confirmation_source": rng.choice(["receiving records", "buyer confirmation", "supplier statement"])}
             for r in op.itertuples(index=False)]
     # finished jobs that were never closed, closed on production confirmation

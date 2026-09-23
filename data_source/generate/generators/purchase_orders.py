@@ -181,7 +181,7 @@ def build_purchase_orders(total_consumption, item_master, item_meta, dup_map,
         po = pd.concat([po, pd.DataFrame(ft_rows)], ignore_index=True)
 
     # ── T4 receipt-date batching (snap to Monday / +1-5 days) ───────────────
-    rec_idx = po.index[po["received_date"].notna()]
+    rec_idx = po.index[po["received_date"].notna() & (po["received_date"] <= C.REMEDIATION_END.isoformat())]
     n4 = int(len(rec_idx) * C.T4_BATCH_SHARE)
     for idx in rng.choice(rec_idx, size=min(n4, len(rec_idx)), replace=False):
         rd = pd.to_datetime(po.at[idx, "received_date"]).date()

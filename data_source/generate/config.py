@@ -342,6 +342,11 @@ LOCATIONS       = ["MAIN", "FLOOR", "RECV", "CRIB"]
 SHARED_LOGINS   = ["ASSY1", "FAB1", "RECV"]     # shared floor / receiving logins
 OFFICE_USERS    = ["jbuyer", "kbuyer", "pmgr", "scoord", "recvclerk"]
 SHARED_LOGIN_SHARE = 0.78        # floor and receiving transactions under shared logins (70-85%)
+FLOOR_USERS     = ["mruiz", "tnguyen", "dpatel", "lwhite", "rkim", "jortiz", "abrown", "cdiaz"]
+# control changes made during the remediation take effect on these dates (see
+# remediation.config_change_log): reason codes required in week 5, individual logins in week 8
+REASON_CODE_DATE = date(2025, 11, 17)
+LOGIN_DATE       = date(2025, 12, 8)
 
 # The purchasing manager's spreadsheet: the line-stopping components she tracks.
 BUYER_SPREADSHEET_ITEMS   = 120

@@ -484,6 +484,8 @@ def chart_error_rates(d):
 def build(d):
     toc = "".join([
         '<a href="#results">Results</a>',
+        '<a class="sub" href="#trust">Trust in the system</a>',
+        '<a class="sub" href="#cost">What the messy data cost</a>',
         '<a href="#found">Data Quality Errors</a>',
         '<a href="#did">Error Remediation</a>',
         '<a href="#process">Go-Forward Changes</a>',
@@ -508,192 +510,157 @@ def build(d):
     short_traced = sum(sbc.get(c, 0) for c in TRACED)
     jobs_traced = sum(jbc.get(c, 0) for c in TRACED)
     rs = d["rel"]
-    rb, ra = rs["before"], rs["after"]
+    tr, cm, om = fin["trust"], fin["cost_2025"], fin["ops_2025"]
     sub = lambda t: f'<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">{t}</p>'
+    pc = lambda x: f"{x*100:.0f}%"
 
-    rel_rows = []
-    for k, label in [("reliable", "Reliable"), ("uncertain", "Uncertain"), ("unreliable", "Unreliable")]:
-        rel_rows.append([f"{label}<br><em>{rs['definitions'][k]}</em>",
-                         f"{rb[k]['items']:,}", _money(rb[k]["value"]), f"{ra[k]['items']:,}", _money(ra[k]["value"])])
-    rel_rows.append(["<strong>All live items</strong>", f"<strong>{rb['total']['items']:,}</strong>",
-                     f"<strong>{_money(rb['total']['value'])}</strong>", f"<strong>{ra['total']['items']:,}</strong>",
-                     f"<strong>{_money(ra['total']['value'])}</strong>"])
-    rel_table = _widths(B.data_table(["Reliability of on-hand balance", "Items before", "Value before", "Items after", "Value after"],
-                                     rel_rows, right=[1, 2, 3, 4]), [40, 15, 15, 15, 15])
-
-    ops_rows = [
-        ("Stockouts and line stops on material the system says is there",
-         f"{sh['episodes']} times in {YR}, on {sh['items']} items, the shelf was empty when a job or an order "
-         f"needed it; {short_traced} of those arose in one of three situations the errors create (a delivery past "
-         f"the promised date its stale lead time set, a shelf emptied by a pull that was never recorded, a reorder "
-         f"held back by a phantom on-order balance). {sh['jobs_delayed']} of the {sh['jobs']:,} jobs due in the "
-         f"year waited for material, typically {sh['delay_days_median']:.0f} days.",
-         f"The three situations are removed at the source: {d['n_lead_off']:,} lead times recomputed from receipts, "
-         f"{d['bom_changes']} missing components restored to the bills of {d['omit_products']} products, and "
-         f"{ph['stale_lines']:,} phantom on-order lines closed. Whether the shortages fall is for the monthly "
-         f"measures in Section 4 to show; this audit does not forecast it."),
-        ("Firefighting in place of planning",
-         f"{ex['rush_lines']} rush orders were placed in {YR}. {rush_traced_lines} of them were placed in the three "
-         f"situations above; the other {rush_other} were demand the stale reorder points did not cover and are not "
-         f"attributed. The purchasing manager kept {d['spreadsheet_rows']} critical components in a spreadsheet "
-         f"because the ERP's numbers could not be trusted; it disagreed with the system on {d['recon_disagree']} of "
-         f"them.",
-         f"Reorder points reset on {d['params_changed']:,} items from actual usage over the recomputed lead times, "
-         f"and the spreadsheet reconciled to the ERP so the buyer can plan from the system again. The monthly "
-         f"parameter refresh keeps it that way."),
-        ("Promises and quotes made on stale numbers",
-         f"Lead times on {d['n_lead_off']/d['n_live']*100:.0f}% of live items read {d['lead_gap_mean']:.0f} days "
-         f"shorter than deliveries took, so promise dates built on them could not be met. {bf['blank_cost_items']} "
-         f"items carried no standard cost at all, and {un['products_affected']} products consumed "
-         f"{_money(un['backflush_value'])} of components their bills did not list, so quotes on them did not "
-         f"cover the material.",
-         f"Lead times, costs and bills corrected in the master; required fields now enforced, so a new item cannot "
-         f"be created without a cost. A pricing review of the {un['products_affected']} affected products is "
-         f"recommended."),
-        ("Labor spent on the data instead of the work",
-         f"{adj['rows']:,} balance corrections posted in {YR}; an annual physical that restated most of the master; "
-         f"{d['n_dead']:,} dead records in every report, count and purchase suggestion; {d['n_ft_lines']:,} "
-         f"free-text purchase lines over the three years to be matched to items by hand; {ph['stale_lines']:,} "
-         f"purchase order lines and {ph['open_jobs_past_due']} jobs open past their dates.",
-         f"{d['dead_deactivated']} dead records deactivated, {d['dup_merged']} duplicates retired, "
-         f"{d['closed_po']:,} open lines and {d['closed_jobs']} jobs closed, generic item codes restricted. A "
-         f"cycle-count program by ABC class replaces the annual physical, and a reason code is required on every "
-         f"adjustment."),
-        ("Planning blind",
-         f"Requirements planning sees only recorded demand. {d['omit_items']} components on {un['products_affected']} "
-         f"products never appeared in it, {d['dup_records']} duplicate records split the history of {du['clusters']} "
-         f"parts, and {d['ft_confirmed']:,} purchases of stocked items were typed in under a generic code, so the "
-         f"reorder points and forecasts computed from that history were wrong before they started.",
-         f"Bills completed, duplicates merged through a crosswalk and free-text purchases attributed to their items, "
-         f"so the consumption history is whole. The demand forecasting and reorder-policy work that follows this "
-         f"audit is built on that history, and could not have been built on the old one."),
+    # ── 1.1 trust in the system ─────────────────────────────────────────────
+    t_ = tr
+    trust_rows = [
+        ["Active item records that are actually in use",
+         "Reports, searches and reorder logic are not polluted by dead parts",
+         pc(t_["active_in_use"]["before"]), pc(t_["active_in_use"]["after"])],
+        [f"Live items whose lead time matches actual delivery (within {3} days)",
+         "Reorders are placed at the right time",
+         pc(t_["lead_matches"]["before"]), pc(t_["lead_matches"]["after"])],
+        ["Live items whose reorder point reflects real usage",
+         "Buying decisions rest on consumption, not go-live guesses",
+         pc(t_["rop_reflects_usage"]["before"]), pc(t_["rop_reflects_usage"]["after"])],
+        ["Live items with complete required fields",
+         "Every item can be costed, sourced and reordered",
+         pc(t_["complete_fields"]["before"]), pc(t_["complete_fields"]["after"])],
+        ["Purchase spend under a single, correct part number",
+         "An item's history is not split across duplicates or hidden under generic codes",
+         pc(t_["spend_single_part"]["before"]), pc(t_["spend_single_part"]["after"])],
+        ["Purchase spend under a single supplier record",
+         "Spend and supplier performance are visible",
+         pc(t_["spend_single_supplier"]["before"]), pc(t_["spend_single_supplier"]["after"])],
+        ["Products whose BOM matches what the floor consumes",
+         "Backflush records real consumption",
+         pc(t_["bom_matches"]["before"]), pc(t_["bom_matches"]["after"])],
+        ["Adjustments with a known cause",
+         "Corrections explain why, not just that the number changed",
+         pc(t_["adj_known_cause"]["before"]), pc(t_["adj_known_cause"]["after"])],
+        ["On-order value that is genuinely inbound",
+         "Reorder logic is not waiting for phantom deliveries",
+         f"{_money(t_['on_order_genuine']['before'])} of {_money(t_['on_order_genuine']['before_total'])}",
+         f"{_money(t_['on_order_genuine']['after'])} of {_money(t_['on_order_genuine']['after_total'])}"],
+        ["Transactions posted under an identifiable user",
+         "Errors can be traced to source",
+         pc(t_["identifiable_user"]["before"]), pc(t_["identifiable_user"]["after"])],
+        ["Inventory value with a reliable on-hand balance",
+         "Stock the system shows can be planned against",
+         f"{_money(t_['reliable_value']['before'])} of {_money(t_['reliable_value']['before_total'])}",
+         f"{_money(t_['reliable_value']['after'])} of {_money(t_['reliable_value']['after_total'])}"],
+        ["Second-round cycle count accuracy",
+         "The fixes held; balances are not drifting back",
+         "n/a", (pc(t_["second_round"]["after"]) + f" of {t_['second_round']['n']} recounts within 5%<br><em>{pc(t_['second_round']['within_10'])} within 10%</em>")
+         if t_["second_round"]["after"] is not None else "not yet due"],
+        ["Line-critical items managed inside the ERP rather than a spreadsheet",
+         "One system of record for what stops the line",
+         f"{t_['line_critical']['before']} of {t_['line_critical']['total']}", f"{t_['line_critical']['after']} of {t_['line_critical']['total']}"],
     ]
-    ops_table = _widths(B.data_table(["Operational impact", f"Before: what the {YR} record shows", "After: what the cleanup changed"],
-                                     [list(r) for r in ops_rows], right=[]), [20, 42, 38])
+    trust_table = _widths(B.data_table(["Measure", "Why it matters", "Before", "After"], trust_rows, right=[2, 3]), [34, 38, 14, 14])
 
-    fin_rows = [
-        ("Working capital in inventory",
-         f"The errors did not so much inflate the stock as put the cash in the wrong stock. {du['lines_while_sibling_held_stock']} "
-         f"purchase lines worth {_money(du['value_while_sibling_held_stock'])} were placed in {YR} on one item number "
-         f"while its duplicate record already held the quantity ordered. No inventory reduction is claimed: the "
-         f"stale parameters ran as many items short as long.",
-         f"The {d['dup_merged']} duplicate records retired to one survivor each, so a purchase fires once against "
-         f"the pile. The excess already bought sells through as it is consumed."),
-        ("Expedite freight and price premiums",
-         f"{_money(ex['total'])} on {ex['rush_lines']} rush lines in {YR}, of which {_money(rush_traced)} on "
-         f"{rush_traced_lines} lines traces to the three situations the errors create. The remainder is not "
-         f"attributed.",
-         f"The three causes removed at the source (lead times, bills, phantom on-order). The saving going forward "
-         f"is a forecast, and is left to the reorder-policy work."),
-        ("Write-offs and write-ups of phantom inventory",
-         f"The counts wrote off {_money(adj['write_off'])} and wrote up {_money(adj['write_up'])} in {YR}, "
-         f"{_pct(d['adj_share'], 0)} of all quantity moved. {_money(un['value'])} of pulls on {un['items']} items were "
-         f"never recorded; {_money(ps['wrong_reference_value'])} was posted to the wrong item, "
-         f"{_money(ps['keying_value'])} keyed at the wrong quantity and {_money(ps['duplicate_value'])} posted twice. "
-         f"The cycle counts since remediation began have restated {_money(rc['write_down'] + rc['write_up'])} of "
-         f"book value across {rc['counts']:,} counts.",
-         f"Reason codes required, negative balances blocked, box-to-each conversions on file and the cycle-count "
-         f"program running, so a discrepancy is caught when it happens and carries its cause. The target run-rate "
-         f"for adjustments is 3 to 6% of quantity moved."),
-        ("Margin on mispriced work",
-         f"{_money(un['backflush_value'])} of component cost consumed on {un['products_affected']} products and never "
-         f"charged to them, so their margins read high by that amount; {bf['blank_cost_items']} items held about "
-         f"{_money(bf['blank_cost_value'])} of stock at $0 (an estimate at the class median cost).",
-         f"Bills completed and costs filled from the last price paid. The affected products' pricing should be "
-         f"reviewed against their true material cost."),
-        ("On-order commitments overstated",
-         f"{_money(ph['stale_value'])} shown on order against {ph['stale_lines']:,} lines older than 90 days that "
-         f"would never arrive, holding real reorders back.",
-         f"Closed on confirmation with receiving records and supplier statements: {_money(0)} remains. A monthly "
-         f"open-document review keeps it there."),
-        ("Spend invisible to reporting",
-         f"{_money(su['alias_spend'])} of the {_money(su['vendor_spend'])} spent with the {su['vendors']} fragmented "
-         f"vendors sat under alias records, and {_money(ftx['spend'])} was bought on free-text lines with no item "
-         f"behind it, so vendor spend and item demand both read low.",
-         f"Supplier aliases mapped to one canonical record each and new orders booked to it; generic item codes "
-         f"restricted, so spend lands on the vendor and the item that earned it."),
+    # ── 1.2 what the messy data cost in the year ────────────────────────────
+    def cost_cell(v, note=""):
+        return f"{_money(v)}" + (f"<br><em>{note}</em>" if note else "")
+    a_ = cm["assumptions"]
+    fin_cost_rows = [
+        ["Expedite freight and price premiums", "Rush orders to recover from stockouts the system did not see coming",
+         cost_cell(cm["expedite"]["traced"], f"{cm['expedite']['traced_lines']} of {cm['expedite']['lines']} rush lines trace to the errors; "
+                   f"{_money(cm['expedite']['total'])} of rush spend in all"), "Measured from PO lines"],
+        ["Overtime", "Hours worked to catch up after line stoppages",
+         "Not measured<br><em>the ERP extracts carry no labor hours</em>", "No source in the record"],
+        ["Unnecessary purchases", "Dead items reordered, duplicates bought twice, excess bought against stale reorder points",
+         cost_cell(cm["unnecessary_purchases"]["duplicates"], f"{cm['unnecessary_purchases']['duplicate_lines']} lines bought while the duplicate held the stock; "
+                   f"no orders on dead items; no excess against stale points is claimed"), "Measured from PO lines"],
+        ["Inventory write-off", "Material consumed without a record, discovered at the count",
+         cost_cell(cm["write_off"]["t1_net"],
+                   f"{_money(cm['write_off']['t1_off'])} written off and {_money(cm['write_off']['t1_up'])} written back on the "
+                   f"{cm['write_off']['t1_items']} items whose pulls went unrecorded ({_money(cm['write_off']['unrecorded_value'])} of material); "
+                   f"across all items the counts wrote off {_money(cm['write_off']['annual_count'] + cm['write_off']['remediation_counts'])} "
+                   f"and wrote up {_money(cm['write_off']['annual_count_up'] + cm['write_off']['remediation_up'])}, which is not claimed"),
+         "Measured from the physical inventory"],
+        ["Excess inventory carrying cost", "Buffer stock held because nobody trusted the numbers",
+         cost_cell(cm["carrying"]["value"], f"{_money(cm['carrying']['excess'])} held above the recomputed point plus a normal order, at a {a_['carrying_rate']*100:.0f}% carrying rate"),
+         "Estimated; excess measured, rate stated"],
+        ["Labor spent working around the system", "Buyer and stockroom hours reconciling, recounting and maintaining the spreadsheet",
+         cost_cell(cm["labor"]["value"], f"{cm['labor']['hours']:,} hours a year at ${a_['loaded_rate']:.0f} loaded"),
+         "Estimated from stakeholder interviews"],
+        ["<strong>Total</strong>", "",
+         f"<strong>{_money(cm['measured_total'])}</strong> measured<br><strong>{_money(cm['estimated_total'])}</strong> estimated",
+         "Measured and estimated subtotals shown separately"],
     ]
-    fin_table = _widths(B.data_table(["Financial impact", f"Before: what the {YR} record shows", "After: what the cleanup changed"],
-                                     [list(r) for r in fin_rows], right=[]), [20, 42, 38])
+    fin_cost_table = _widths(B.data_table(["Cost type", f"What happened in {YR}", f"{YR} cost", "Basis"], fin_cost_rows, right=[]), [20, 34, 28, 18])
+
+    ls, so, lt, pr, pb = om["line_stops"], om["stockouts"], om["late_shipments"], om["promises"], om["po_bad_info"]
+    ops_cost_rows = [
+        ["Line stoppages waiting on material", "Assembly stopped for parts the system said were in stock or on order",
+         f"{ls['events']} holds<br><em>{ls['days']:,} job-days lost, typically {ls['median_days']:.0f} per hold</em>", "Measured from production order holds"],
+        ["Stockouts on stocked items", "Demand that could not be met from the shelf",
+         f"{so['events']} events<br><em>on {so['items']} items</em>", "Measured from issue and shortage records"],
+        ["Late shipments", "Jobs that missed their due date because of a material shortage",
+         f"{lt['events']} jobs<br><em>{lt['events']/max(1, lt['all_late'])*100:.0f}% of the {lt['all_late']:,} late jobs in the year</em>", "Measured from completion records"],
+        ["Inaccurate promises to customers", f"Delivery dates built on lead times that read {d['lead_gap_mean']:.0f} days short",
+         f"{pr['jobs_affected']:,} of {pr['jobs']:,} jobs<br><em>built products with at least one component on a stale lead time</em>", "Measured from the lead time gap by product"],
+        ["Purchase orders placed on bad information", "Orders triggered by stale reorder points or placed on duplicate numbers",
+         f"{pb['stale_rop_lines']:,} lines<br><em>of {pb['regular_lines']:,} regular lines were triggered by a reorder point later found stale; {pb['duplicate_lines']} were placed on a duplicate number</em>", "Measured from PO lines"],
+        ["Time lost to firefighting", "Buyer and stockroom hours on expediting and reconciliation",
+         f"{om['firefighting_hours']:,} hours<br><em>{sum(a_['interview_hours'].values())} hours a week across the purchasing manager and the stockroom lead</em>", "Estimated from interviews"],
+    ]
+    ops_cost_table = _widths(B.data_table(["Cost type", f"What happened in {YR}", f"{YR} count", "Basis"], ops_cost_rows, right=[]), [20, 34, 28, 18])
 
     results = f"""
 {B.section("results", "Section 1", "Results")}
-<p>Over ten weeks we audited the purchasing item master and the inventory ledger, corrected what
-could be corrected, and changed the ERP settings that let the problems recur. This section is what
-changed as a result, in the terms the shop runs on: whether its inventory balances can be trusted,
-what the errors were costing operations and the books, and what the cleanup did about each. Every
-figure is measured from the record. Where a cost cannot be tied to a specific error, no share of it
-is claimed, and what the cleanup will save going forward is left to the reorder-policy work that
-follows this audit rather than forecast here.</p>
+<p>Over ten weeks we audited the shop's ERP end to end, tested it for sixteen kinds of data quality
+error, and corrected what the record could support: {d['dead_deactivated']} dead item records
+deactivated, {d['n_lead_off']:,} lead times and {d['params_changed']:,} reorder points recomputed
+from actual history, {d['dup_merged']} duplicate records merged, {d['bom_changes']} missing
+components restored to the bills of {d['omit_products']} products, {d['closed_po']:,} phantom
+purchase order lines closed, and {d['uom_items']} unit-of-measure conversions added. Seven ERP
+controls were switched on so the errors cannot re-enter, and a cycle-count program replaced the
+annual physical. The largest achievements are that the balances the shop plans against can now be
+trusted ({_money(tr['reliable_value']['after'])} of inventory, {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}%
+of the book value, at a reliable balance, from nothing),
+that {_money(tr['on_order_genuine']['before_total'] - tr['on_order_genuine']['before'])} of on-order value
+that was never coming is off the books, and that the purchasing manager's {d['spreadsheet_rows']}
+line-critical components are managed in the ERP instead of a spreadsheet. Section 1.1 gives one
+measure per control; Section 1.2 gives what the errors cost in {YR}.</p>
 
-{B.kpi_row(
-    B.kpi_card(f"{trust_before:.0f}% &rarr; {trust_after:.0f}%", "Balances that can be trusted", "share of live items", B.DARK_BLUE),
-    B.kpi_card(f"{_k(d['rel_before']['reliable']['val'])} &rarr; {_k(d['rel_after']['reliable']['val'])}", "Book value at a trusted balance", "of inventory on hand", B.DARK_BLUE),
-    B.kpi_card(f"{_k(ph['stale_value'])} &rarr; $0", "On order that would never arrive", f"{ph['stale_lines']:,} lines closed", B.GREEN),
-    B.kpi_card(f"{d['n_dead']:,} &rarr; {d['n_dead'] - d['dead_deactivated']:,}", "Dead records still active", "in the item master", B.GREEN),
-)}
+{B.section("trust", "Section 1.1", "Trust in the system")}
+{trust_table}
+<p>Before is the start of the engagement ({tr['before_date']}); after is the end of week 10
+({tr['after_date']}). Percentages where the base is items or spend; dollars for on-order and
+inventory value. Rows that stay short of 100% (dead items held at the buyer's request, the
+{d['dup_rejected']} duplicate pairs rejected as genuinely different parts, and free-text lines the
+buyer could not attribute) are left that way. The lead-time row treats the 80th percentile of
+receipts as actual delivery, since that is what the shop plans against. The second-round row is
+measured on the first quarter of the cycle-count program that followed the engagement.</p>
 
-{sub("Can the balance be trusted?")}
-<p>This is the result the rest depends on. A balance is <em>reliable</em> when it was counted within
-the last 90 days and the count came within 5% of the system; <em>unreliable</em> when the item carries
-a fault that makes the number untrustworthy whatever the last count said (chronic unexplained
-write-offs, a purchase unit with no conversion to the stock unit, a duplicate record sharing one pile);
-and <em>uncertain</em> otherwise, which means no count in the last 90 days or a count 5% or more off.
-We applied that one rule on
-the day the audit began, when the shop's only count was the annual physical nine months earlier, and
-again at the audit date, with the remediation counts and the first quarter of the cycle-count program
-behind it.</p>
+{B.section("cost", "Section 1.2", f"What the messy data cost in {YR}")}
+<p>Two tables, one by financial cost type and one by operational. Each line is tagged
+<em>measured</em> (visible in the ERP record) or <em>estimated</em> (the rate stated inline). No
+forward-looking figures are given: what the cleanup saves from here on is for the reorder-policy
+work that follows this audit.</p>
 
-{rel_table}
+{sub("Financial")}
+{fin_cost_table}
+<p>The largest measured line is purchases placed while the same part already sat on the shelf under
+another number, which follows entirely from the duplicate records (Section 2, #4); the write-offs
+follow mostly from unrecorded consumption on components missing from the bills (#7, #9). The expedite
+line is stated only for the {cm['expedite']['traced_lines']} rush lines the record ties to a stale
+lead time, an unrecorded pull or a phantom on-order balance (#2, #9, #16); the remaining
+{_money(cm['expedite']['total'] - cm['expedite']['traced'])} of rush spend was demand the stale reorder
+points did not cover and is not attributed.</p>
 
-{B.chart("Inventory book value by balance reliability, before and after", chart_reliability(d))}
-<p>On the day the audit began, no balance qualified as reliable, because the shop counted once a year
-and nothing had been counted in the previous 90 days; {d['rel_before']['unreliable']['pct']:.0f}% of live
-items ({d['rel_before']['unreliable']['items']:,}), holding {d['rel_before']['unreliable']['val']/d['inv_value_total']*100:.0f}%
-of the book value, were unreliable on their face. At the audit date {trust_after:.0f}% of live items
-({d['rel_after']['reliable']['items']:,}), holding {d['rel_after']['reliable']['val']/d['inv_value_after']*100:.0f}%
-of the book value, have a balance we would reorder against without a recount: {ra['reliable_by_abc'].get('A', 0)}
-of the {ra['reliable_by_abc'].get('A', 0) + ra['uncertain_by_abc'].get('A', 0)} A-class items and
-{ra['reliable_by_abc'].get('B', 0)} of the B-class items. The unreliable share is down to
-{d['rel_after']['unreliable']['pct']:.0f}% of items and {d['rel_after']['unreliable']['val']/d['inv_value_after']*100:.0f}%
-of value, {d['rel_after']['unreliable']['items']} items whose write-off pattern has not yet had a clean
-quarter to clear, each named in the count schedule. The uncertain group is large by count and small by
-value: {ra['uncertain_reasons']['no_recent_count']} items, nearly all C-class, have not yet had their turn in
-the cycle, and {ra['uncertain_reasons']['counted_variance_5pct_or_more']} A- and B-class items were counted
-but their first count found a variance of 5% or more, so they qualify at the next count if the
-corrected balance holds.</p>
-
-{sub("Operations")}
-<p>Operationally, the errors were felt on the assembly floor and in the purchasing office, as lines
-stopped for material the system said was there and as days spent expediting and correcting instead
-of planning. The table gives each impact as the {YR} record shows it and what the cleanup changed.
-Where an impact can be tied to specific errors it is; where the record does not support that, the
-total is stated and no share is claimed.</p>
-
-{ops_table}
-
-{sub("Finances")}
-<p>Financially, the errors reached the books in ways that do not add together: cash spent on
-expedites, cash committed early to stock the shop already held, and misstatements of inventory,
-commitments and product cost that were later corrected but had already been decided on. The most
-visible was the smallest, the expedite invoices; the largest sat on the balance sheet, where nobody
-measured it. The table gives each as the {YR} record shows it and what the cleanup changed.</p>
-
-{fin_table}
-
-<p>Beyond the ledger, the cleanup changes what can be built on the data. Forecasting, automated
-reordering and any model of demand consume the item master and the consumption history, and none of
-them could have been trusted on a master that was {d['dead_pct']*100:.0f}% dead, with the components on
-{un['products_affected']} of its {un['n_products']} products never recorded as consumed. Management can now read an inventory value, a product margin and a
-supplier's real spend from the system rather than from memory, and anyone who diligences the
-inventory, a lender, a buyer or an auditor, finds balances with a count behind them.</p>
-
-{B.callout(f"<strong>One item the buyer knows.</strong> A high-volume gearmotor was carried under two "
-    f"part numbers, each with its own reorder point, and its supplier's real lead time had crept from "
-    f"about two weeks to over a month while the ERP still read two weeks. The result was recurring line "
-    f"stops and air freight. Merged to one record, with the lead time recomputed from receipts and the "
-    f"reorder point recomputed from usage over it, the item now reorders early enough to cover the true "
-    f"lead time, and the expedites on it stop.")}
+{sub("Operational")}
+{ops_cost_table}
+<p>The stoppages and stockouts trace mostly to two error types: components consumed but never
+recorded because they were missing from the bills (#7, #9), and reorders placed on lead times that
+read a week short (#2); on-order balances that were never coming (#16) account for only a handful.
+The purchase orders placed on bad information are the stale reorder points (#3) and the duplicate
+records (#4) acting on every regular buy.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])

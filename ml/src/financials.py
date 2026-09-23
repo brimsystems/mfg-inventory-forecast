@@ -34,6 +34,10 @@ import numpy as np
 import pandas as pd
 
 from .resolution import REPO
+from data_source.generate import config as _C
+
+C_REM_START, C_REM_END = _C.REMEDIATION_START, _C.REMEDIATION_END
+REASON_DATE, LOGIN_DATE, SHARED_LOGINS = _C.REASON_CODE_DATE, _C.LOGIN_DATE, _C.SHARED_LOGINS
 
 RAW = REPO / "data_source" / "raw"
 REM = RAW / "remediation"
@@ -47,6 +51,17 @@ GENERIC_REASONS = {"", "nan", "ADJ", "VAR", "MISC"}     # a COUNT reason is trac
 GENERIC_ITEM_CODES = {"NONSTOCK", "MISC", "SHOPSUPPLY"}
 SIGN = {"RECEIPT": 1, "RETURN": 1, "ISSUE": -1, "BACKFLUSH": -1, "SCRAP": -1, "ADJUST": 1}
 ATTRIBUTABLE_CAUSES = ["stale_lead_time", "unrecorded_consumption", "phantom_on_order"]
+
+# stated assumptions behind the estimated lines
+CARRYING_RATE = 0.22                   # annual carrying cost as a share of inventory value
+LOADED_RATE = 38.0                     # loaded cost of an hour of buyer or stockroom time
+WORK_WEEKS = 50
+INTERVIEW_HOURS = {                    # hours per week, as reported in the stakeholder interviews
+    "purchasing manager, spreadsheet and reconciliation": 6,
+    "purchasing manager, expediting": 4,
+    "stockroom lead, recounts and corrections": 8,
+}
+LEAD_TOLERANCE_DAYS = 3
 
 
 def _year(s):
@@ -215,7 +230,7 @@ def run():
 
     # ── phantom on-order and open documents ─────────────────────────────────
     op = po[po["status"] == "OPEN"].copy()
-    op["age"] = (pd.Timestamp(AS_OF) - pd.to_datetime(op["order_date"])).dt.days
+    op["age"] = (pd.Timestamp(C_REM_END) - pd.to_datetime(op["order_date"])).dt.days   # stale at the end of the engagement
     op["balance"] = (op["qty_ordered"] - op["qty_received"]).clip(lower=0) * op["unit_price"]
     stale_open = op[op["age"] > PHANTOM_DAYS]
     open_jobs = prod[(prod["status"] == "OPEN") & (pd.to_datetime(prod["due_date"]) < pd.Timestamp(AS_OF))]
@@ -343,6 +358,149 @@ def run():
     out["batched"] = {"basis": "measured", "lines": int(len(t4y)), "mean_lag_days": float(t4y["lag"].mean()),
                       "max_lag_days": int(t4y["lag"].max())}
 
+    # ── trust in the system: one measure per control, before and after ─────
+    # before is the start of the engagement; after is the end of week 10
+    START, END = C_REM_START, C_REM_END
+    dup_cw = pd.read_csv(REM / "duplicate_crosswalk.csv")
+    bom = pd.read_csv(RAW / "erp" / "bill_of_materials.csv", low_memory=False)
+    bomlog = pd.read_csv(REM / "bom_change_log.csv")
+    spreadsheet_rows = sum(1 for _ in open(RAW / "purchasing" / "buyer_spreadsheet.csv", encoding="utf-8")) - 1
+    rs = json.loads((REPO / "ml" / "data" / "marts" / "reliability_summary.json").read_text())
+    n_master, n_live = len(im), len(live)
+    deactivated = int((dead_disp["disposition"] == "DEACTIVATED").sum())
+    merged = dup_cw[dup_cw["decision"] == "MERGE"]
+    retired = set(merged["retired_item_number"])
+    rejected_nonprimary = set(dup_cw.loc[dup_cw["decision"] == "REJECT", "retired_item_number"])
+
+    # lead times: actual delivery is the 80th percentile of receipts, which is
+    # what the shop plans against
+    ld2 = lead.dropna(subset=["p80_actual"])
+    lead_before = float(((ld2["master_lead_time"] - ld2["p80_actual"]).abs() <= LEAD_TOLERANCE_DAYS).mean())
+    lead_after = float(((ld2["recommended_lead_time"] - ld2["p80_actual"]).abs() <= LEAD_TOLERANCE_DAYS).mean())
+    rop_before = float(1 - len(stale_rop) / len(params))
+    blank_any = live[["standard_cost", "reorder_point", "primary_supplier_id"]].isna().any(axis=1)
+    fields_before = float(1 - blank_any.mean())
+
+    # purchase spend under the right number and the right supplier, over the year
+    p25 = po[_year(po["order_date"])].copy()
+    p25["value"] = p25["qty_ordered"] * p25["unit_price"]
+    spend = float(p25["value"].sum())
+    ft_lines = p25["item_number"].isin(GENERIC_ITEM_CODES)
+    confirmed_pos = set(ftattr.loc[ftattr["confirmation"] == "confirmed", "po_id"])
+    split_before = float(p25.loc[p25["item_number"].isin(dup_members - {v["primary"] for v in cross["duplicate_clusters"].values()}) | ft_lines, "value"].sum())
+    split_after = float(p25.loc[p25["item_number"].isin(rejected_nonprimary) | (ft_lines & ~p25["po_id"].isin(confirmed_pos)), "value"].sum())
+    alias_before = float(p25.loc[p25["supplier_id"].isin(aliases), "value"].sum())
+
+    # adjustments with a cause: the year before the engagement, and from the control date to the end
+    adj_all = t[t["type"] == "ADJUST"].copy()
+    adj_all["known"] = ~(adj_all["reason_code"].isna() | adj_all["reason_code"].astype(str).isin(GENERIC_REASONS))
+    pre = adj_all[(adj_all["txn_date"] >= (START - pd.Timedelta(days=365)).isoformat()) & (adj_all["txn_date"] < START.isoformat())]
+    post = adj_all[(adj_all["txn_date"] > REASON_DATE.isoformat()) & (adj_all["txn_date"] <= END.isoformat())]
+
+    # transactions under an identifiable user: the quarter before, and from the login date to the end
+    users = t[["txn_date", "user_id"]]
+    shared = set(SHARED_LOGINS)
+    u_pre = users[(users["txn_date"] >= (START - pd.Timedelta(days=90)).isoformat()) & (users["txn_date"] < START.isoformat())]
+    u_post = users[(users["txn_date"] > LOGIN_DATE.isoformat()) & (users["txn_date"] <= END.isoformat())]
+
+    # the second round of counts: items counted again after remediation, and how close the recount came
+    cyc = cc[cc["program"] == "CYCLE"].sort_values("count_date").copy()
+    cyc["var"] = (cyc["counted_qty"] - cyc["system_qty"]).abs() / cyc["system_qty"].clip(lower=1)
+    second = cyc[(cyc["count_date"] > END.isoformat()) & cyc["item_number"].isin(set(cyc.loc[cyc["count_date"] <= END.isoformat(), "item_number"]))]
+    second = second.groupby("item_number").tail(1)
+
+    genuine = out["phantom_on_order"]["open_value"] - out["phantom_on_order"]["stale_value"]
+    w10 = rs["week10"]
+    out["trust"] = {
+        "before_date": START.isoformat(), "after_date": END.isoformat(),
+        "active_in_use": {"before": n_live / n_master, "after": n_live / (n_master - deactivated)},
+        "lead_matches": {"before": lead_before, "after": lead_after, "base": int(len(ld2))},
+        "rop_reflects_usage": {"before": rop_before, "after": 1.0},
+        "complete_fields": {"before": fields_before, "after": 1.0},
+        "spend_single_part": {"before": 1 - split_before / spend, "after": 1 - split_after / spend, "spend": spend},
+        "spend_single_supplier": {"before": 1 - alias_before / spend, "after": 1.0},
+        "bom_matches": {"before": 1 - out["unrecorded"]["products_affected"] / out["unrecorded"]["n_products"], "after": 1.0},
+        "adj_known_cause": {"before": float(pre["known"].mean()), "after": float(post["known"].mean()), "n_after": int(len(post))},
+        "on_order_genuine": {"before": genuine, "before_total": out["phantom_on_order"]["open_value"],
+                             "after": genuine, "after_total": genuine},
+        "identifiable_user": {"before": float((~u_pre["user_id"].isin(shared)).mean()), "after": float((~u_post["user_id"].isin(shared)).mean())},
+        "reliable_value": {"before": rs["before"]["reliable"]["value"], "before_total": rs["before"]["total"]["value"],
+                           "after": w10["reliable"]["value"], "after_total": w10["total"]["value"],
+                           "after_items": w10["reliable"]["items"], "after_items_total": w10["total"]["items"]},
+        "second_round": {"after": float((second["var"] < 0.05).mean()) if len(second) else None,
+                         "within_10": float((second["var"] < 0.10).mean()) if len(second) else None, "n": int(len(second))},
+        "line_critical": {"before": 0, "after": spreadsheet_rows, "total": spreadsheet_rows},
+    }
+
+    # ── what the messy data cost in the year: financial and operational ─────
+    count_off = float(-adj.loc[(adj["qty"] < 0) & (adj["reason_code"] == "COUNT"), "value"].sum())
+    count_up = float(adj.loc[(adj["qty"] > 0) & (adj["reason_code"] == "COUNT"), "value"].sum())
+    rem_off = out["remediation_counts"]["write_down"]
+    rem_up = out["remediation_counts"]["write_up"]
+    # excess: stock at the start of the engagement above what the recomputed
+    # point plus a normal order would hold, valued at standard cost
+    use = tx[tx["type"].isin(["ISSUE", "BACKFLUSH"]) & (tx["txn_date"] >= (START - pd.Timedelta(days=365)).isoformat())
+             & (tx["txn_date"] < START.isoformat())].groupby("item_number")["qty"].sum() / 365.0
+    bal_start = t[t["txn_date"] < START.isoformat()].groupby("item_number")["s"].sum()
+    new_rop = params.set_index("item_number")["new_reorder_point"]
+    excess = 0.0
+    for n_, b_ in bal_start.items():
+        if n_ in dead or n_ not in new_rop.index:
+            continue
+        ceiling = float(new_rop[n_]) + float(use.get(n_, 0.0)) * 75
+        excess += max(0.0, float(b_) - ceiling) * float(cost.get(n_, 0.0))
+    hours_around = (INTERVIEW_HOURS["purchasing manager, spreadsheet and reconciliation"]
+                    + INTERVIEW_HOURS["stockroom lead, recounts and corrections"]) * WORK_WEEKS
+    hours_fire = sum(INTERVIEW_HOURS.values()) * WORK_WEEKS
+    out["cost_2025"] = {
+        "expedite": {"traced": out["expedites"]["attributable_total"], "traced_lines": out["expedites"]["attributable_lines"],
+                     "total": out["expedites"]["total"], "lines": out["expedites"]["rush_lines"], "basis": "measured"},
+        "overtime": {"value": None, "basis": "not measured", "note": "the ERP extracts carry no labor hours"},
+        "unnecessary_purchases": {"duplicates": out["duplicates"]["value_while_sibling_held_stock"],
+                                  "duplicate_lines": out["duplicates"]["lines_while_sibling_held_stock"],
+                                  "dead": out["dead_items"]["po_value_ever"], "basis": "measured"},
+        # the write-off that unrecorded consumption produced: net corrections on
+        # the items whose pulls went unrecorded, at the counts and the floor's own corrections
+        "write_off": {"t1_off": out["adjustments"]["by_group"].get("Unrecorded Consumption", {}).get("write_off", 0.0),
+                      "t1_up": out["adjustments"]["by_group"].get("Unrecorded Consumption", {}).get("write_up", 0.0),
+                      "t1_items": out["unrecorded"]["items"], "unrecorded_value": out["unrecorded"]["value"],
+                      "annual_count": count_off, "annual_count_up": count_up, "annual_net": count_off - count_up,
+                      "remediation_counts": rem_off, "remediation_up": rem_up, "remediation_net": rem_off - rem_up,
+                      "basis": "measured"},
+        "carrying": {"excess": excess, "rate": CARRYING_RATE, "value": excess * CARRYING_RATE, "basis": "estimated"},
+        "labor": {"hours": hours_around, "rate": LOADED_RATE, "value": hours_around * LOADED_RATE, "basis": "estimated"},
+        "hours_firefighting": hours_fire,
+        "assumptions": {"carrying_rate": CARRYING_RATE, "loaded_rate": LOADED_RATE, "work_weeks": WORK_WEEKS,
+                        "interview_hours": INTERVIEW_HOURS},
+    }
+    fm = out["cost_2025"]
+    fm["write_off"]["t1_net"] = max(0.0, fm["write_off"]["t1_off"] - fm["write_off"]["t1_up"])
+    fm["measured_total"] = fm["expedite"]["traced"] + fm["unnecessary_purchases"]["duplicates"] + fm["write_off"]["t1_net"]
+    fm["estimated_total"] = fm["carrying"]["value"] + fm["labor"]["value"]
+
+    prod25 = prod[_year(prod["due_date"])].copy()
+    late = prod25[prod25["completed_date"].notna() & (prod25["completed_date"] > prod25["due_date"])]
+    # promise dates rest on the longest component lead time; a job is affected
+    # when any component of its product, on the corrected bill, had a stale one
+    comp_of = {}
+    for r_ in pd.concat([bom[["product_number", "component_item"]], bomlog[["product_number", "component_item"]]]).itertuples(index=False):
+        comp_of.setdefault(r_.product_number, set()).add(r_.component_item)
+    affected_products = {pn for pn, comps in comp_of.items() if comps & stale_lead}
+    jobs_affected = int(prod25["product_number"].isin(affected_products).sum())
+    reg25 = p25[~p25["rush"] & ~ft_lines]
+    on_stale_rop = int(reg25["item_number"].isin(stale_rop).sum())
+    out["ops_2025"] = {
+        "line_stops": {"events": int((prod25["delay_days"] > 0).sum()), "days": int(prod25["delay_days"].sum()),
+                       "median_days": float(prod25.loc[prod25["delay_days"] > 0, "delay_days"].median()) if (prod25["delay_days"] > 0).any() else 0.0},
+        "stockouts": {"events": out["shortages"]["episodes"], "items": out["shortages"]["items"]},
+        "late_shipments": {"events": int((late["delay_days"] > 0).sum()), "all_late": int(len(late)), "jobs": int(len(prod25))},
+        "promises": {"jobs_affected": jobs_affected, "jobs": int(len(prod25)), "products": len(affected_products),
+                     "gap_days": None},
+        "po_bad_info": {"stale_rop_lines": on_stale_rop, "duplicate_lines": out["duplicates"]["lines_while_sibling_held_stock"],
+                        "regular_lines": int(len(reg25))},
+        "firefighting_hours": hours_fire,
+    }
+
     # ── headline ────────────────────────────────────────────────────────────
     out["headline"] = {
         "recurring_saving": out["expedites"]["attributable_total"],
@@ -395,6 +553,11 @@ def run():
     print(f"  Postings: wrong ref {ps['wrong_reference_rows']} rows {M(ps['wrong_reference_value'])}; keying {ps['keying_rows']} rows "
           f"{M(ps['keying_value'])}; duplicates {ps['duplicate_rows']} rows {M(ps['duplicate_value'])}; batched {bt['lines']} lines, "
           f"mean lag {bt['mean_lag_days']:.1f} days")
+    tr = out["trust"]
+    print("  Trust:", {k: (round(v["before"], 3) if isinstance(v.get("before"), float) else v.get("before"),
+                          round(v["after"], 3) if isinstance(v.get("after"), float) else v.get("after")) for k, v in tr.items() if isinstance(v, dict)})
+    print("  Cost 2025 measured", M(fm["measured_total"]), "estimated", M(fm["estimated_total"]), "| excess", M(fm["carrying"]["excess"]))
+    print("  Ops 2025:", {k: v for k, v in out["ops_2025"].items()})
     print(f"\n  -> {OUT / 'financials.json'}\n")
 
 

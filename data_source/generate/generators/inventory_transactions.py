@@ -41,18 +41,28 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     rows, seq = [], [0]
     truth = {t: [] for t in ["t1", "t1_events", "t2", "t6", "t7", "t8"]}
 
-    def user_for(kind):
+    def user_for(kind, tdate):
         if kind in ("floor", "recv"):
+            if tdate > C.LOGIN_DATE.isoformat():        # individual logins issued
+                return rng.choice(C.FLOOR_USERS)
             return rng.choice(C.SHARED_LOGINS) if rng.random() < C.SHARED_LOGIN_SHARE else rng.choice(C.OFFICE_USERS)
         return rng.choice(C.OFFICE_USERS)
 
+    def reason_for(tdate):
+        # a reason code is required from the control date; before it, most are generic
+        if tdate > C.REASON_CODE_DATE.isoformat():
+            return rng.choice(C.SPECIFIC_REASON_CODES)
+        return rng.choice(C.GENERIC_REASON_CODES) if rng.random() < C.T2_BLANK_REASON_SHARE \
+            else rng.choice(C.SPECIFIC_REASON_CODES)
+
     def add(item_number, tdate, ttype, qty, uom, job, reason, kind, defect=None):
         seq[0] += 1
+        tdate = tdate if isinstance(tdate, str) else tdate.isoformat()
         rows.append({"txn_id": f"TX-{seq[0]:07d}", "item_number": item_number,
-                     "txn_date": tdate if isinstance(tdate, str) else tdate.isoformat(),
+                     "txn_date": tdate,
                      "txn_time": f"{int(rng.integers(6, 18)):02d}:{int(rng.integers(0, 60)):02d}",
                      "type": ttype, "qty": int(qty), "uom": uom, "job_id": job, "reason_code": reason,
-                     "location": rng.choice(C.LOCATIONS), "user_id": user_for(kind), "_defect": defect})
+                     "location": rng.choice(C.LOCATIONS), "user_id": user_for(kind, tdate), "_defect": defect})
         return rows[-1]["txn_id"]
 
     # ── consumption the ERP recorded ─────────────────────────────────────────
@@ -71,7 +81,8 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
             add(r.item_number, d, "ISSUE", r.qty, uom_by_num.get(r.item_number, "EA"), r.job_id, "SERVICE", "floor")
         else:
             # T6: a manual pull posted against a similar item
-            if rng.random() < C.T6_ISSUE_SHARE:
+            # individual logins and the negative-balance block halve the mispostings
+            if rng.random() < C.T6_ISSUE_SHARE * (0.5 if d.isoformat() > C.LOGIN_DATE.isoformat() else 1.0):
                 wrong = _wrong_item(int(r.item_id), r.item_number, dup_map, fam_by_item, class_by_item, recorded, primary_num, rng)
                 if wrong:
                     tid = add(wrong, d, "ISSUE", r.qty, uom_by_num.get(wrong, "EA"), r.job_id, "MANUAL", "floor", "T6")
@@ -99,9 +110,8 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
 
     # ── the floor's own corrections, posted in the replay ──────────────────
     for r in sim_adjustments.itertuples(index=False):
-        reason = rng.choice(C.GENERIC_REASON_CODES) if rng.random() < C.T2_BLANK_REASON_SHARE \
-            else rng.choice(C.SPECIFIC_REASON_CODES)
-        add(r.item_number, str(r.date), "ADJUST", r.qty, uom_by_num.get(r.item_number, "EA"), None, reason, "floor")
+        add(r.item_number, str(r.date), "ADJUST", r.qty, uom_by_num.get(r.item_number, "EA"), None,
+            reason_for(str(r.date)), "floor")
 
     tx = pd.DataFrame(rows)
 
@@ -132,15 +142,15 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
         produced += mag
         seq[0] += 1
         m = months[int(rng.integers(0, len(months)))]
-        reason = rng.choice(C.GENERIC_REASON_CODES) if rng.random() < C.T2_BLANK_REASON_SHARE \
-            else rng.choice(C.SPECIFIC_REASON_CODES)
+        tdate = (m + timedelta(days=int(rng.integers(0, 27)))).isoformat()
+        reason = reason_for(tdate)
         tid = f"TX-{seq[0]:07d}"
         extra.append({"txn_id": tid, "item_number": num,
-                      "txn_date": (m + timedelta(days=int(rng.integers(0, 27)))).isoformat(),
+                      "txn_date": tdate,
                       "txn_time": f"{int(rng.integers(6, 18)):02d}:{int(rng.integers(0, 60)):02d}",
                       "type": "ADJUST", "qty": (-mag if neg else mag), "uom": uom_by_num.get(num, "EA"),
                       "job_id": None, "reason_code": reason, "location": rng.choice(C.LOCATIONS),
-                      "user_id": rng.choice(C.SHARED_LOGINS), "_defect": "T2"})
+                      "user_id": user_for("floor", tdate), "_defect": "T2"})
         truth["t2"].append({"txn_id": tid, "item_number": num})
     if extra:
         tx = pd.concat([tx, pd.DataFrame(extra)], ignore_index=True)
@@ -152,6 +162,8 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     n7 = int(len(tx) * C.T7_TXN_SHARE)
     if len(cand):
         for i in rng.choice(cand, size=min(n7, len(cand)), replace=False, p=w / w.sum()):
+            if tx.at[i, "txn_date"] > C.LOGIN_DATE.isoformat() and rng.random() < 0.5:
+                continue
             q = int(tx.at[i, "qty"])
             conv = conv_by_num.get(tx.at[i, "item_number"])
             if conv and conv > 1 and rng.random() < 0.5:
@@ -168,6 +180,8 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
     cand = tx.index[tx["type"].isin(["ISSUE", "RECEIPT", "BACKFLUSH"])]
     dups = []
     for i in rng.choice(cand, size=min(int(len(tx) * C.T8_DUP_SHARE), len(cand)), replace=False):
+        if tx.at[i, "txn_date"] > C.LOGIN_DATE.isoformat() and rng.random() < 0.5:
+            continue
         row = tx.loc[i].to_dict()
         seq[0] += 1
         row["txn_id"] = f"TX-{seq[0]:07d}"; row["_defect"] = "T8"

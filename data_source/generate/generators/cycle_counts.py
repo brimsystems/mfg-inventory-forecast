@@ -51,10 +51,14 @@ def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, abc_by_
 
     pending = [(r.date, r.item_number, int(r.counted_qty), "ANNUAL") for r in sim["counts"].itertuples(index=False)]
 
-    unrel = [n for n in unreliable_nums if n in item_meta and not item_meta[n]["dead"]]
+    retired = {n for cl in dup_map.values() for n in cl["records"] if n != cl["primary"]}
+    unrel = [n for n in unreliable_nums if n in item_meta and not item_meta[n]["dead"] and n not in retired]
     rng.shuffle(unrel)
+    rest = [n for n, m in item_meta.items() if not m["dead"] and n not in retired and n not in set(unrel)]
+    rng.shuffle(rest)
+    unrel = unrel + rest          # a baseline count of every live item, unreliable ones first
     weeks = [w for w in C.remediation_weeks() if w[0] >= 2]
-    per_week = max(1, len(unrel) // max(1, len(weeks)))
+    per_week = -(-len(unrel) // max(1, len(weeks)))
     i = 0
     for w, monday in weeks:
         batch = unrel[i: i + per_week]; i += per_week
@@ -69,7 +73,6 @@ def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, abc_by_
     # after remediation the program runs on the ABC schedule: A items every
     # month, B items once a quarter, C items at their annual turn (not yet due).
     # Retired duplicate numbers drop out; the survivor is counted for the pile.
-    retired = {n for cl in dup_map.values() for n in cl["records"] if n != cl["primary"]}
     for num, meta in item_meta.items():
         if meta["dead"] or num in retired:
             continue

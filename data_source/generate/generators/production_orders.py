@@ -35,11 +35,13 @@ def build_production_orders(builds, products, rng):
                 release = C.END_DATE
             lead_days = int(rng.integers(14, 45))
             due = release + timedelta(days=lead_days)
-            # Most jobs complete near due; report completion at week-end (defect T4).
-            completed_date = due + timedelta(days=int(rng.integers(-4, 6)))
+            due = due + timedelta(days=(4 - due.weekday()) % 7)
+            # Most jobs complete on or before the due Friday; completion is
+            # reported at week-end (defect T4), which pushes a late finish a week
+            completed_date = due + timedelta(days=int(rng.integers(-6, 4)))
             done = completed_date <= C.END_DATE
             # snap completion to the Friday of its week (week-end reporting)
-            if done:
+            if done and completed_date <= C.REMEDIATION_END:      # same-day reporting afterwards
                 completed_date = completed_date + timedelta(days=(4 - completed_date.weekday()) % 7)
                 if completed_date > C.END_DATE:
                     completed_date = C.END_DATE

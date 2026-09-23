@@ -40,6 +40,7 @@ MARTS = REPO / "ml" / "data" / "marts"
 
 BEFORE = C.REMEDIATION_START
 AFTER = C.AS_OF_DATE
+WEEK10 = C.REMEDIATION_END          # the end of the engagement
 RECENT_DAYS = 90
 VAR_RELIABLE = 0.05
 CHRONIC_N = 3
@@ -145,21 +146,29 @@ def build():
         else:
             bal = balance(num, AFTER) + sum(balance(m, AFTER) for m, s_ in survivor_of.items() if s_ == num)
             value_after, after_cls = max(bal, 0.0) * float(cost[num]), classify(num, AFTER, True)
+        if num in retired:
+            value_w10, w10_cls = 0.0, None
+        else:
+            bal = balance(num, WEEK10) + sum(balance(m, WEEK10) for m, s_ in survivor_of.items() if s_ == num)
+            value_w10, w10_cls = max(bal, 0.0) * float(cost[num]), classify(num, WEEK10, True)
         rec.append({"item_number": num, "abc": abc.get(int(r.iid), "C"),
-                    "value": value_before, "value_after": value_after,
+                    "value": value_before, "value_after": value_after, "value_week10": value_w10,
                     "reliability_before": classify(num, BEFORE, False),
-                    "reliability_after": after_cls, "retired": num in retired})
+                    "reliability_after": after_cls, "reliability_week10": w10_cls, "retired": num in retired})
     rel = pd.DataFrame(rec)
     MARTS.mkdir(parents=True, exist_ok=True)
     rel.to_parquet(MARTS / "reliability.parquet", index=False)
 
-    summary = {"before_date": BEFORE.isoformat(), "after_date": AFTER.isoformat(), "definitions": DEFINITIONS,
-               "recent_days": RECENT_DAYS, "before": {}, "after": {}}
+    summary = {"before_date": BEFORE.isoformat(), "after_date": AFTER.isoformat(), "week10_date": WEEK10.isoformat(),
+               "definitions": DEFINITIONS, "recent_days": RECENT_DAYS, "before": {}, "after": {}, "week10": {}}
     for k in DEFINITIONS:
         b = rel[rel["reliability_before"] == k]
         a = rel[rel["reliability_after"] == k]
+        w = rel[rel["reliability_week10"] == k]
         summary["before"][k] = {"items": int(len(b)), "value": float(b["value"].sum())}
         summary["after"][k] = {"items": int(len(a)), "value": float(a["value_after"].sum())}
+        summary["week10"][k] = {"items": int(len(w)), "value": float(w["value_week10"].sum())}
+    summary["week10"]["total"] = {"items": int((~rel["retired"]).sum()), "value": float(rel["value_week10"].sum())}
     # why the uncertain items are uncertain at the audit date
     unc = rel[rel["reliability_after"] == "uncertain"]["item_number"]
     recent = [n for n in unc if last_count(n, AFTER)[0] is not None and (AFTER - last_count(n, AFTER)[0]).days <= RECENT_DAYS]
@@ -176,7 +185,7 @@ def build():
 def run():
     rel, summary = build()
     print("\n=== On-hand reliability (live items) ===")
-    for when in ["before", "after"]:
+    for when in ["before", "week10", "after"]:
         tot = summary[when]["total"]
         print(f"\n  {when.upper()}  ({summary[when + '_date']}; {tot['items']:,} items, ${tot['value']:,.0f})")
         for k in DEFINITIONS:
