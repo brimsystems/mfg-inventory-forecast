@@ -945,25 +945,23 @@ share of the ERP's total records, leaving it unreliable as the shop's central da
 movement in two years or more yet were still flagged as active, meaning reports, searches and reorder
 logic were polluted by inactive parts. Second, {d['n_lead_off']/d['n_live']*100:.0f}% of lead times
 and {d['params_changed']/d['n_live']*100:.0f}% of reorder points listed in the item master were stale,
-meaning that if they were relied upon when making reorder decisions, then they would be placed at the
-wrong time and in the wrong quantity. Third, the majority of receipts are posted in batches several
-days late: {d['n_batch_rows']/d['n_po']*100:.0f}% of purchase order lines carry a posting date
-{d['t4_lag_mean']:.0f} days on average after the material actually arrived, meaning every lead time
-or supplier delivery time calculated from these receipts is artificially long.</p>
+meaning that if they were relied upon when making reordering decisions, then they would be placed at
+the wrong time and in the wrong quantity. Third, the majority of receipts
+({d['n_batch_rows']/d['n_po']*100:.0f}%) are posted in batches (i.e., a large number of receipts held
+on to and inputted all at once) and are {d['t4_lag_mean']:.0f} days late on average, meaning every lead
+time or supplier delivery time calculated from these receipts is artificially long.</p>
 
 """
 
     did = f"""
 {B.section("did", "Section 2", "Error Remediation")}
-<p>Most of the data quality errors identified in Section 1 were closed in full. A few were partially
+<p>Most of the data quality errors identified in Section 1 were closed in full, as shown below. A few were partially
 closed: {d['dead_kept']} dead records were kept in as insurance spares, and not all duplicate pair or
 free-text line attributions could be confirmed as correct. No remediation attempt was made on a few
 of the errors, namely batched receipts (dates not recoverable), as well as unrecorded consumption and
 catch-all adjustments (fixed at source rather than in the history), and so while the ledger still
-carries them, the entries will be clean going forward.</p>
+carries them, the records are cleaned going forward.</p>
 
-<p>The tables below give, for each error, how it was remediated and whose input that took, the
-evidence it rested on, and how many of the affected rows were remediated.</p>
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Master-level Table Error Remediation</p>
 {rem_master_table}
 
