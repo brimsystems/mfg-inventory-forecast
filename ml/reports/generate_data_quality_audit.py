@@ -873,7 +873,7 @@ closed: {d['dead_kept']} dead records were kept in as insurance spares, and not 
 free-text line attributions could be confirmed as correct. No remediation attempt was made on a few
 of the errors, namely batched receipts (dates not recoverable), as well as unrecorded consumption and
 catch-all adjustments (fixed at source rather than in the history), and so while the ledger still
-carries them, the records are cleaned going forward.</p>
+carries them, the entries will be clean going forward.</p>
 
 <p>The tables below give, for each error, how it was remediated and whose input that took, the
 evidence it rested on, and how many of the affected rows were remediated.</p>
