@@ -549,22 +549,15 @@ def build(d):
          pc(t_["adj_known_cause"]["before"]), pc(t_["adj_known_cause"]["after"])],
         ["On-order value that is genuinely inbound",
          "Reorder logic is not waiting for phantom deliveries",
-         f"{_money(t_['on_order_genuine']['before'])} of {_money(t_['on_order_genuine']['before_total'])}",
-         f"{_money(t_['on_order_genuine']['after'])} of {_money(t_['on_order_genuine']['after_total'])}"],
+         pc(t_["on_order_genuine"]["before"] / t_["on_order_genuine"]["before_total"]),
+         pc(t_["on_order_genuine"]["after"] / t_["on_order_genuine"]["after_total"])],
         ["Transactions posted under an identifiable user",
          "Errors can be traced to source",
          pc(t_["identifiable_user"]["before"]), pc(t_["identifiable_user"]["after"])],
         ["Inventory value with a reliable on-hand balance",
          "Stock the system shows can be planned against",
-         f"{_money(t_['reliable_value']['before'])} of {_money(t_['reliable_value']['before_total'])}",
-         f"{_money(t_['reliable_value']['after'])} of {_money(t_['reliable_value']['after_total'])}"],
-        ["Second-round cycle count accuracy",
-         "The fixes held; balances are not drifting back",
-         "n/a", (pc(t_["second_round"]["after"]) + f" of {t_['second_round']['n']} recounts within 5%<br><em>{pc(t_['second_round']['within_10'])} within 10%</em>")
-         if t_["second_round"]["after"] is not None else "not yet due"],
-        ["Line-critical items managed inside the ERP rather than a spreadsheet",
-         "One system of record for what stops the line",
-         f"{t_['line_critical']['before']} of {t_['line_critical']['total']}", f"{t_['line_critical']['after']} of {t_['line_critical']['total']}"],
+         pc(t_["reliable_value"]["before"] / t_["reliable_value"]["before_total"]),
+         pc(t_["reliable_value"]["after"] / t_["reliable_value"]["after_total"])],
     ]
     trust_table = _widths(B.data_table(["Measure", "Why it matters", "Before", "After"], trust_rows, right=[2, 3]), [34, 38, 14, 14])
 
@@ -619,8 +612,8 @@ def build(d):
 
     results = f"""
 {B.section("results", "Section 3", "Results")}
-<p>As a result of the data quality audit and remediation of errors, numerous measures of data system
-reliability improved significantly, as detailed in the table below.</p>
+<p>As a result of the data quality audit, remediation of errors, and fresh cycle counts, numerous
+measures of the ERP system's accuracy and reliability improved significantly.</p>
 
 {trust_table}
 """
@@ -843,7 +836,7 @@ shown below.</p>
 {B.chart("ERP Tables", chart_erd(d))}
 
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
-produced across the eight ERP tables. This audit covered all of them. It found <strong>16</strong>
+produced across the eight ERP tables. This audit reviewed 100% of them and found <strong>16</strong>
 different types of data quality error recur over this period. These errors touched a significant
 share of the ERP's total records, leaving it unreliable as the shop's central data record.</p>
 
@@ -862,12 +855,12 @@ share of the ERP's total records, leaving it unreliable as the shop's central da
 movement in two years or more yet were still flagged as active, meaning reports, searches and reorder
 logic were polluted by inactive parts. Second, {d['n_lead_off']/d['n_live']*100:.0f}% of lead times
 and {d['params_changed']/d['n_live']*100:.0f}% of reorder points listed in the item master were stale,
-meaning reorders were placed at the wrong time and in the wrong quantity, on numbers no one had
-refreshed since go-live. Third, the majority of receipts are posted in batches:
+meaning that if they were relied upon, then reorders would be placed at the wrong time and in the
+wrong quantity. Third, the majority of receipts are posted in batches:
 {d['n_batch_rows']/d['n_po']*100:.0f}% of purchase order lines carry a posting date
 {d['t4_lag_mean']:.0f} days on average after the material actually arrived, meaning every lead time
 computed from receipts reads {d['t4_lag_mean']:.0f} days longer than the delivery took, and every
-supplier measured on it looks slower than it is.</p>
+supplier's delivery measured on it looks slower than it is.</p>
 
 """
 
