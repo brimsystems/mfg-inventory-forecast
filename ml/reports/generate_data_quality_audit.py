@@ -854,35 +854,30 @@ would have been a good guess applied to fiction; on the new data it is a decisio
     # (remediation: what was done, how, and whose input it needed; evidence; rows remediated)
     ERP = "ERP records only"
     REM_MASTER = [
-        (f"Deactivated in the item master after a line-by-line review. The purchasing manager and the service "
-         f"parts coordinator kept {d['dead_kept']} as seasonal or safety-critical spares; the rest were deactivated, "
-         f"including those whose one recent posting the buyer confirmed as a misposting.",
+        (f"Deactivated in the item master after a line-by-line review. The purchasing manager kept {d['dead_kept']} "
+         f"as seasonal spares, the rest were deactivated",
          ERP, rem_of(d["dead_deactivated"], d["n_dead"])),
-        ("Recomputed per item from receipt history using the median and a trimmed 80th percentile, then written "
-         "to the master. Mechanical, with no judgment needed; the tracked items were checked against the buyer's "
-         "spreadsheet.",
+        ("Recalculated per item from receipt history using the median and a trimmed 80th percentile, then written "
+         "to the master",
          "ERP purchase history, checked against the buyer's spreadsheet", rem_of(d["n_lead_off"], d["n_lead_off"])),
-        ("Recomputed from actual usage over the corrected lead time at the ABC service level and loaded; the "
-         "purchasing manager reviewed the A-class values before they went live.",
+        ("Recalculated from actual usage over the corrected lead time at the ABC service level and loaded; the "
+         "purchasing manager reviewed the A-class values before they went live",
          "ERP purchase and issue history, checked against the buyer's spreadsheet", rem_of(d["params_changed"], d["params_changed"])),
         (f"Missing components added back to the product and subassembly BOMs ({d['bom_changes']} change-log "
-         f"entries), each confirmed by the engineering manager from engineering review or by the assembly "
-         f"supervisor from floor observation.",
+         f"entries), each confirmed by the assembly supervisor",
          "Expected vs actual consumption (jobs &times; BOM against issues) and floor observation",
          rem_of(d["bom_changes"], d["omit_items"])),
         (f"Candidate pairs scored, then merged to one surviving number through a crosswalk. The buyer and the "
-         f"stockroom lead reviewed every pair: {d['dup_merged']} records retired to a survivor, {d['dup_rejected']} "
-         f"pairs rejected as genuinely different parts.",
+         f"stockroom lead reviewed and rejected {d['dup_rejected']} pairs as different parts",
          "ERP records, every pair reviewed by the buyer", rem_of(d["dup_merged"], d["dup_records"] - d["dup_clusters"])),
         ("A purchase-to-stock conversion factor added to each item, taken from the pack size on its receipts and "
-         "confirmed by the stockroom lead; on-hand restated in stock units.",
+         "confirmed by the stockroom lead; on-hand restated in stock units",
          "ERP records and the pack sizes on receipts", rem_of(d["uom_items"], d["uom_items"])),
         (f"Alias records mapped to one canonical supplier through a crosswalk ({d['sup_fragments']} vendors, "
-         f"{d['sup_records']} records); the buyer confirmed each grouping, and new orders book to the canonical record.",
+         f"{d['sup_records']} records); the buyer confirmed each grouping, and new orders book to the canonical record",
          ERP, rem_of(d["sup_records"] - d["sup_fragments"], d["sup_records"] - d["sup_fragments"])),
         ("Blocking blanks filled from the ordering history (cost from the last price paid, supplier from the "
-         "ordering record) and from the reorder-point recomputation; MISC items reclassified by the buyer; "
-         "required fields enforced from week 6.",
+         "ordering record) and from the reorder-point recalculation; MISC items reclassified by the buyer",
          ERP, rem_of(d["n_blank"], d["n_blank"])),
     ]
     REM_TXN = [
@@ -891,12 +886,11 @@ would have been a good guess applied to fiction; on the new data it is a decisio
          f"corrections stop the leak, and the cycle-count program corrected each balance as it was counted.",
          "ERP on-hand vs cycle counts; expected vs actual consumption",
          f"0 of {d['n_unrec_adj_rows']:,} (fixed at source)"),
-        ("Historic adjustments left as posted but classified by the chronic-adjustment analysis; reason codes made "
-         "mandatory by configuration change in week 5, so the share falls toward the run-rate target.",
+        ("Historic adjustments left as posted but classified by the chronic-adjustment analysis",
          ERP, f"0 of {d['n_adj_blank_rows']:,} (controlled at source)"),
         (f"Lines matched to stocked items by description similarity; the buyer settled every candidate "
          f"({d['ft_confirmed']:,} confirmed, {d['ft_rejected']:,} rejected as genuine non-stock buys) and the "
-         f"confirmed demand was attributed back to the item; generic codes restricted from week 7.",
+         f"confirmed demand was attributed back to the item",
          "ERP records, every candidate reviewed by the buyer", rem_of(d["ft_confirmed"], d["n_ft_lines"])),
         ("Not corrected line by line, because the true dates are not recoverable. The lead-time computation was "
          "made robust to it instead, and receiving moved to same-day posting under the new individual logins.",
@@ -910,15 +904,17 @@ would have been a good guess applied to fiction; on the new data it is a decisio
         ("Each outlier corrected to the true quantity after the stockroom lead reviewed the list; box/each keying "
          "closed off by the UOM conversions.",
          "ERP records and stockroom review", rem_of(d["t7_count"], d["t7_count"])),
-        ("The second posting reversed for every pair.",
+        ("The second posting reversed for every pair after the stockroom lead confirmed the two entries were one "
+         "movement",
          ERP, rem_of(d["t8_count"], d["t8_count"])),
     ]
     REM_MASTER = dict(zip(ORIG_MASTER, REM_MASTER))
     REM_TXN = dict(zip(ORIG_TXN, REM_TXN))
     rem_hdr = ["", "Error", "Remediation", "Evidence", "Remediated (rows)"]
-    rem_master_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_MASTER[e[0]]]
+    strip = lambda t: (t[0].rstrip("."), *t[1:])
+    rem_master_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *strip(REM_MASTER[e[0]])]
         for i, e in enumerate(MASTER_ERRORS, 1)], right=[]), W3)
-    rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *REM_TXN[e[0]]]
+    rem_txn_table = _widths(B.data_table(rem_hdr, [[numcell(i), e[0], *strip(REM_TXN[e[0]])]
         for i, e in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W3)
     found = f"""
 {B.section("found", "Section 1", "Findings")}
