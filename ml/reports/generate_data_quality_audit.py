@@ -625,6 +625,14 @@ def build(d):
         ["Transactions posted under an identifiable user",
          "Errors can be traced to source",
          pc(t_["identifiable_user"]["before"]), pc(t_["identifiable_user"]["after"])],
+    ]
+    trust_table = _widths(B.data_table(["Measure", "Why it matters", "Before", "After"], trust_rows, right=[2, 3]), [34, 38, 14, 14])
+
+    # ── 1.2 what the messy data cost in the year ────────────────────────────
+    def cost_cell(v, note=""):
+        return f"{_money(v)}" + (f"<br><em>{note}</em>" if note else "")
+    a_ = cm["assumptions"]
+    fin_cost_rows = [
         ["Expedite freight and price premiums", "Rush orders to recover from stockouts the system did not see coming",
          cost_cell(cm["expedite"]["traced"], f"{cm['expedite']['traced_lines']} of {cm['expedite']['lines']} rush lines trace to the errors; "
                    f"{_money(cm['expedite']['total'])} of rush spend in all"), "Measured from PO lines"],
@@ -1033,7 +1041,7 @@ carries them, the records are cleaned going forward.</p>
     keep = f"""
 {B.section("process", "Section 4", "Process Changes")}
 <p>The remediation efforts in Section 2 fixed the majority of the data quality issues identified
-through this audit. The changes in this section prevent them from reoccurring. These changes fall
+through this audit. The changes outlined in this section prevent them from reoccurring, and fall
 into two categories.</p>
 
 <p>The first category is the ERP system settings. These settings are administered once, take effect
@@ -1047,31 +1055,12 @@ but not prevented).</p>
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Changes to ERP System Settings</p>
 {config_table}
 
-<p>The second group are process changes that will require ongoing ownership and organizational
+<p>The second group is process changes that will require ongoing ownership and organizational
 alignment. That makes this category the harder lift. The shop has committed to the owners and
 cadences below, and keeping them is what protects the results in Section 3.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Changes Requiring Ongoing Processes and Ownership</p>
 {process_table}
-
-<p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">What remains</p>
-<p>Not everything was resolved, and it would be dishonest to imply otherwise.</p>
-<ul class="limitation-list">
-  <li><strong>Items still unreliable.</strong> {d['rel_after']['unreliable']['pct']:.0f}% of live items still
-      carry a balance we would not trust: phantom-inventory items whose first count is scheduled in the
-      continuing cycle-count program, each with its reason recorded.</li>
-  <li><strong>Lead-time precision floor.</strong> Because receipts were batched to Mondays and month-end,
-      computed lead times carry a few days of irreducible noise; the recommended values use a trimmed
-      high percentile to stay safe rather than precise.</li>
-  <li><strong>What the shop declined.</strong> {d['dead_kept']} dead items were kept active at the buyer's
-      insistence as insurance spares, against the recommendation to deactivate them, and
-      {d['dup_rejected']} duplicate pairs the buyer judged to be different parts remain as separate
-      records.</li>
-  <li><strong>What the cleanup is worth going forward is not measured here.</strong> This report claims
-      only costs that trace to a specific error in the {YR} record. How much of the untraced rush spend
-      and how many of the shortages clean data would have prevented is a forecast, and it belongs to
-      the reorder-policy work that follows this audit.</li>
-</ul>
 """
 
     remains = ""
