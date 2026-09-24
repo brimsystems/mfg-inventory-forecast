@@ -221,23 +221,48 @@ k_abc, z = sched["safety_factor"], sched["normal_z"]
 bias = sched["bias_correction"]
 churn = sched["churn"]
 
+attrs = pd.read_parquet(REPO / "ml" / "data" / "marts" / "item_attributes.parquet")
+monthly = pd.read_parquet(REPO / "ml" / "data" / "marts" / "consumption_monthly.parquet")
+seg_n = attrs["segment"].value_counts().to_dict(); abc_n = attrs["abc"].value_counts().to_dict()
+n_items = len(attrs)
+cand = metrics["candidates"]
+CAND_LABEL = {"Linear": "Linear regression (ridge)", "RandomForest": "Random forest", "XGBoost": "XGBoost"}
+
+
+def candidate_table():
+    rows = [[CAND_LABEL[c], pct(cand[c]["val_wape"]), pct(cand[c]["test_wape"]),
+             "Selected" if c == metrics["winner"] else ""] for c in ["Linear", "RandomForest", "XGBoost"]]
+    return widths(B.data_table(["Candidate", "Validation error (WAPE)", "Test error (WAPE)", ""], rows, right=[1, 2]),
+                  [34, 24, 24, 18])
+
+
 charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy()}
 
-toc = ('<a href="#summary">Summary</a>'
-       '<a href="#halves">Six Months on the New System</a>'
-       '<a href="#source">Where the Improvement Came From</a>'
-       '<a href="#accuracy">Forecast Accuracy</a>'
-       '<a href="#rop">From Forecast to Reorder Point</a>'
-       '<a href="#limits">Limitations and Next Step</a>')
+toc = ('<a href="#summary">Executive Summary</a><hr>'
+       '<a href="#modeloverview">Model Overview</a>'
+       '<a href="#what" class="sub">What This Model Does</a>'
+       '<a href="#data" class="sub">Training Data Overview</a><hr>'
+       '<a href="#performance">Model Performance</a>'
+       '<a href="#scoring" class="sub">Scoring Summary</a>'
+       '<a href="#accuracy" class="sub">Accuracy and Validation</a>'
+       '<a href="#source" class="sub">Where the Improvement Came From</a>'
+       '<a href="#limits" class="sub">What It Can and Cannot Predict</a>')
 
 body = f"""
-{B.section("summary", "Section 1", "Summary")}
-<p>From January through June 2026 the shop ran its purchasing on the cleaned records and on reorder points set
-each month by the demand model. Against the first half of 2025, run the same way the shop had always run it,
-the fill rate rose from {pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout episodes fell from
-{H1['stockout_episodes']:,} to {mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to
-{mod['jobs_delayed']}, and rush freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}. The
-shop holds more stock to do it: {k(mod['avg_inventory_value'])} on average against {k(H1['avg_inventory_value'])}.</p>
+{B.section("summary", "Section 1", "Executive Summary")}
+<p>The demand forecasting model tells the purchasing team how much of each stocked part the shop will
+consume before a new order can arrive, and turns that into the reorder point the ERP buys against. It is an
+XGBoost model trained on three years of the shop's cleaned consumption history for {n_items:,} purchased items.
+At the start of every month it is retrained, forecasts each item's demand over that item's own replenishment
+lead time, and sets a reorder point from the forecast plus a safety stock sized to the forecast's own error.
+Since January 2026 it has set the reorder points the shop buys on.</p>
+<p>From January through June 2026 the shop ran its purchasing on the cleaned records and on the model's reorder
+points. Against the first half of 2025, run the same way the shop had always run it, the fill rate rose from
+{pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout episodes fell from {H1['stockout_episodes']:,} to
+{mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to {mod['jobs_delayed']}, and rush
+freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}. The shop holds more stock to do it:
+{k(mod['avg_inventory_value'])} on average against {k(H1['avg_inventory_value'])}.</p>
+{B.chart("Stockouts, held jobs and rush spend by half-year", charts["halves"])}
 <p>Most of that improvement is the cleanup, not the model. Replaying the same six months of demand with nothing
 fixed gives {dirty['stockout_episodes']:,} stockouts; with the cleaned records and reorder points recomputed by
 the simple rule, {rule['stockout_episodes']:,}; with the model, {mod['stockout_episodes']:,}. The model adds
@@ -246,7 +271,7 @@ service on top of the cleanup, but it pays for it with inventory: once the new p
 against a 98% target, on {k(mod46['avg_inventory_value'])} of stock against {k(rule46['avg_inventory_value'])}.
 Held to the target, the simpler rule gets there more cheaply. The model's safety stock is sized for every order
 cycle, and the shop's large order quantities already protect most of them; sizing it against a fill-rate target
-instead is the next step (Section 6).</p>
+instead is the next step (Section 3.4).</p>
 
 {B.kpi_row(
     B.kpi_card(f"{pct(H1['fill_rate'])} &rarr; {pct(mod['fill_rate'])}", "Fill rate", "1H25 to 1H26", DARK_BLUE),
@@ -254,20 +279,76 @@ instead is the next step (Section 6).</p>
     B.kpi_card(f"{k(H1['rush_spend'])} &rarr; {k(mod['rush_spend'])}", "Rush spend", "1H25 to 1H26", GREEN),
     B.kpi_card(f"{pct(tw['raw'], 0)} &rarr; {pct(tw['fully'], 0)}", "Forecast error", "before and after cleaning", DARK_BLUE))}
 
-{B.section("halves", "Section 2", "Six Months on the New System")}
-<p>The first comparison is the one the shop lived through: the forward half-year against the two halves of
-2025, each as the shop actually ran it. The two 2025 halves are close to each other, which makes them a fair
-baseline; 2H25 includes the ten weeks of remediation, but the cleaned records and the new reorder points only
-took over on 1 January. A job counts as held for material when its production order hit a material-shortage
-hold, the same definition the data quality audit used for 2025.</p>
-{B.chart("Stockouts, held jobs and rush spend by half-year", charts["halves"])}
+{B.section("modeloverview", "Section 2", "Model Overview")}
+
+{B.section("what", "Section 2.1", "What This Model Does")}
+<p>The model answers one question for every stocked item, every month: <strong>how much of this part will the
+shop use before a new order can arrive?</strong> It does not forecast a fixed 30 or 90 days. A fastener that
+arrives in two weeks and a gearmotor that takes two months are different questions, and the reorder decision
+only cares about the demand that lands before the next delivery does, so the model forecasts demand over each
+item's own replenishment lead time.</p>
+<p>That forecast becomes the reorder point in three steps. First, the forecast is corrected for bias: trained on
+log demand, the model forecasts something nearer the median than the mean, and a reorder point needs the mean,
+so each forecast is scaled by the ratio of actual to forecast demand for its demand pattern on the 2025
+backtest. Second, a safety stock is added: k times the item's forecast error over the lead time, where k was
+calibrated on the 2025 backtest as the quantile of the errors at each class's service level rather than
+assumed from the normal curve (A {k_abc['A']:.2f} against a normal {z['A']:.2f}, B {k_abc['B']:.2f} against
+{z['B']:.2f}, C {k_abc['C']:.2f} against {z['C']:.2f}). Third, the point is held steady unless the fresh value
+differs by more than {sched['hysteresis']*100:.0f}%, because buyers stop trusting numbers that jump around.
+Without that band every point would change every month, and {churn['without_hysteresis']*100:.0f}% of them by
+more than a fifth; with it, {churn['with_hysteresis']*100:.0f}% of item-months see a change at all.</p>
+<p>The model is retrained on the first of every month on the cleaned history to date, and the new reorder points
+are loaded into the ERP, which places orders against them as it always has.</p>
+
+{B.section("data", "Section 2.2", "Training Data Overview")}
+<p>The model learns from the shop's monthly consumption history for {n_items:,} purchased items, January 2023 to
+the month before each forecast: issues to jobs and service orders, backflushed components and manual pulls.
+The items fall into four demand patterns, which behave differently and are scored separately:
+{seg_n.get('smooth', 0)} smooth (steady, regular demand), {seg_n.get('erratic', 0)} erratic (regular but
+variable), {seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent
+(many months with no demand at all). By value, {abc_n.get('A', 0)} are A items carrying most of the spend,
+{abc_n.get('B', 0)} B and {abc_n.get('C', 0)} C.</p>
+<p>That history is the one the data quality audit cleaned, and the cleaning matters to what the model can learn.
+The same model, with the same features, was run on the history at three stages of cleaning. Across all items
+the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
+cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls from
+{pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
+{pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
+history; the other thirteen corrupt what the forecast is used for, which is why Section 3.3 is where the
+cleanup shows its value.</p>
+{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
+
+{B.section("performance", "Section 3", "Model Performance")}
+
+{B.section("scoring", "Section 3.1", "Scoring Summary")}
+<p>From January to June 2026 the model set {n_items:,} reorder points every month. The table compares that half-
+year with the two halves of 2025, each as the shop actually ran it. The two 2025 halves are close to each
+other, which makes them a fair baseline; 2H25 includes the ten weeks of remediation, but the cleaned records and
+the new reorder points only took over on 1 January. A job counts as held for material when its production order
+hit a material-shortage hold, the same definition the data quality audit used for 2025.</p>
 {halves_table()}
 <p>Purchases rose in 1H26 ({k(mod['purchases'])} against {k(H1['purchases'])}) because the new reorder points
-rebuilt stock on items the stale parameters had been running short; the extra {k(mod['avg_inventory_value'] - H1['avg_inventory_value'])}
-of average inventory is where that money went. Different halves carry different demand, so the size of each
-change also reflects the season and the product mix. The next section removes that by holding demand fixed.</p>
+rebuilt stock on items the stale parameters had been running short; the extra
+{k(mod['avg_inventory_value'] - H1['avg_inventory_value'])} of average inventory is where that money went.
+Different halves carry different demand, so the size of each change also reflects the season and the product
+mix. Section 3.3 removes that by holding demand fixed.</p>
 
-{B.section("source", "Section 3", "Where the Improvement Came From")}
+{B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
+<p>Accuracy is measured as weighted absolute percentage error (WAPE) over each item's lead time, which reads like
+the familiar percentage error for a steady part and stays defined for the third of parts with months of zero
+demand. The model learned on the cleaned history through 2024, was tuned on a block of validation months, and
+was then scored on a held-out year of rolling forecasts in 2025. Three candidate algorithms were each tuned and
+compared on the validation months; XGBoost was carried forward.</p>
+{candidate_table()}
+<p>On the held-out year the model beats the best simple method for each demand pattern (a moving average, last
+year's month or Croston's method, whichever did best):</p>
+{accuracy_table()}
+<p>Bias is the diagnostic accuracy hides. Before correction the model ran
+{', '.join(f"{abs(s_['bias'])*100:.0f}% low on {s_['segment']}" for s_ in metrics['segments'])} parts; after the
+correction described in Section 2.1, the forecasts in the six forward months ran within a few percent of actual
+demand for every pattern.</p>
+
+{B.section("source", "Section 3.3", "Where the Improvement Came From")}
 <p>To separate what the cleanup did from what the model did, the same January to June 2026 demand, with the same
 supplier deliveries, was replayed three ways. With nothing fixed, the shop keeps the stale lead times and
 reorder points, the duplicate records, the phantom on-order and the unrecorded pulls. With the cleaned records
@@ -297,41 +378,10 @@ does not buy its service with a flood of small orders: lines placed are within a
 consumption while stock is rebuilt, then settling.</p>
 {purchases_table()}
 
-{B.section("accuracy", "Section 4", "Forecast Accuracy")}
-<p>The model forecasts each item's demand over its own replenishment lead time, because that is the quantity a
-reorder point has to cover. Accuracy is measured as weighted absolute percentage error (WAPE) on a held-out
-year, which reads like the familiar percentage error for a steady part and stays defined for the third of parts
-with months of zero demand. The same model, with the same features, was run on the history at three stages of
-cleaning. Across all items the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)}
-items whose history the cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls
-from {pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)}
-to {pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
-history; the other thirteen corrupt what the forecast is used for, which is why Section 3 is where the cleanup
-shows its value.</p>
-{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
-<p>On the cleaned history the model beats the best simple method for each demand pattern (a moving average,
-last year's month or Croston's method, whichever did best):</p>
-{accuracy_table()}
-<p>Bias is the diagnostic accuracy hides. Trained on log demand, the model forecasts something nearer the median
-than the mean, and ran {', '.join(f"{abs(s['bias'])*100:.0f}% low on {s['segment']}" for s in metrics['segments'])}
-parts. A reorder point needs the mean, so the forecast is corrected per demand pattern by the ratio of actual to
-forecast on the 2025 backtest; in the six forward months the corrected forecast ran within a few percent of
-actual demand for every pattern.</p>
-
-{B.section("rop", "Section 5", "From Forecast to Reorder Point")}
-<p>At the start of each forward month the model was retrained on the cleaned history to date, and each item's
-reorder point was set to the corrected forecast over the lead time plus a safety stock of k times the item's
-forecast error over the lead time. The factor k was calibrated on the 2025 backtest as the quantile of the
-errors at each class's service level, rather than assumed from the normal curve: A {k_abc['A']:.2f} (normal
-{z['A']:.2f}), B {k_abc['B']:.2f} ({z['B']:.2f}), C {k_abc['C']:.2f} ({z['C']:.2f}). The errors have slightly heavier
-tails than the normal curve assumes, so the calibrated buffers are a little larger.</p>
-<p>Buyers stop trusting numbers that jump around, so a point only moves when the fresh value differs from the
-current one by more than {sched['hysteresis']*100:.0f}%. Without that band every point would change every month,
-and {churn['without_hysteresis']*100:.0f}% of them by more than a fifth; with it, {churn['with_hysteresis']*100:.0f}% of
-item-months see a change at all, each one large enough to be worth acting on.</p>
-
-{B.section("limits", "Section 6", "Limitations and Next Step")}
+{B.section("limits", "Section 3.4", "What It Can and Cannot Predict")}
 <ul class="limitation-list">
+  <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes the
+      supplier's lead time from the recomputed master and does not predict a late delivery.</li>
   <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
       and supplier behaviour, not observed. Demand, deliveries and the forecast are identical across the three
       variants, so the differences between them are the policy; the size of each difference is an estimate.</li>
