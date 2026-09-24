@@ -625,18 +625,6 @@ def build(d):
         ["Transactions posted under an identifiable user",
          "Errors can be traced to source",
          pc(t_["identifiable_user"]["before"]), pc(t_["identifiable_user"]["after"])],
-        ["Inventory value with a reliable on-hand balance",
-         "Stock the system shows can be planned against",
-         pc(t_["reliable_value"]["before"] / t_["reliable_value"]["before_total"]),
-         pc(t_["reliable_value"]["after"] / t_["reliable_value"]["after_total"])],
-    ]
-    trust_table = _widths(B.data_table(["Measure", "Why it matters", "Before", "After"], trust_rows, right=[2, 3]), [34, 38, 14, 14])
-
-    # ── 1.2 what the messy data cost in the year ────────────────────────────
-    def cost_cell(v, note=""):
-        return f"{_money(v)}" + (f"<br><em>{note}</em>" if note else "")
-    a_ = cm["assumptions"]
-    fin_cost_rows = [
         ["Expedite freight and price premiums", "Rush orders to recover from stockouts the system did not see coming",
          cost_cell(cm["expedite"]["traced"], f"{cm['expedite']['traced_lines']} of {cm['expedite']['lines']} rush lines trace to the errors; "
                    f"{_money(cm['expedite']['total'])} of rush spend in all"), "Measured from PO lines"],
@@ -685,8 +673,7 @@ def build(d):
 {B.section("results", "Section 3", "Results")}
 <p>As a result of the error remediation and fresh cycle counts, numerous measures of the ERP
 system's accuracy and reliability improved significantly. Importantly, the vast majority of active
-item records are now actually live, 100% of most identified data errors were resolved, and {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}% of total
-inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliable_value']['before_total']*100:.0f}%).</p>
+item records are now actually live and 100% of most identified data errors were resolved.</p>
 
 {trust_table}
 """
