@@ -1060,10 +1060,9 @@ but not prevented).</p>
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:30px;">Changes to ERP System Settings</p>
 {config_table}
 
-<p>The second group are process changes that will require ongoing ownership, organizational
-alignment, and a disciplined cadence of completion. That makes this category the harder lift. The
-shop has committed to the owners and cadences below, and keeping them is what protects the results
-in Section 3.</p>
+<p>The second group are process changes that will require ongoing ownership and organizational
+alignment. That makes this category the harder lift. The shop has committed to the owners and
+cadences below, and keeping them is what protects the results in Section 3.</p>
 
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Changes Requiring Ongoing Processes and Ownership</p>
 {process_table}
