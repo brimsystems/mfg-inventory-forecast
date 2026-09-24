@@ -692,44 +692,26 @@ inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliab
 {trust_table}
 
 {sub("What the clean data makes possible")}
-<p>The purpose of a trustworthy history is what can be built on it, and the first thing the shop
-wants to build is a demand forecast that sets its reorder points. The cleanup improved forecast
-accuracy modestly and improved the decisions built on the forecast substantially, and the reason is
-in the findings: only three of the sixteen errors touch the demand history a model learns from
-(duplicate records, free-text purchases and unrecorded consumption). The other thirteen corrupt
-what the forecast is used for. Before the cleanup, even a perfect forecast would have been applied
-to a stale lead time, a book balance that had drifted from the shelf, on-order that was never
-coming, and a reorder point nobody trusted; the forecast would have been right and the purchase
-would still have been wrong.</p>
-
-{B.chart("Forecast error before and after the cleanup, same model and features", chart_accuracy(d))}
-<p>The first chart is the accuracy gain, measured as weighted absolute percentage error over the lead
-time on a held-out year (it reads like the familiar percentage error for a steady part and stays
-defined for the third of parts with months of zero demand). Across all live items the same model's
-error falls from {d['threeway']['raw']*100:.0f}% to {d['threeway']['fully']*100:.0f}%, a
-{(d['threeway']['raw']-d['threeway']['fully'])/d['threeway']['raw']*100:.0f}% relative gain, diluted by
-the two thirds of items whose history needed no repair. Where the repairs were made the gain is
-large: on the {d['threeway_dups']['n']} parts that had been carried under more than one number the
-error halves, from {d['threeway_dups']['raw']*100:.0f}% to {d['threeway_dups']['fully']*100:.0f}%, and on
-the {d['threeway_unrec']['n']} parts whose consumption had gone unrecorded it falls from
-{d['threeway_unrec']['raw']*100:.0f}% to {d['threeway_unrec']['fully']*100:.0f}%.</p>
-
-{B.chart("The same forecast through dirty inputs and through clean ones, over the holdout year", chart_decision(d))}
-<p>The second chart is the test that matters. It holds the forecast fixed, the model's own
-predictions for every item, and runs the same reorder rule through the year twice. Through the dirty
-inputs, reorders are timed on the master lead time, the book balance drifts away from the shelf by
-the pulls that went unrecorded and the postings that went wrong, phantom on-order counts as inbound,
-and every duplicate record holds its own safety stock. Through the clean inputs, the same forecast
-runs against the recomputed lead time, the physical balance and genuine on-order, one record per
-part. Demand and supplier delivery are identical in both. The clean inputs lift the fill rate from
+<p>The cleanup improved forecast accuracy modestly and improved the decisions built on the forecast
+substantially. Only three of the sixteen errors touch the demand history a model learns from
+(duplicate records, free-text purchases and unrecorded consumption), so on the corrected history the
+same model's error falls from {d['threeway']['raw']*100:.0f}% to {d['threeway']['fully']*100:.0f}%
+overall (weighted absolute percentage error over the lead time on a held-out year), and by half on
+the {d['threeway_dups']['n']} parts that had been carried under more than one number, from
+{d['threeway_dups']['raw']*100:.0f}% to {d['threeway_dups']['fully']*100:.0f}%. The other thirteen errors
+corrupt what the forecast is used for: before the cleanup, even a perfect forecast would have been
+applied to a stale lead time, a book balance that had drifted from the shelf, on-order that was never
+coming and a reorder point nobody trusted. The chart below holds the forecast fixed and runs the same
+reorder rule through the year twice, once through those dirty inputs and once through the cleaned
+ones, with demand and supplier delivery identical in both. The clean inputs lift the fill rate from
 {d['decision']['dirty']['fill_rate']*100:.0f}% to {d['decision']['clean']['fill_rate']*100:.0f}% and cut the
 weeks an item spends stocked out from {d['decision']['dirty']['stockout_item_weeks']:,} to
 {d['decision']['clean']['stockout_item_weeks']:,}, while holding
 {(d['decision']['clean']['avg_inventory_value']/d['decision']['dirty']['avg_inventory_value']-1)*100:.0f}% more
-inventory, because the dirty inputs had been running the shop short: a lead time a week too optimistic
-and an on-order balance that was never coming both delay the reorder. The forecast on the old data
-would have been a good guess applied to fiction; on the new data it is a decision the shop can act
-on.</p>
+inventory, because the dirty inputs had been running the shop short. The forecast on the old data
+would have been a good guess applied to fiction; on the new data it is a decision the shop can act on.</p>
+
+{B.chart("The same forecast through dirty inputs and through clean ones, over the holdout year", chart_decision(d))}
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
