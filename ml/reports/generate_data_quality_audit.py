@@ -846,8 +846,8 @@ would have been a good guess applied to fiction; on the new data it is a decisio
     W2 = [4, 19, 40, 16, 21]          # #, Error, Description, ERP table, Scale
     W3 = [4, 19, 42, 18, 17]          # #, Error, Remediation, Evidence, Remediated
     hdr = ["", "Error", "Description", "ERP table", "Scale<br><em style=\"font-weight:400;text-transform:none;\">(rows affected)</em>"]
-    master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
-    txn_table = _widths(B.data_table(hdr, [[numcell(i), n, desc, loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W2)
+    master_table = _widths(B.data_table(hdr, [[numcell(i), n, desc.rstrip("."), loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(MASTER_ERRORS, 1)], right=[]), W2)
+    txn_table = _widths(B.data_table(hdr, [[numcell(i), n, desc.rstrip("."), loc, sc] for i, (n, desc, loc, sc, _t, _f, _c) in enumerate(TXN_ERRORS, len(MASTER_ERRORS) + 1)], right=[]), W2)
     def rem_of(n, total):
         return f"{n:,} of {total:,} ({n / total * 100:.0f}%)" if total else f"{n:,}"
 
