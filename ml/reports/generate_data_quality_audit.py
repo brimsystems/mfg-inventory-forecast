@@ -834,7 +834,7 @@ inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliab
     ERP = "ERP records only"
     REM_MASTER = [
         (f"Deactivated in the item master after a line-by-line review. The purchasing manager kept {d['dead_kept']} "
-         f"as seasonal spares, the rest were deactivated",
+         f"as seasonal spares",
          ERP, rem_of(d["dead_deactivated"], d["n_dead"])),
         ("Recalculated per item from receipt history using the median and a trimmed 80th percentile, then written "
          "to the master",
