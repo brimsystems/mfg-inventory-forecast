@@ -330,13 +330,6 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
-<p>Since January 2026 the demand forecasting model has been the shop's only source of reorder points. Every
-month it sets, for each of the {n_items:,} stocked items, the level of stock at which the ERP should reorder, and
-the ERP places its purchase suggestions against those points. The points rest on three things: a forecast of how
-much of the part the shop will use before a new order can arrive, learned from three years of cleaned
-consumption history; the part's corrected supplier lead time; and a safety buffer sized to how far off the
-forecast has been for parts like it. They replace the reorder points set at the ERP's go-live and never
-refreshed, and the spreadsheet the purchasing manager kept for the parts she no longer trusted the system on.</p>
 <p>From January through June 2026 the shop ran its purchasing on the cleaned records and on the model's reorder
 points. Against the first half of 2025, run the same way the shop had always run it, the fill rate rose from
 {pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout events fell from {H1['stockout_episodes']:,} to
@@ -363,6 +356,12 @@ instead is the next step (Section 3.4).</p>
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
 {B.section("what", "Section 2.1", "What This Model Does")}
+<p>Since January 2026 the demand forecasting model has been the shop's only source of reorder points. Every
+month it sets, for each of the {n_items:,} stocked items, the level of stock at which the ERP should reorder, and
+the ERP places its purchase suggestions against those points. The points rest on three things: a forecast of how
+much of the part the shop will use before a new order can arrive, learned from three years of cleaned
+consumption history; the part's corrected supplier lead time; and a safety buffer sized to how far off the
+forecast has been for parts like it.</p>
 <p>The model is built on XGBoost, a gradient-boosted decision-tree algorithm. It answers one question for every
 stocked item, once a month: <strong>how much of this part will the shop use before a new order placed today could
 arrive?</strong> That window differs by part. A fastener that arrives in two weeks and a gearmotor that takes two
