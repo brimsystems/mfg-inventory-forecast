@@ -601,7 +601,7 @@ def build(d):
          "Reorders are placed at the right time",
          pc(t_["lead_matches"]["before"]), pc(t_["lead_matches"]["after"])],
         ["Live items whose reorder point reflects real usage",
-         "Buying decisions rest on consumption, not go-live guesses",
+         "Reorders are based on actual inventory levels",
          pc(t_["rop_reflects_usage"]["before"]), pc(t_["rop_reflects_usage"]["after"])],
         ["Live items with complete required fields",
          "Every item can be costed, sourced and reordered",
@@ -683,33 +683,12 @@ def build(d):
 
     results = f"""
 {B.section("results", "Section 3", "Results")}
-<p>As a result of the data quality audit, remediation of errors, and fresh cycle counts, numerous
-measures of the ERP system's accuracy and reliability improved significantly. Most importantly, the
-vast majority of active item records are actually live, 100% of most identified data errors were
-resolved, and {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}% of total
+<p>As a result of the error remediation and fresh cycle counts, numerous measures of the ERP
+system's accuracy and reliability improved significantly. Importantly, the vast majority of active
+item records are now actually live, 100% of most identified data errors were resolved, and {tr['reliable_value']['after']/tr['reliable_value']['after_total']*100:.0f}% of total
 inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliable_value']['before_total']*100:.0f}%).</p>
 
 {trust_table}
-
-{sub("What the clean data makes possible")}
-<p>The cleanup improved forecast accuracy modestly and improved the decisions built on the forecast
-substantially. Only three of the sixteen errors touch the demand history a model learns from
-(duplicate records, free-text purchases and unrecorded consumption), so on the corrected history the
-same model's error falls from <strong>{d['threeway']['raw']*100:.0f}% to {d['threeway']['fully']*100:.0f}%</strong>
-overall (weighted absolute percentage error over the lead time on a held-out year), and by half on
-the {d['threeway_dups']['n']} parts that had been carried under more than one number, from
-{d['threeway_dups']['raw']*100:.0f}% to {d['threeway_dups']['fully']*100:.0f}%. The other thirteen errors
-corrupt what the forecast is used for: before the cleanup, even a perfect forecast would have been
-applied to a stale lead time, a book balance that had drifted from the shelf, on-order that was never
-coming and a reorder point nobody trusted. Holding the forecast fixed and running the same reorder
-rule through the year twice, once through those dirty inputs and once through the cleaned ones, with
-demand and supplier delivery identical in both, the clean inputs lift the fill rate from
-{d['decision']['dirty']['fill_rate']*100:.0f}% to {d['decision']['clean']['fill_rate']*100:.0f}% and cut the
-weeks an item spends stocked out from {d['decision']['dirty']['stockout_item_weeks']:,} to
-{d['decision']['clean']['stockout_item_weeks']:,}, while holding
-{(d['decision']['clean']['avg_inventory_value']/d['decision']['dirty']['avg_inventory_value']-1)*100:.0f}% more
-inventory, because the dirty inputs had been running the shop short. The forecast on the old data
-would have been a good guess applied to fiction; on the new data it is a decision the shop can act on.</p>
 """
 
     mc = ", ".join(f"{n} ({r:,} records)" for n, r in d["master_comp"])
