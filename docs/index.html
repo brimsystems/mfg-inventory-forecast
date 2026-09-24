@@ -1,246 +1,54 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reorder Queue &middot; JobBOSS</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reorder Queue | Enterprise Resource Planning</title>
 <style>
-  *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#F3F5F7;
-    color:#1a1a1a; font-size:14px; display:flex; min-height:100vh; }
-  .sidebar { width:210px; background:#322B4B; color:#cdd3de; flex-shrink:0; display:flex;
-    flex-direction:column; }
-  .brand { padding:20px 22px; font-size:17px; font-weight:800; color:#fff; letter-spacing:-.3px; }
-  .brand span { color:#54C0E8; font-weight:600; font-size:12px; }
-  .nav-item { padding:11px 22px; font-size:13.5px; cursor:default; border-left:3px solid transparent; }
-  .nav-item.active { background:rgba(255,255,255,.08); color:#fff; border-left-color:#54C0E8; font-weight:600; }
-  .sidebar-foot { margin-top:auto; padding:18px 22px; font-size:12px; color:#8b93a6; border-top:1px solid rgba(255,255,255,.08); }
-  .main { flex:1; min-width:0; }
-  .topbar { background:#fff; border-bottom:1px solid #E3E6EB; padding:16px 32px; display:flex;
-    align-items:center; justify-content:space-between; }
-  .topbar h1 { font-size:19px; font-weight:700; color:#322B4B; }
-  .topbar .sub { font-size:12.5px; color:#6B7280; margin-top:2px; }
-  .newpo { background:#381FA1; color:#fff; padding:9px 16px; border-radius:6px; font-size:13px; font-weight:600; }
-  .wrap { padding:24px 32px 40px; }
-  .kpis { display:flex; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
-  .kpi { flex:1; min-width:170px; background:#fff; border:1px solid #E3E6EB; border-radius:8px; padding:16px 20px; }
-  .kpi .v { font-size:26px; font-weight:800; line-height:1; }
-  .kpi .l { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:#6B7280; font-weight:700; margin-top:8px; }
-  .panel { background:#fff; border:1px solid #E3E6EB; border-radius:8px; overflow:hidden; }
-  .panel-head { padding:15px 20px; border-bottom:1px solid #E3E6EB; display:flex; align-items:center; justify-content:space-between; }
-  .panel-head h2 { font-size:15px; font-weight:700; color:#322B4B; }
-  .panel-head .filter { font-size:12px; color:#6B7280; border:1px solid #E3E6EB; border-radius:6px; padding:5px 10px; }
-  table { width:100%; border-collapse:collapse; }
-  thead th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.6px; color:#6B7280;
-    font-weight:700; padding:11px 16px; border-bottom:1px solid #E3E6EB; }
-  thead th.num, td.num { text-align:right; }
-  tbody td { padding:12px 16px; border-bottom:1px solid #F1F3F6; vertical-align:top; }
-  tbody tr:last-child td { border-bottom:none; }
-  .item { font-weight:700; color:#111; font-size:13.5px; }
-  .desc { color:#4b5563; font-size:12.5px; margin-top:1px; }
-  .reason { color:#6B7280; font-size:11.5px; margin-top:5px; }
-  .num { font-variant-numeric:tabular-nums; font-size:13.5px; color:#111; }
-  .unit { color:#6B7280; font-size:11px; }
-  .was { color:#CC0000; font-size:11px; }
-  .when { font-size:11px; color:#6B7280; margin-top:2px; }
-  .badge { display:inline-block; color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.4px;
-    padding:3px 9px; border-radius:20px; }
-  .tag { display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; margin-left:6px; }
-  .tag-lead { background:#FCEBD2; color:#8a5a06; }
-  .tag-merge { background:#E7E1F5; color:#4a3aa0; }
-  .tag-attr { background:#D6F0E5; color:#0a6b45; }
-  .foot { padding:16px 32px 30px; font-size:12px; color:#6B7280; }
-</style></head>
-<body>
-  <div class="sidebar">
-    <div class="brand">JobBOSS<span> / Purchasing</span></div>
-    <div class="nav-item">Dashboard</div><div class="nav-item">Purchase Orders</div><div class="nav-item">Receiving</div><div class="nav-item active">Reorder Queue</div><div class="nav-item">Items</div><div class="nav-item">Suppliers</div><div class="nav-item">Reports</div>
-    <div class="sidebar-foot">Buyer<br>M. Alvarez</div>
-  </div>
-  <div class="main">
-    <div class="topbar">
-      <div><h1>Reorder Queue</h1><div class="sub">Items ranked by urgency &middot; forecast demand over lead time &middot; as of August 31, 2026</div></div>
-      <div class="newpo">+ New Purchase Order</div>
-    </div>
-    <div class="wrap">
-      <div class="kpis">
-        <div class="kpi"><div class="v" style="color:#CC0000;">259</div><div class="l">Reorder now</div></div>
-        <div class="kpi"><div class="v" style="color:#E8920A;">83</div><div class="l">Due soon</div></div>
-        <div class="kpi"><div class="v" style="color:#00A84C;">458</div><div class="l">OK</div></div>
-        <div class="kpi"><div class="v" style="color:#322B4B;">$349K</div><div class="l">Suggested order value</div></div>
-        <div class="kpi"><div class="v" style="color:#381FA1;">210</div><div class="l">Items with data fixes</div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Items due for reorder</h2><div class="filter">All classes &#9662;</div></div>
-        <table>
-          <thead><tr>
-            <th>Item</th><th class="num">On hand</th><th class="num">Forecast demand</th>
-            <th class="num">Lead time</th><th class="num">Safety</th><th class="num">Suggested order</th><th>Priority</th>
-          </tr></thead>
-          <tbody><tr>
-      <td><div class="item">TL-00438</div>
-          <div class="desc">1/2 Insert 4FL Carbide</div>
-          <div class="reason">Steady consumption; routine replenishment</div></td>
-      <td class="num">12</td>
-      <td class="num">26 <span class="unit">/ 23d</span></td>
-      <td class="num">23d</td>
-      <td class="num">11</td>
-      <td class="num">51 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">SHT-00790</div>
-          <div class="desc">316 SS Sheet 18GA 48x96</div>
-          <div class="reason">Lead time corrected 12 to 22 days; Demand rising, up 26% over recent months<span class="tag tag-lead">lead corrected</span></div></td>
-      <td class="num">27</td>
-      <td class="num">57 <span class="unit">/ 22d</span></td>
-      <td class="num">22d <span class="was">was 12d</span></td>
-      <td class="num">31</td>
-      <td class="num">119 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">FAS-00221</div>
-          <div class="desc">3/8-16 x 5/16 HSHCS ZP</div>
-          <div class="reason">Demand easing versus recent months</div></td>
-      <td class="num">40</td>
-      <td class="num">84 <span class="unit">/ 16d</span></td>
-      <td class="num">16d</td>
-      <td class="num">23</td>
-      <td class="num">151 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">BAR-00634</div>
-          <div class="desc">2024-T3 Round 1/4 Bar</div>
-          <div class="reason">Demand easing versus recent months</div></td>
-      <td class="num">9</td>
-      <td class="num">18 <span class="unit">/ 17d</span></td>
-      <td class="num">17d</td>
-      <td class="num">8</td>
-      <td class="num">35 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">TL-00332</div>
-          <div class="desc">1/8 End Mill 4FL Carbide</div>
-          <div class="reason">Steady consumption; routine replenishment</div></td>
-      <td class="num">33</td>
-      <td class="num">60 <span class="unit">/ 29d</span></td>
-      <td class="num">29d</td>
-      <td class="num">23</td>
-      <td class="num">111 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">FAS-00568</div>
-          <div class="desc">1/8-28 x 3/4 BHCS SS</div>
-          <div class="reason">Lead time corrected 12 to 24 days<span class="tag tag-lead">lead corrected</span></div></td>
-      <td class="num">39</td>
-      <td class="num">68 <span class="unit">/ 24d</span></td>
-      <td class="num">24d <span class="was">was 12d</span></td>
-      <td class="num">31</td>
-      <td class="num">128 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">TL-00748</div>
-          <div class="desc">1/4 Tap 2FL Carbide</div>
-          <div class="reason">Steady consumption; routine replenishment</div></td>
-      <td class="num">1</td>
-      <td class="num">2 <span class="unit">/ 24d</span></td>
-      <td class="num">24d</td>
-      <td class="num">1</td>
-      <td class="num">4 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">FAS-00014-A</div>
-          <div class="desc">1/4-13 x 5/16 HHCS GR8</div>
-          <div class="reason">Demand history consolidated from duplicate records<span class="tag tag-merge">record merged</span></div></td>
-      <td class="num">23</td>
-      <td class="num">38 <span class="unit">/ 29d</span></td>
-      <td class="num">29d</td>
-      <td class="num">10</td>
-      <td class="num">64 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">SHT-00692</div>
-          <div class="desc">Ti-6Al-4V Sheet 11GA 48x96 48X120</div>
-          <div class="reason">Lead time corrected 12 to 20 days; Demand easing versus recent months<span class="tag tag-lead">lead corrected</span></div></td>
-      <td class="num">91</td>
-      <td class="num">143 <span class="unit">/ 20d</span></td>
-      <td class="num">20d <span class="was">was 12d</span></td>
-      <td class="num">52</td>
-      <td class="num">246 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">CON-00320</div>
-          <div class="desc">Shop Towels 1GAL GP</div>
-          <div class="reason">Demand history adjusted for recovered free-text purchases; Demand rising, up 28% over recent months<span class="tag tag-attr">demand recovered</span></div></td>
-      <td class="num">411</td>
-      <td class="num">662 <span class="unit">/ 13d</span></td>
-      <td class="num">13d</td>
-      <td class="num">402</td>
-      <td class="num">1,316 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">SHT-00191</div>
-          <div class="desc">A36 Plate Sheet 12GA 48x96</div>
-          <div class="reason">Lead time corrected 12 to 23 days; Demand easing versus recent months<span class="tag tag-lead">lead corrected</span></div></td>
-      <td class="num">5</td>
-      <td class="num">8 <span class="unit">/ 23d</span></td>
-      <td class="num">23d <span class="was">was 12d</span></td>
-      <td class="num">7</td>
-      <td class="num">17 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">FAS-00368</div>
-          <div class="desc">1/2-20 x 3/4 SHCS SS</div>
-          <div class="reason">Steady consumption; routine replenishment</div></td>
-      <td class="num">291</td>
-      <td class="num">447 <span class="unit">/ 10d</span></td>
-      <td class="num">10d</td>
-      <td class="num">201</td>
-      <td class="num">804 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">BAR-00450</div>
-          <div class="desc">2024-T3 Square 3/8 Bar</div>
-          <div class="reason">Steady consumption; routine replenishment</div></td>
-      <td class="num">12</td>
-      <td class="num">18 <span class="unit">/ 29d</span></td>
-      <td class="num">29d</td>
-      <td class="num">14</td>
-      <td class="num">39 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">CON-00041</div>
-          <div class="desc">Saw Blade BOX MK</div>
-          <div class="reason">Demand rising, up 23% over recent months</div></td>
-      <td class="num">119</td>
-      <td class="num">168 <span class="unit">/ 20d</span></td>
-      <td class="num">20d</td>
-      <td class="num">121</td>
-      <td class="num">337 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">TL-00366</div>
-          <div class="desc">1 Insert 2FL Carbide</div>
-          <div class="reason">Demand rising, up 53% over recent months</div></td>
-      <td class="num">308</td>
-      <td class="num">425 <span class="unit">/ 12d</span></td>
-      <td class="num">12d</td>
-      <td class="num">252</td>
-      <td class="num">795 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr><tr>
-      <td><div class="item">CON-00788</div>
-          <div class="desc">Shop Towels 55GAL TR</div>
-          <div class="reason">Demand rising, up 57% over recent months</div></td>
-      <td class="num">3</td>
-      <td class="num">4 <span class="unit">/ 28d</span></td>
-      <td class="num">28d</td>
-      <td class="num">2</td>
-      <td class="num">7 <span class="unit">ea</span><div class="when">now</div></td>
-      <td><span class="badge" style="background:#CC0000;">REORDER</span></td>
-    </tr></tbody>
-        </table>
-      </div>
-      <div class="foot">800 active items &middot; 259 due, 83 soon &middot;
-        210 items carry a resolved duplicate record or a corrected lead time &middot;
-        Forecasts by BRIM Demand Model (xgboost, test WAPE 49%)</div>
-    </div>
-  </div>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Segoe UI", Tahoma, Arial, sans-serif; font-size:12.5px; color:#1F2933; background:#fff; }
+  .top { background:#1F3A5F; color:#fff; display:flex; justify-content:space-between; align-items:center; padding:9px 16px; }
+  .top .app { font-size:17px; font-weight:700; }
+  .top .who { font-size:12px; color:#D6E2F0; }
+  .nav { background:#264A73; display:flex; }
+  .nav a { color:#E6EEF7; padding:9px 16px; font-size:12.5px; }
+  .nav a.on { background:#fff; color:#1F3A5F; font-weight:700; }
+  .crumb { padding:7px 16px; color:#5F6B7A; border-bottom:1px solid #D9DEE5; background:#F3F5F7; }
+  .crumb span { color:#2458A6; }
+  .head { display:flex; justify-content:space-between; align-items:flex-start; padding:12px 16px 6px; }
+  .head h1 { font-size:15px; }
+  .head .sub { color:#5F6B7A; margin-top:2px; }
+  .summary { border:1px solid #D9DEE5; border-radius:3px; padding:8px 14px; font-size:12px; color:#5F6B7A; }
+  .summary b { margin:0 3px 0 10px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:10px; }
+  .bar { display:flex; gap:6px; align-items:center; padding:6px 16px; }
+  .btn { border:1px solid #AEB8C4; background:#F7F9FB; padding:3px 10px; border-radius:2px; font-size:12px; }
+  .btn.dim { color:#9AA5B1; }
+  .sep { width:10px; }
+  .filters { display:flex; gap:12px; align-items:center; padding:6px 16px 8px; color:#5F6B7A; }
+  .sel { border:1px solid #AEB8C4; padding:2px 8px; color:#1F2933; background:#fff; }
+  table { border-collapse:collapse; width:calc(100% - 32px); margin:0 16px 16px; }
+  th { background:#E9EDF2; text-align:left; padding:6px 7px; border:1px solid #D9DEE5; font-weight:600; white-space:nowrap; }
+  td { padding:5px 7px; border:1px solid #D9DEE5; white-space:nowrap; }
+  td.r, th.r { text-align:right; } td.c { text-align:center; }
+  .mono { font-family:Consolas, monospace; }
+  .badge { color:#fff; font-weight:700; font-size:11px; padding:2px 7px; border-radius:3px; }
+  .tag { display:inline-block; border:1px solid #9FB3CC; color:#2458A6; background:#EEF4FB; border-radius:10px;
+          padding:0 7px; margin-right:4px; font-size:11px; }
+  .ml { background:#381FA1; color:#fff; font-size:10px; font-weight:700; padding:1px 4px; border-radius:2px; margin-left:4px; }
+</style></head><body>
+<div class="top"><div class="app">Enterprise Resource Planning</div>
+  <div class="who">K. Brooks (Buyer) &nbsp;&nbsp; Tuesday, June 30, 2026</div></div>
+<div class="nav"><a class="">Dashboard</a><a class="">Work Orders</a><a class="">Scheduling</a><a class="">Inventory</a><a class="on">Purchasing</a><a class="">Receiving</a><a class="">Reports</a><a class="">Admin</a></div>
+<div class="crumb"><span>Purchasing</span> &rsaquo; <span>Reorder</span> &rsaquo; Suggested Orders</div>
+<div class="head"><div><h1>Reorder Queue, Suggested Orders</h1>
+  <div class="sub">All stocked items against this month's reorder points &middot; 06/30/2026</div></div>
+  <div class="summary">REORDER SUMMARY <span class="dot" style="background:#C62828"></span><b>40</b>Order now
+  <span class="dot" style="background:#E8920A"></span><b>182</b>Order soon
+  <span class="dot" style="background:#2E7D32"></span><b>1,078</b>OK</div></div>
+<div class="bar"><span class="btn">+ Create PO</span><span class="btn dim">Edit</span><span class="btn">Release to PO</span>
+  <span class="btn">Hold</span><span class="sep"></span><span class="btn">Export</span></div>
+<div class="filters">Supplier: <span class="sel">All &#9662;</span> Class: <span class="sel">All &#9662;</span>
+  Action: <span class="sel">Order now + soon &#9662;</span> <span class="sel" style="width:220px;">&#128269; Search items...</span></div>
+<table><thead><tr><th>Item #</th><th>Description</th><th>ABC</th><th>Supplier</th><th class="r">On hand</th>
+<th class="r">On order</th><th class="r">Lead (days)</th><th class="r">Forecast over lead</th><th class="r">Safety stock</th>
+<th class="r">Reorder point</th><th class="r">Suggested qty</th><th>Action <span class="ml">ML</span></th><th>Changed by cleanup</th></tr></thead>
+<tbody><tr style="background:#FDF1F1;"><td class="mono">ELE-01290-A</td><td>Limit Switch 16AWG REV-B</td><td class="c">A</td><td>Doyle Ltd</td><td class="r">91</td><td class="r">0</td><td class="r">70</td><td class="r">137</td><td class="r">168</td><td class="r"><b>271</b></td><td class="r"><b>326</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00347-A</td><td>Pillow Block 10HP REV-A</td><td class="c">A</td><td>Walter, Edwards and Rios</td><td class="r">100</td><td class="r">0</td><td class="r">73</td><td class="r">167</td><td class="r">54</td><td class="r"><b>228</b></td><td class="r"><b>300</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00094-A</td><td>Servo Motor 184T</td><td class="c">A</td><td>Walter, Edwards and Rios</td><td class="r">93</td><td class="r">0</td><td class="r">18</td><td class="r">135</td><td class="r">77</td><td class="r"><b>212</b></td><td class="r"><b>682</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00183-A</td><td>Pillow Block 184T TEFC</td><td class="c">A</td><td>Blake and Sons</td><td class="r">148</td><td class="r">0</td><td class="r">69</td><td class="r">112</td><td class="r">76</td><td class="r"><b>190</b></td><td class="r"><b>163</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00726-A</td><td>Sprocket 56C REV-A</td><td class="c">A</td><td>Blake and Sons</td><td class="r">240</td><td class="r">273</td><td class="r">42</td><td class="r">469</td><td class="r">139</td><td class="r"><b>608</b></td><td class="r"><b>933</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">RM-01068</td><td>5052 Sheet Angle 3"</td><td class="c">A</td><td>Morales-Jones</td><td class="r">424</td><td class="r">0</td><td class="r">89</td><td class="r">163</td><td class="r">368</td><td class="r"><b>502</b></td><td class="r"><b>215</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00126</td><td>V-Belt 1HP</td><td class="c">A</td><td>Rodriguez, Figueroa and Sanchez</td><td class="r">92</td><td class="r">0</td><td class="r">96</td><td class="r">65</td><td class="r">31</td><td class="r"><b>105</b></td><td class="r"><b>65</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">ELE-01258-A</td><td>VFD 3PH 3</td><td class="c">A</td><td>Carlson-Cruz</td><td class="r">306</td><td class="r">0</td><td class="r">74</td><td class="r">82</td><td class="r">200</td><td class="r"><b>348</b></td><td class="r"><b>125</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00308-A</td><td>Pillow Block 10HP 56C</td><td class="c">A</td><td>Adams, Zuniga and Wong</td><td class="r">104</td><td class="r">0</td><td class="r">23</td><td class="r">42</td><td class="r">75</td><td class="r"><b>117</b></td><td class="r"><b>150</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00111</td><td>Timing Belt 10HP REV-A</td><td class="c">A</td><td>Adams, Zuniga and Wong</td><td class="r">50</td><td class="r">0</td><td class="r">49</td><td class="r">10</td><td class="r">39</td><td class="r"><b>56</b></td><td class="r"><b>21</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-01057</td><td>Pillow Block 10HP TEFC</td><td class="c">A</td><td>Arnold Ltd</td><td class="r">1,486</td><td class="r">0</td><td class="r">80</td><td class="r">275</td><td class="r">1,164</td><td class="r"><b>1,612</b></td><td class="r"><b>384</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">ELE-00469-A</td><td>Photo Sensor 24VDC</td><td class="c">A</td><td>Baker Mason and White</td><td class="r">139</td><td class="r">0</td><td class="r">19</td><td class="r">89</td><td class="r">75</td><td class="r"><b>150</b></td><td class="r"><b>361</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-01183</td><td>AC Motor 10HP 4</td><td class="c">A</td><td>Rodriguez, Figueroa and Sanchez</td><td class="r">54</td><td class="r">56</td><td class="r">85</td><td class="r">53</td><td class="r">56</td><td class="r"><b>117</b></td><td class="r"><b>54</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">RM-00454</td><td>5052 Sheet Channel 3"</td><td class="c">A</td><td>Morales-Jones</td><td class="r">144</td><td class="r">0</td><td class="r">71</td><td class="r">57</td><td class="r">85</td><td class="r"><b>152</b></td><td class="r"><b>68</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00752</td><td>Coupling 184T 56C</td><td class="c">A</td><td>Arnold Ltd</td><td class="r">52</td><td class="r">33</td><td class="r">87</td><td class="r">38</td><td class="r">39</td><td class="r"><b>88</b></td><td class="r"><b>36</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FDF1F1;"><td class="mono">MEC-00715</td><td>AC Motor 2HP REV-A</td><td class="c">A</td><td>Arnold Ltd</td><td class="r">182</td><td class="r">0</td><td class="r">91</td><td class="r">78</td><td class="r">79</td><td class="r"><b>186</b></td><td class="r"><b>68</b></td><td><span class="badge" style="background:#C62828;">&bull; ORDER NOW</span></td><td><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FFFAEF;"><td class="mono">MEC-00156-A</td><td>Timing Belt 1HP</td><td class="c">A</td><td>Blake and Sons</td><td class="r">206</td><td class="r">187</td><td class="r">61</td><td class="r">219</td><td class="r">236</td><td class="r"><b>391</b></td><td class="r"><b>267</b></td><td><span class="badge" style="background:#E8920A;">&bull; ORDER SOON</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FFFAEF;"><td class="mono">ELE-00923-A</td><td>Power Supply 24VDC</td><td class="c">A</td><td>Carlson-Cruz</td><td class="r">301</td><td class="r">0</td><td class="r">78</td><td class="r">96</td><td class="r">187</td><td class="r"><b>299</b></td><td class="r"><b>90</b></td><td><span class="badge" style="background:#E8920A;">&bull; ORDER SOON</span></td><td><span class="tag">Merged record</span><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FFFAEF;"><td class="mono">ELE-01215</td><td>Relay 14AWG 3</td><td class="c">A</td><td>Doyle Ltd</td><td class="r">185</td><td class="r">0</td><td class="r">33</td><td class="r">120</td><td class="r">63</td><td class="r"><b>183</b></td><td class="r"><b>271</b></td><td><span class="badge" style="background:#E8920A;">&bull; ORDER SOON</span></td><td></td></tr><tr style="background:#FFFAEF;"><td class="mono">MEC-00949</td><td>Gearmotor 1HP REV-A</td><td class="c">A</td><td>Rodriguez, Figueroa and Sanchez</td><td class="r">342</td><td class="r">0</td><td class="r">66</td><td class="r">184</td><td class="r">170</td><td class="r"><b>338</b></td><td class="r"><b>205</b></td><td><span class="badge" style="background:#E8920A;">&bull; ORDER SOON</span></td><td><span class="tag">Lead time corrected</span><span class="tag">History restored</span></td></tr><tr style="background:#FFFFFF;"><td class="mono">MEC-00884</td><td>Roller 2HP</td><td class="c">A</td><td>Arnold Ltd</td><td class="r">57</td><td class="r">58</td><td class="r">60</td><td class="r">44</td><td class="r">49</td><td class="r"><b>104</b></td><td class="r"><b>&ndash;</b></td><td><span class="badge" style="background:#2E7D32;">&bull; OK</span></td><td><span class="tag">Lead time corrected</span></td></tr><tr style="background:#FFFFFF;"><td class="mono">MEC-00822</td><td>Gearmotor 56C</td><td class="c">A</td><td>Arnold Ltd</td><td class="r">42</td><td class="r">0</td><td class="r">42</td><td class="r">12</td><td class="r">22</td><td class="r"><b>38</b></td><td class="r"><b>&ndash;</b></td><td><span class="badge" style="background:#2E7D32;">&bull; OK</span></td><td><span class="tag">History restored</span></td></tr></tbody></table>
 </body></html>

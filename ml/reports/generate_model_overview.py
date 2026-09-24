@@ -78,12 +78,12 @@ def sub(t):
 
 # ── charts ────────────────────────────────────────────────────────────────────
 def chart_halves():
-    """Stockout episodes, days short and rush spend by half-year, as the shop ran it."""
+    """Stockout events, days short and rush spend by half-year, as the shop ran it."""
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.2))
     labels = ["1H25", "2H25", "1H26"]
     series = [H1, H2, F["model"]]
-    panels = [("Stockout episodes", [s["stockout_episodes"] for s in series], "{:,.0f}"),
+    panels = [("Stockout events", [s["stockout_episodes"] for s in series], "{:,.0f}"),
               ("Jobs held for material", [s["jobs_delayed"] for s in series], "{:,.0f}"),
               ("Rush spend ($000)", [s["rush_spend"] / 1000 for s in series], "${:,.0f}K")]
     for ax, (title, vals, fmt) in zip(axes, panels):
@@ -105,7 +105,7 @@ def chart_variants():
     cols = [MED_GREY, LIGHT_BLUE, DARK_BLUE]
     vals = [M46[v] for v, _ in VARIANTS]
     panels = [("A-class fill rate", [x["fill_rate_by_abc"]["A"] * 100 for x in vals], "{:.1f}%", True),
-              ("Stockout episodes", [x["stockout_episodes"] for x in vals], "{:,.0f}", False),
+              ("Stockout events", [x["stockout_episodes"] for x in vals], "{:,.0f}", False),
               ("Average inventory ($000)", [x["avg_inventory_value"] / 1000 for x in vals], "${:,.0f}K", False)]
     for ax, (title, v, fmt, zoom) in zip(axes, panels):
         bars = ax.bar(names, v, color=cols, width=0.62)
@@ -148,7 +148,7 @@ def halves_table():
         ("Fill rate, A items", lambda s: pct(s["fill_rate_by_abc"]["A"])),
         ("Fill rate, B items", lambda s: pct(s["fill_rate_by_abc"]["B"])),
         ("Fill rate, C items", lambda s: pct(s["fill_rate_by_abc"]["C"])),
-        ("Stockout episodes", lambda s: f"{s['stockout_episodes']:,}"),
+        ("Stockout events", lambda s: f"{s['stockout_episodes']:,}"),
         ("Stockout days (item-days short)", lambda s: f"{s['stockout_days']:,}"),
         ("Jobs held for material", lambda s: f"{s['jobs_delayed']:,}"),
         ("Days lost on held jobs", lambda s: f"{s['job_delay_days']:,}"),
@@ -169,7 +169,7 @@ def variants_table(window):
     spec = [
         ("Fill rate", lambda s: pct(s["fill_rate"])),
         ("Fill rate, A / B / C", lambda s: " / ".join(pct(s["fill_rate_by_abc"][a]) for a in "ABC")),
-        ("Stockout episodes", lambda s: f"{s['stockout_episodes']:,}"),
+        ("Stockout events", lambda s: f"{s['stockout_episodes']:,}"),
         ("Stockout days, A items", lambda s: f"{s['stockout_days_by_abc']['A']:,}"),
         ("Jobs held for material", lambda s: f"{s['jobs_delayed']:,}"),
         ("Rush freight and premiums", lambda s: money(s["rush_spend"])),
@@ -236,7 +236,87 @@ def candidate_table():
                   [34, 24, 24, 18])
 
 
-charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy()}
+hist = monthly[monthly["month"] < "2026-01-01"].merge(
+    attrs[["canonical_item_number", "segment", "abc", "standard_cost"]], left_on="canonical", right_on="canonical_item_number")
+hist["value"] = hist["consumption"] * hist["standard_cost"].fillna(attrs["standard_cost"].median())
+SEG_COL = {"smooth": DARK_BLUE, "erratic": LIGHT_BLUE, "lumpy": "#8093A4", "intermittent": "#D5DCE1"}
+
+
+def chart_history_value():
+    """Monthly consumption at standard cost over the three years, by demand pattern."""
+    fig, ax = B.make_fig(3.6)
+    w = hist.pivot_table(index="month", columns="segment", values="value", aggfunc="sum").fillna(0)[SEG_ORDER] / 1000
+    ax.stackplot(w.index, [w[c] for c in SEG_ORDER], colors=[SEG_COL[c] for c in SEG_ORDER],
+                 labels=[c.capitalize() for c in SEG_ORDER], alpha=0.95)
+    tot = w.sum(axis=1); x = np.arange(len(tot)); fit = np.polyfit(x, tot.to_numpy(), 1)
+    ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2, label="Trend")
+    ax.set_ylabel("Consumption at cost ($000 / month)")
+    B.chart_style(ax)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=5, fontsize=9)
+    return B.b64(fig)
+
+
+def chart_examples():
+    """One representative item per demand pattern, 36 months of monthly consumption."""
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 2.6), sharey=False)
+    for ax, seg in zip(axes, SEG_ORDER):
+        g = hist[hist["segment"] == seg]
+        tot = g.groupby("canonical")["consumption"].sum()
+        item = tot.sort_values().index[int(len(tot) * 0.6)]          # a typical, not an extreme, item
+        sr = g[g["canonical"] == item].set_index("month")["consumption"].reindex(
+            pd.date_range("2023-01-01", "2025-12-01", freq="MS"), fill_value=0)
+        ax.bar(sr.index, sr.values, width=20, color=SEG_COL[seg] if seg != "intermittent" else "#8093A4")
+        ax.set_title(f"{seg.capitalize()}\n{item}", fontsize=9, color=DARK_GREY)
+        ax.tick_params(axis="x", labelsize=7, rotation=0); ax.tick_params(axis="y", labelsize=7)
+        ax.xaxis.set_major_locator(__import__("matplotlib.dates", fromlist=["YearLocator"]).YearLocator())
+        ax.xaxis.set_major_formatter(__import__("matplotlib.dates", fromlist=["DateFormatter"]).DateFormatter("%Y"))
+        B.chart_style(ax)
+    axes[0].set_ylabel("Units / month", fontsize=8)
+    fig.tight_layout(w_pad=1.2)
+    return B.b64(fig)
+
+
+def chart_pareto():
+    """Share of consumption value against share of items, with the ABC cut-offs."""
+    fig, ax = B.make_fig(3.3)
+    v = hist[hist["month"] >= "2025-01-01"].groupby("canonical")["value"].sum().sort_values(ascending=False)
+    cum = v.cumsum() / v.sum() * 100; share = np.arange(1, len(v) + 1) / len(v) * 100
+    ax.plot(share, cum.values, color=DARK_BLUE, linewidth=2)
+    nA, nB = abc_n.get("A", 0), abc_n.get("B", 0)
+    for n_, lab in ((nA, "A"), (nA + nB, "B")):
+        x_ = n_ / len(v) * 100; y_ = float(cum.iloc[min(n_, len(v)) - 1])
+        ax.axvline(x_, color=MED_GREY, linestyle=":", linewidth=1)
+        ax.text(x_ + 1, 8, f"{lab} items end\n{x_:.0f}% of items, {y_:.0f}% of value", fontsize=8, color=DARK_GREY)
+    ax.set_xlabel("Share of items, highest consumption value first (%)"); ax.set_ylabel("Cumulative share of value (%)")
+    ax.set_xlim(0, 100); ax.set_ylim(0, 102)
+    B.chart_style(ax)
+    return B.b64(fig)
+
+
+FLOW_HTML = (
+    '<div style="display:flex;align-items:stretch;gap:0;margin:22px 0;flex-wrap:wrap;">'
+    '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
+    '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">1. What it reads</div>'
+    '<div style="font-size:16px;line-height:1.55;">Three years of cleaned consumption history for every stocked item, '
+    'with its demand pattern, value class, cost and corrected supplier lead time.</div></div>'
+    '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
+    '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
+    '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div>'
+    '<div style="font-size:16px;line-height:1.55;">Once a month, one forecast per item: how many units the shop will use '
+    'before a new order placed today could arrive.</div></div>'
+    '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
+    '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
+    '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">3. What it produces</div>'
+    '<div style="font-size:16px;line-height:1.55;">A reorder point per item, the forecast plus a safety buffer, loaded into '
+    'the ERP, which checks every item against it daily and flags what to order.</div></div></div>')
+
+import base64
+_png = REPO / "docs" / "screenshots" / "erp_queue.png"
+erp_b64 = base64.b64encode(_png.read_bytes()).decode() if _png.exists() else ""
+
+charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy(),
+          "hist": chart_history_value(), "examples": chart_examples(), "pareto": chart_pareto()}
 
 toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#modeloverview">Model Overview</a>'
@@ -250,15 +330,16 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
-<p>The demand forecasting model tells the purchasing team how much of each stocked part the shop will
-consume before a new order can arrive, and turns that into the reorder point the ERP buys against. It is an
-XGBoost model trained on three years of the shop's cleaned consumption history for {n_items:,} purchased items.
-At the start of every month it is retrained, forecasts each item's demand over that item's own replenishment
-lead time, and sets a reorder point from the forecast plus a safety stock sized to the forecast's own error.
-Since January 2026 it has set the reorder points the shop buys on.</p>
+<p>Since January 2026 the demand forecasting model has been the shop's only source of reorder points. Every
+month it sets, for each of the {n_items:,} stocked items, the level of stock at which the ERP should reorder, and
+the ERP places its purchase suggestions against those points. The points rest on three things: a forecast of how
+much of the part the shop will use before a new order can arrive, learned from three years of cleaned
+consumption history; the part's corrected supplier lead time; and a safety buffer sized to how far off the
+forecast has been for parts like it. They replace the reorder points set at the ERP's go-live and never
+refreshed, and the spreadsheet the purchasing manager kept for the parts she no longer trusted the system on.</p>
 <p>From January through June 2026 the shop ran its purchasing on the cleaned records and on the model's reorder
 points. Against the first half of 2025, run the same way the shop had always run it, the fill rate rose from
-{pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout episodes fell from {H1['stockout_episodes']:,} to
+{pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout events fell from {H1['stockout_episodes']:,} to
 {mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to {mod['jobs_delayed']}, and rush
 freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}. The shop holds more stock to do it:
 {k(mod['avg_inventory_value'])} on average against {k(H1['avg_inventory_value'])}.</p>
@@ -275,48 +356,52 @@ instead is the next step (Section 3.4).</p>
 
 {B.kpi_row(
     B.kpi_card(f"{pct(H1['fill_rate'])} &rarr; {pct(mod['fill_rate'])}", "Fill rate", "1H25 to 1H26", DARK_BLUE),
-    B.kpi_card(f"{H1['stockout_episodes']:,} &rarr; {mod['stockout_episodes']:,}", "Stockout episodes", "1H25 to 1H26", GREEN),
+    B.kpi_card(f"{H1['stockout_episodes']:,} &rarr; {mod['stockout_episodes']:,}", "Stockout events", "1H25 to 1H26", GREEN),
     B.kpi_card(f"{k(H1['rush_spend'])} &rarr; {k(mod['rush_spend'])}", "Rush spend", "1H25 to 1H26", GREEN),
     B.kpi_card(f"{pct(tw['raw'], 0)} &rarr; {pct(tw['fully'], 0)}", "Forecast error", "before and after cleaning", DARK_BLUE))}
 
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
 {B.section("what", "Section 2.1", "What This Model Does")}
-<p>The model answers one question for every stocked item, every month: <strong>how much of this part will the
-shop use before a new order can arrive?</strong> It does not forecast a fixed 30 or 90 days. A fastener that
-arrives in two weeks and a gearmotor that takes two months are different questions, and the reorder decision
-only cares about the demand that lands before the next delivery does, so the model forecasts demand over each
-item's own replenishment lead time.</p>
-<p>That forecast becomes the reorder point in three steps. First, the forecast is corrected for bias: trained on
-log demand, the model forecasts something nearer the median than the mean, and a reorder point needs the mean,
-so each forecast is scaled by the ratio of actual to forecast demand for its demand pattern on the 2025
-backtest. Second, a safety stock is added: k times the item's forecast error over the lead time, where k was
-calibrated on the 2025 backtest as the quantile of the errors at each class's service level rather than
-assumed from the normal curve (A {k_abc['A']:.2f} against a normal {z['A']:.2f}, B {k_abc['B']:.2f} against
-{z['B']:.2f}, C {k_abc['C']:.2f} against {z['C']:.2f}). Third, the point is held steady unless the fresh value
-differs by more than {sched['hysteresis']*100:.0f}%, because buyers stop trusting numbers that jump around.
-Without that band every point would change every month, and {churn['without_hysteresis']*100:.0f}% of them by
-more than a fifth; with it, {churn['with_hysteresis']*100:.0f}% of item-months see a change at all.</p>
-<p>The model is retrained on the first of every month on the cleaned history to date, and the new reorder points
-are loaded into the ERP, which places orders against them as it always has.</p>
+<p>The model is built on XGBoost, a gradient-boosted decision-tree algorithm. It answers one question for every
+stocked item, once a month: <strong>how much of this part will the shop use before a new order placed today could
+arrive?</strong> That window differs by part. A fastener that arrives in two weeks and a gearmotor that takes two
+months are different questions, and the reorder decision only cares about the demand that lands before the next
+delivery does.</p>
+{FLOW_HTML}
+<p>The model makes one forecast per item per month; the ERP does the daily work. Each forecast becomes a reorder
+point: the expected usage over the lead time, plus a safety buffer for the months when demand runs above the
+forecast, larger for the high-value parts the shop can least afford to run out of. The ERP then compares every
+item's stock on hand and on order against its point each day, and suggests an order when an item falls to it.
+Points only change when the new forecast moves them meaningfully, so buyers are not chasing small month-to-month
+changes.</p>
+<p>The model is embedded in the ERP's purchasing screen. The reorder queue below ranks every stocked item against
+this month's point: items at or below it are marked ORDER NOW, items within two weeks of it ORDER SOON, and each
+line shows the forecast, the safety stock and the suggested order quantity, with tags where the cleanup changed
+the item (a merged record, a corrected lead time or bill, restored history) so the buyer sees why a number moved.</p>
+<div class="chart-wrap" style="padding:6px;">
+  <img src="data:image/png;base64,{erp_b64}" alt="ERP reorder queue with the demand model's reorder points"
+       style="width:100%;height:auto;display:block;border:1px solid #D5DCE1;">
+</div>
 
 {B.section("data", "Section 2.2", "Training Data Overview")}
-<p>The model learns from the shop's monthly consumption history for {n_items:,} purchased items, January 2023 to
-the month before each forecast: issues to jobs and service orders, backflushed components and manual pulls.
-The items fall into four demand patterns, which behave differently and are scored separately:
-{seg_n.get('smooth', 0)} smooth (steady, regular demand), {seg_n.get('erratic', 0)} erratic (regular but
-variable), {seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent
-(many months with no demand at all). By value, {abc_n.get('A', 0)} are A items carrying most of the spend,
-{abc_n.get('B', 0)} B and {abc_n.get('C', 0)} C.</p>
-<p>That history is the one the data quality audit cleaned, and the cleaning matters to what the model can learn.
-The same model, with the same features, was run on the history at three stages of cleaning. Across all items
-the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
-cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls from
-{pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
-{pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
-history; the other thirteen corrupt what the forecast is used for, which is why Section 3.3 is where the
-cleanup shows its value.</p>
-{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
+<p>The model learns from the shop's monthly consumption of every stocked item, January 2023 onward: parts
+backflushed to production jobs, parts issued to service orders, and parts pulled by hand. This is the history the
+data quality audit cleaned, with duplicate records merged, free-text purchases returned to their items and the
+components missing from the bills restored, so each series is the part's actual usage. Over the three years
+before the forward window the shop consumed about {k(hist['value'].sum()/3)} of parts a year at standard cost,
+across {n_items:,} items.</p>
+{B.chart("Monthly consumption at cost, January 2023 to December 2025, by demand pattern", charts["hist"])}
+<p>Demand is steady in aggregate, roughly flat over the three years, but the total hides very different behaviour
+underneath. The items fall into four demand patterns, which the model treats differently:
+{seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but variable),
+{seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent (many months
+with no demand at all). One typical item of each is shown below.</p>
+{B.chart("Three years of monthly consumption, one typical item per demand pattern", charts["examples"])}
+<p>Value is concentrated. A small share of items carries most of the consumption value, which is why the safety
+buffers are set by value class: {abc_n.get('A', 0)} A items, {abc_n.get('B', 0)} B items and {abc_n.get('C', 0)} C
+items, with the A items held to the highest service level.</p>
+{B.chart("Consumption value concentration, 2025", charts["pareto"])}
 
 {B.section("performance", "Section 3", "Model Performance")}
 
@@ -340,6 +425,15 @@ demand. The model learned on the cleaned history through 2024, was tuned on a bl
 was then scored on a held-out year of rolling forecasts in 2025. Three candidate algorithms were each tuned and
 compared on the validation months; XGBoost was carried forward.</p>
 {candidate_table()}
+<p>The cleaning matters to what the model can learn.
+The same model, with the same features, was run on the history at three stages of cleaning. Across all items
+the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
+cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls from
+{pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
+{pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
+history; the other thirteen corrupt what the forecast is used for, which is why Section 3.3 is where the
+cleanup shows its value.</p>
+{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
 <p>On the held-out year the model beats the best simple method for each demand pattern (a moving average, last
 year's month or Croston's method, whichever did best):</p>
 {accuracy_table()}
@@ -366,7 +460,7 @@ Across the full six months:</p>
 {variants_table(M13)}
 {sub("Months 4 to 6 (steady state)")}
 {variants_table(M46)}
-<p>The cleanup does the heavy lifting: in steady state, stockout episodes fall from {dirty46['stockout_episodes']:,}
+<p>The cleanup does the heavy lifting: in steady state, stockout events fall from {dirty46['stockout_episodes']:,}
 with nothing fixed to {rule46['stockout_episodes']:,} on the cleaned records, and rush spend from
 {k(dirty46['rush_spend'])} to {k(rule46['rush_spend'])}. The model then cuts stockouts to
 {mod46['stockout_episodes']:,} and A-item days short from {rule46['stockout_days_by_abc']['A']:,} to

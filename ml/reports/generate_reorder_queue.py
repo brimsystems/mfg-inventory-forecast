@@ -1,176 +1,194 @@
-"""Primary deliverable: the ERP purchasing reorder queue with the model embedded.
+"""Primary deliverable: the ERP purchasing reorder queue with the demand model embedded.
 
-A JobBOSS-style buyer's screen. Items due for reorder are ranked by urgency, each
-with the forecast demand over its lead time, current on-hand, the actual lead time
-in use, safety stock, a suggested order, and a short reason. Items whose record
-was merged or whose lead time was corrected are flagged so the buyer sees what
-changed. Writes docs/index.html.
+An ERP buyer's screen, as of the last day of the forward window. Every stocked
+item carries the model's reorder point for the month (the corrected forecast of
+demand over the item's lead time plus safety stock), compared with its on-hand
+and genuinely open on-order. Items at or below the point are ORDER NOW, items
+within two weeks of it are ORDER SOON, and each line flags where the cleanup
+changed the item (merged record, corrected lead time, corrected bill, restored
+history) so the buyer sees why a number moved. Writes docs/index.html.
 
 Run:  python -m ml.reports.generate_reorder_queue
 """
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[2]
-REC = REPO / "ml" / "data" / "scoring" / "reorder_recommendations.parquet"
-METRICS = REPO / "ml" / "data" / "backtest" / "model_metrics.json"
+RAW = REPO / "data_source" / "raw"
+REM = RAW / "remediation"
 OUT = REPO / "docs" / "index.html"
-AS_OF = "August 31, 2026"
 
-BRAND = "#322B4B"; RED = "#CC0000"; AMBER = "#E8920A"; GREEN = "#00A84C"
-BLUE = "#381FA1"; LIGHT = "#54C0E8"; BG = "#F3F5F7"; LINE = "#E3E6EB"; MUTED = "#6B7280"
-NROWS = 16
+import sys
+sys.path.insert(0, str(REPO))
+from data_source.generate import config as C  # noqa: E402
 
-NAV = ["Dashboard", "Purchase Orders", "Receiving", "Reorder Queue", "Items", "Suppliers", "Reports"]
+AS_OF = C.AS_OF_DATE
+ORDER_COVER_DAYS = C.ORDER_COVER_DAYS
+SOON_DAYS = 14
+NROWS = 22
+SIGN = {"RECEIPT": 1, "ISSUE": -1, "BACKFLUSH": -1, "ADJUST": 1}
 
-
-def _priority_badge(p):
-    color = {"REORDER": RED, "SOON": AMBER, "OK": GREEN}[p]
-    return f'<span class="badge" style="background:{color};">{p}</span>'
-
-
-def _flag_tags(r):
-    tags = ""
-    if r["flag_lead_corrected"]:
-        tags += '<span class="tag tag-lead">lead corrected</span>'
-    if r["flag_merged"]:
-        tags += '<span class="tag tag-merge">record merged</span>'
-    if r.get("flag_attribution"):
-        tags += '<span class="tag tag-attr">demand recovered</span>'
-    return tags
+BRAND = "#1F3A5F"; NAVBG = "#264A73"; RED = "#C62828"; AMBER = "#E8920A"; GREEN = "#2E7D32"
+BLUE = "#381FA1"; BG = "#F3F5F7"; LINE = "#D9DEE5"; MUTED = "#5F6B7A"; ROWRED = "#FDF1F1"; ROWAMB = "#FFFAEF"
 
 
-def _row(r):
-    lead = f'{r["corrected_lead_days"]}d'
-    if r["flag_lead_corrected"]:
-        lead += f' <span class="was">was {r["master_lead_time_days"]}d</span>'
-    order = f'{r["suggested_qty"]:,} <span class="unit">ea</span>' if r["suggested_qty"] > 0 else "&mdash;"
-    when = "now" if r["priority"] == "REORDER" else ("this week" if r["priority"] == "SOON" else "&mdash;")
-    return f"""<tr>
-      <td><div class="item">{r['item_number']}</div>
-          <div class="desc">{r['description']}</div>
-          <div class="reason">{r['reason']}{_flag_tags(r)}</div></td>
-      <td class="num">{int(r['on_hand']):,}</td>
-      <td class="num">{r['forecast_ltd']:.0f} <span class="unit">/ {r['corrected_lead_days']}d</span></td>
-      <td class="num">{lead}</td>
-      <td class="num">{int(r['safety_stock']):,}</td>
-      <td class="num">{order}<div class="when">{when}</div></td>
-      <td>{_priority_badge(r['priority'])}</td>
-    </tr>"""
+def build_queue():
+    sched = json.loads((REPO / "ml" / "data" / "policy" / "rop_schedule.json").read_text())
+    attrs = pd.read_parquet(REPO / "ml" / "data" / "marts" / "item_attributes.parquet").set_index("canonical_item_number")
+    im = pd.read_csv(RAW / "erp" / "item_master.csv", low_memory=False).set_index("item_number")
+    sup = pd.read_csv(RAW / "erp" / "supplier_master.csv").set_index("supplier_id")
+    po = pd.read_csv(RAW / "erp" / "purchase_orders.csv", low_memory=False)
+    xw = pd.read_csv(REPO / "data_pipeline" / "seeds" / "item_crosswalk.csv").set_index("item_number")["canonical_item_number"].to_dict()
+    lead = pd.read_csv(REM / "lead_time_computation.csv")
+    bom = pd.read_csv(REM / "bom_change_log.csv")
+    ft = pd.read_csv(REM / "free_text_attribution.csv")
+    sup_xw = pd.read_csv(REM / "supplier_crosswalk.csv") if (REM / "supplier_crosswalk.csv").exists() else None
+
+    canon = lambda n: xw.get(n, n)
+    # suppliers under their canonical record, as the crosswalk left them
+    sup_canon = json.loads((REPO / "data_source" / "truth" / "crosswalks.json").read_text())["supplier_id_to_canonical"]
+    # on hand: the balance the ERP carries after the merge and the cycle counts,
+    # one record per part (the counts restate each surviving record to the shelf)
+    phys = json.loads((REPO / "data_source" / "truth" / "physical_on_hand_end.json").read_text())
+    on_hand = pd.Series({canon(n): max(0.0, float(v)) for n, v in phys.items()})
+    # on order: lines still open that are genuinely inbound (the stale ones were closed)
+    op = po[(po["status"] == "OPEN") & (po["qty_ordered"] > po["qty_received"])
+            & (pd.to_datetime(po["order_date"]) >= pd.Timestamp(AS_OF) - pd.Timedelta(days=90))]
+    on_order = (op["qty_ordered"] - op["qty_received"]).groupby(op["item_number"].map(canon)).sum()
+
+    merged = {canon(n) for n, c in xw.items() if n != c}
+    stale = lead[(lead["median_actual"] - lead["master_lead_time"]).abs() > 3]["item_number"].map(canon)
+    lead_fixed = set(stale)
+    bom_fixed = set(bom["component_item"].map(canon))
+    restored = set(ft.loc[ft["confirmation"] == "confirmed", "probable_item_number"].dropna().map(canon))
+
+    rows = []
+    for item, entries in sched["items"].items():
+        if item not in attrs.index:
+            continue
+        d_, rop, ss, pred, h_days = entries[-1]
+        a = attrs.loc[item]
+        lt = float(a["corrected_lead_days"])
+        daily = float(pred) / max(1.0, float(h_days))
+        fc_lead = daily * lt
+        oh = float(on_hand.get(item, 0.0)); oo = float(on_order.get(item, 0.0))
+        position = oh + oo
+        cover = position / daily if daily > 0 else np.inf
+        if position <= rop:
+            status = "ORDER NOW"
+        elif position <= rop + daily * SOON_DAYS:
+            status = "ORDER SOON"
+        else:
+            status = "OK"
+        suggested = max(0.0, rop + daily * ORDER_COVER_DAYS - position) if status != "OK" else 0.0
+        sid = sup_canon.get(im["primary_supplier_id"].get(item), im["primary_supplier_id"].get(item))
+        sname = sup["supplier_name"].get(sid, "") if isinstance(sid, str) else ""
+        flags = [f for f, on in (("Merged record", item in merged), ("Lead time corrected", item in lead_fixed),
+                                 ("BOM corrected", item in bom_fixed), ("History restored", item in restored)) if on]
+        rows.append({"item": item, "desc": im["description"].get(item, ""), "abc": a["abc"], "supplier": sname,
+                     "on_hand": oh, "on_order": oo, "lead": lt, "fc_lead": fc_lead, "ss": float(ss), "rop": float(rop),
+                     "suggested": suggested, "status": status, "cover": cover, "cost": float(a["standard_cost"]),
+                     "flags": flags})
+    q = pd.DataFrame(rows)
+    q["rank"] = q["status"].map({"ORDER NOW": 0, "ORDER SOON": 1, "OK": 2})
+    q["gap"] = (q["on_hand"] + q["on_order"] - q["rop"]) / q["rop"].clip(lower=1)
+    return q.sort_values(["rank", "abc", "gap"]).reset_index(drop=True)
 
 
-def build():
-    rec = pd.read_parquet(REC)
-    metrics = json.loads(METRICS.read_text()) if METRICS.exists() else {}
-    wape = metrics.get("overall", {}).get("model")
-    wape_txt = f"test WAPE {wape*100:.0f}%" if wape else "test WAPE"
+def _fmt(x):
+    return f"{x:,.0f}"
 
-    n_reorder = int((rec["priority"] == "REORDER").sum())
-    n_soon = int((rec["priority"] == "SOON").sum())
-    n_ok = int((rec["priority"] == "OK").sum())
-    order_value = float((rec.loc[rec["priority"] == "REORDER", "suggested_qty"]
-                         * rec.loc[rec["priority"] == "REORDER", "unit_cost"]).sum())
-    n_flag = int((rec["flag_merged"] | rec["flag_lead_corrected"] | rec.get("flag_attribution", False)).sum())
 
-    due = rec[rec["priority"] == "REORDER"].sort_values("cover_days").head(NROWS)
-    body_rows = "".join(_row(r) for _, r in due.iterrows())
-    nav_html = "".join(
-        f'<div class="nav-item{" active" if n == "Reorder Queue" else ""}">{n}</div>' for n in NAV)
-
+def render(q):
+    counts = q["status"].value_counts().to_dict()
+    now, soon, ok = counts.get("ORDER NOW", 0), counts.get("ORDER SOON", 0), counts.get("OK", 0)
+    show = pd.concat([q[q["status"] == "ORDER NOW"].head(NROWS - 6), q[q["status"] == "ORDER SOON"].head(4),
+                      q[q["status"] == "OK"].head(2)])
+    badge = {"ORDER NOW": RED, "ORDER SOON": AMBER, "OK": GREEN}
+    rowbg = {"ORDER NOW": ROWRED, "ORDER SOON": ROWAMB, "OK": "#FFFFFF"}
+    trs = []
+    for r in show.itertuples(index=False):
+        tags = "".join(f'<span class="tag">{f}</span>' for f in r.flags)
+        trs.append(
+            f'<tr style="background:{rowbg[r.status]};">'
+            f'<td class="mono">{r.item}</td><td>{r.desc}</td><td class="c">{r.abc}</td><td>{r.supplier}</td>'
+            f'<td class="r">{_fmt(r.on_hand)}</td><td class="r">{_fmt(r.on_order)}</td><td class="r">{r.lead:.0f}</td>'
+            f'<td class="r">{_fmt(r.fc_lead)}</td><td class="r">{_fmt(r.ss)}</td><td class="r"><b>{_fmt(r.rop)}</b></td>'
+            f'<td class="r"><b>{_fmt(r.suggested) if r.suggested else "&ndash;"}</b></td>'
+            f'<td><span class="badge" style="background:{badge[r.status]};">&bull; {r.status}</span></td>'
+            f'<td>{tags}</td></tr>')
+    nav = "".join(f'<a class="{"on" if n == "Purchasing" else ""}">{n}</a>'
+                  for n in ["Dashboard", "Work Orders", "Scheduling", "Inventory", "Purchasing", "Receiving", "Reports", "Admin"])
+    day = pd.Timestamp(AS_OF).strftime("%A, %B %d, %Y")
     html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reorder Queue &middot; JobBOSS</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reorder Queue | Enterprise Resource Planning</title>
 <style>
-  *,*::before,*::after {{ box-sizing:border-box; margin:0; padding:0; }}
-  body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:{BG};
-    color:#1a1a1a; font-size:14px; display:flex; min-height:100vh; }}
-  .sidebar {{ width:210px; background:{BRAND}; color:#cdd3de; flex-shrink:0; display:flex;
-    flex-direction:column; }}
-  .brand {{ padding:20px 22px; font-size:17px; font-weight:800; color:#fff; letter-spacing:-.3px; }}
-  .brand span {{ color:{LIGHT}; font-weight:600; font-size:12px; }}
-  .nav-item {{ padding:11px 22px; font-size:13.5px; cursor:default; border-left:3px solid transparent; }}
-  .nav-item.active {{ background:rgba(255,255,255,.08); color:#fff; border-left-color:{LIGHT}; font-weight:600; }}
-  .sidebar-foot {{ margin-top:auto; padding:18px 22px; font-size:12px; color:#8b93a6; border-top:1px solid rgba(255,255,255,.08); }}
-  .main {{ flex:1; min-width:0; }}
-  .topbar {{ background:#fff; border-bottom:1px solid {LINE}; padding:16px 32px; display:flex;
-    align-items:center; justify-content:space-between; }}
-  .topbar h1 {{ font-size:19px; font-weight:700; color:{BRAND}; }}
-  .topbar .sub {{ font-size:12.5px; color:{MUTED}; margin-top:2px; }}
-  .newpo {{ background:{BLUE}; color:#fff; padding:9px 16px; border-radius:6px; font-size:13px; font-weight:600; }}
-  .wrap {{ padding:24px 32px 40px; }}
-  .kpis {{ display:flex; gap:16px; margin-bottom:22px; flex-wrap:wrap; }}
-  .kpi {{ flex:1; min-width:170px; background:#fff; border:1px solid {LINE}; border-radius:8px; padding:16px 20px; }}
-  .kpi .v {{ font-size:26px; font-weight:800; line-height:1; }}
-  .kpi .l {{ font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:{MUTED}; font-weight:700; margin-top:8px; }}
-  .panel {{ background:#fff; border:1px solid {LINE}; border-radius:8px; overflow:hidden; }}
-  .panel-head {{ padding:15px 20px; border-bottom:1px solid {LINE}; display:flex; align-items:center; justify-content:space-between; }}
-  .panel-head h2 {{ font-size:15px; font-weight:700; color:{BRAND}; }}
-  .panel-head .filter {{ font-size:12px; color:{MUTED}; border:1px solid {LINE}; border-radius:6px; padding:5px 10px; }}
-  table {{ width:100%; border-collapse:collapse; }}
-  thead th {{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.6px; color:{MUTED};
-    font-weight:700; padding:11px 16px; border-bottom:1px solid {LINE}; }}
-  thead th.num, td.num {{ text-align:right; }}
-  tbody td {{ padding:12px 16px; border-bottom:1px solid #F1F3F6; vertical-align:top; }}
-  tbody tr:last-child td {{ border-bottom:none; }}
-  .item {{ font-weight:700; color:#111; font-size:13.5px; }}
-  .desc {{ color:#4b5563; font-size:12.5px; margin-top:1px; }}
-  .reason {{ color:{MUTED}; font-size:11.5px; margin-top:5px; }}
-  .num {{ font-variant-numeric:tabular-nums; font-size:13.5px; color:#111; }}
-  .unit {{ color:{MUTED}; font-size:11px; }}
-  .was {{ color:{RED}; font-size:11px; }}
-  .when {{ font-size:11px; color:{MUTED}; margin-top:2px; }}
-  .badge {{ display:inline-block; color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.4px;
-    padding:3px 9px; border-radius:20px; }}
-  .tag {{ display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; margin-left:6px; }}
-  .tag-lead {{ background:#FCEBD2; color:#8a5a06; }}
-  .tag-merge {{ background:#E7E1F5; color:#4a3aa0; }}
-  .tag-attr {{ background:#D6F0E5; color:#0a6b45; }}
-  .foot {{ padding:16px 32px 30px; font-size:12px; color:{MUTED}; }}
-</style></head>
-<body>
-  <div class="sidebar">
-    <div class="brand">JobBOSS<span> / Purchasing</span></div>
-    {nav_html}
-    <div class="sidebar-foot">Buyer<br>M. Alvarez</div>
-  </div>
-  <div class="main">
-    <div class="topbar">
-      <div><h1>Reorder Queue</h1><div class="sub">Items ranked by urgency &middot; forecast demand over lead time &middot; as of {AS_OF}</div></div>
-      <div class="newpo">+ New Purchase Order</div>
-    </div>
-    <div class="wrap">
-      <div class="kpis">
-        <div class="kpi"><div class="v" style="color:{RED};">{n_reorder}</div><div class="l">Reorder now</div></div>
-        <div class="kpi"><div class="v" style="color:{AMBER};">{n_soon}</div><div class="l">Due soon</div></div>
-        <div class="kpi"><div class="v" style="color:{GREEN};">{n_ok}</div><div class="l">OK</div></div>
-        <div class="kpi"><div class="v" style="color:{BRAND};">${order_value/1000:,.0f}K</div><div class="l">Suggested order value</div></div>
-        <div class="kpi"><div class="v" style="color:{BLUE};">{n_flag}</div><div class="l">Items with data fixes</div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h2>Items due for reorder</h2><div class="filter">All classes &#9662;</div></div>
-        <table>
-          <thead><tr>
-            <th>Item</th><th class="num">On hand</th><th class="num">Forecast demand</th>
-            <th class="num">Lead time</th><th class="num">Safety</th><th class="num">Suggested order</th><th>Priority</th>
-          </tr></thead>
-          <tbody>{body_rows}</tbody>
-        </table>
-      </div>
-      <div class="foot">{len(rec):,} active items &middot; {n_reorder} due, {n_soon} soon &middot;
-        {n_flag} items carry a resolved duplicate record or a corrected lead time &middot;
-        Forecasts by BRIM Demand Model (xgboost, {wape_txt})</div>
-    </div>
-  </div>
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ font-family:"Segoe UI", Tahoma, Arial, sans-serif; font-size:12.5px; color:#1F2933; background:#fff; }}
+  .top {{ background:{BRAND}; color:#fff; display:flex; justify-content:space-between; align-items:center; padding:9px 16px; }}
+  .top .app {{ font-size:17px; font-weight:700; }}
+  .top .who {{ font-size:12px; color:#D6E2F0; }}
+  .nav {{ background:{NAVBG}; display:flex; }}
+  .nav a {{ color:#E6EEF7; padding:9px 16px; font-size:12.5px; }}
+  .nav a.on {{ background:#fff; color:{BRAND}; font-weight:700; }}
+  .crumb {{ padding:7px 16px; color:{MUTED}; border-bottom:1px solid {LINE}; background:{BG}; }}
+  .crumb span {{ color:#2458A6; }}
+  .head {{ display:flex; justify-content:space-between; align-items:flex-start; padding:12px 16px 6px; }}
+  .head h1 {{ font-size:15px; }}
+  .head .sub {{ color:{MUTED}; margin-top:2px; }}
+  .summary {{ border:1px solid {LINE}; border-radius:3px; padding:8px 14px; font-size:12px; color:{MUTED}; }}
+  .summary b {{ margin:0 3px 0 10px; }}
+  .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:10px; }}
+  .bar {{ display:flex; gap:6px; align-items:center; padding:6px 16px; }}
+  .btn {{ border:1px solid #AEB8C4; background:#F7F9FB; padding:3px 10px; border-radius:2px; font-size:12px; }}
+  .btn.dim {{ color:#9AA5B1; }}
+  .sep {{ width:10px; }}
+  .filters {{ display:flex; gap:12px; align-items:center; padding:6px 16px 8px; color:{MUTED}; }}
+  .sel {{ border:1px solid #AEB8C4; padding:2px 8px; color:#1F2933; background:#fff; }}
+  table {{ border-collapse:collapse; width:calc(100% - 32px); margin:0 16px 16px; }}
+  th {{ background:#E9EDF2; text-align:left; padding:6px 7px; border:1px solid {LINE}; font-weight:600; white-space:nowrap; }}
+  td {{ padding:5px 7px; border:1px solid {LINE}; white-space:nowrap; }}
+  td.r, th.r {{ text-align:right; }} td.c {{ text-align:center; }}
+  .mono {{ font-family:Consolas, monospace; }}
+  .badge {{ color:#fff; font-weight:700; font-size:11px; padding:2px 7px; border-radius:3px; }}
+  .tag {{ display:inline-block; border:1px solid #9FB3CC; color:#2458A6; background:#EEF4FB; border-radius:10px;
+          padding:0 7px; margin-right:4px; font-size:11px; }}
+  .ml {{ background:{BLUE}; color:#fff; font-size:10px; font-weight:700; padding:1px 4px; border-radius:2px; margin-left:4px; }}
+</style></head><body>
+<div class="top"><div class="app">Enterprise Resource Planning</div>
+  <div class="who">K. Brooks (Buyer) &nbsp;&nbsp; {day}</div></div>
+<div class="nav">{nav}</div>
+<div class="crumb"><span>Purchasing</span> &rsaquo; <span>Reorder</span> &rsaquo; Suggested Orders</div>
+<div class="head"><div><h1>Reorder Queue, Suggested Orders</h1>
+  <div class="sub">All stocked items against this month's reorder points &middot; {pd.Timestamp(AS_OF).strftime('%m/%d/%Y')}</div></div>
+  <div class="summary">REORDER SUMMARY <span class="dot" style="background:{RED}"></span><b>{now}</b>Order now
+  <span class="dot" style="background:{AMBER}"></span><b>{soon}</b>Order soon
+  <span class="dot" style="background:{GREEN}"></span><b>{ok:,}</b>OK</div></div>
+<div class="bar"><span class="btn">+ Create PO</span><span class="btn dim">Edit</span><span class="btn">Release to PO</span>
+  <span class="btn">Hold</span><span class="sep"></span><span class="btn">Export</span></div>
+<div class="filters">Supplier: <span class="sel">All &#9662;</span> Class: <span class="sel">All &#9662;</span>
+  Action: <span class="sel">Order now + soon &#9662;</span> <span class="sel" style="width:220px;">&#128269; Search items...</span></div>
+<table><thead><tr><th>Item #</th><th>Description</th><th>ABC</th><th>Supplier</th><th class="r">On hand</th>
+<th class="r">On order</th><th class="r">Lead (days)</th><th class="r">Forecast over lead</th><th class="r">Safety stock</th>
+<th class="r">Reorder point</th><th class="r">Suggested qty</th><th>Action <span class="ml">ML</span></th><th>Changed by cleanup</th></tr></thead>
+<tbody>{''.join(trs)}</tbody></table>
 </body></html>"""
-    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding="utf-8")
-    print(f"Wrote {OUT}  ({len(due)} rows shown, {n_reorder} due, {n_flag} flagged)")
+    return now, soon, ok
+
+
+def run():
+    q = build_queue()
+    now, soon, ok = render(q)
+    print(f"Reorder queue written to {OUT}: {now} order now, {soon} order soon, {ok:,} OK")
 
 
 if __name__ == "__main__":
-    build()
+    run()
