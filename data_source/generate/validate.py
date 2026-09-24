@@ -98,10 +98,12 @@ def run():
     _chk("Products with a BOM omission (%)", prod_with_omission / n_products * 100, 4, 12)
 
     # adjustments
-    moved = tx.loc[tx["type"].isin(["ISSUE", "BACKFLUSH", "RECEIPT"]), "qty"].abs().sum()
-    adj = tx.loc[tx["type"] == "ADJUST", "qty"].abs().sum()
+    # adjustment habits describe the shop before the remediation changed them
+    txh = tx[tx["txn_date"] < C.REMEDIATION_START.isoformat()]
+    moved = txh.loc[txh["type"].isin(["ISSUE", "BACKFLUSH", "RECEIPT"]), "qty"].abs().sum()
+    adj = txh.loc[txh["type"] == "ADJUST", "qty"].abs().sum()
     _chk("Adjustment share of quantity moved (%)", adj / moved * 100, 15, 25)
-    adj_rows = tx[tx["type"] == "ADJUST"]
+    adj_rows = txh[txh["type"] == "ADJUST"]
     blank_reason = adj_rows["reason_code"].isna() | adj_rows["reason_code"].astype(str).isin(["", "nan", "ADJ", "VAR", "MISC", "COUNT"])
     _chk("Adjustments with blank/generic reason (%)", blank_reason.mean() * 100, 60, 75)
 

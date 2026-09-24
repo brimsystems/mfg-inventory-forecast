@@ -45,7 +45,7 @@ TRUTH = REPO / "data_source" / "truth"
 OUT = REPO / "ml" / "data" / "financials"
 
 YEAR = 2025
-AS_OF = date(2026, 3, 31)
+AS_OF = _C.AS_OF_DATE
 PHANTOM_DAYS = 90                      # an open line older than this is treated as never arriving
 GENERIC_REASONS = {"", "nan", "ADJ", "VAR", "MISC"}     # a COUNT reason is traceable, to the count
 GENERIC_ITEM_CODES = {"NONSTOCK", "MISC", "SHOPSUPPLY"}
@@ -387,8 +387,14 @@ def run():
     spend = float(p25["value"].sum())
     ft_lines = p25["item_number"].isin(GENERIC_ITEM_CODES)
     confirmed_pos = set(ftattr.loc[ftattr["confirmation"] == "confirmed", "po_id"])
-    split_before = float(p25.loc[p25["item_number"].isin(dup_members - {v["primary"] for v in cross["duplicate_clusters"].values()}) | ft_lines, "value"].sum())
-    split_after = float(p25.loc[p25["item_number"].isin(rejected_nonprimary) | (ft_lines & ~p25["po_id"].isin(confirmed_pos)), "value"].sum())
+    # spend on a part whose history is split: every number in a duplicate cluster
+    # (the primary's history is incomplete too), and free-text buys of stocked items
+    stocked_ft = {r["po_id"] for r in pod["t3"] if r.get("is_stocked")}
+    split_before = float(p25.loc[p25["item_number"].isin(dup_members) | (ft_lines & p25["po_id"].isin(stocked_ft)), "value"].sum())
+    rejected_clusters = {n for cl in cross["duplicate_clusters"].values()
+                         if set(cl["records"]) & rejected_nonprimary for n in cl["records"]}
+    split_after = float(p25.loc[p25["item_number"].isin(rejected_clusters)
+                                | (ft_lines & p25["po_id"].isin(stocked_ft) & ~p25["po_id"].isin(confirmed_pos)), "value"].sum())
     alias_before = float(p25.loc[p25["supplier_id"].isin(aliases), "value"].sum())
 
     # adjustments with a cause: the year before the engagement, and from the control date to the end

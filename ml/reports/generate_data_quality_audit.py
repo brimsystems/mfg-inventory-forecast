@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import brand as B
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO))
+from data_source.generate import config as C
 RAW = REPO / "data_source" / "raw"
 REM = RAW / "remediation"
 TRUTH = REPO / "data_source" / "truth"
@@ -224,7 +226,7 @@ def gather():
     d["n_batch_rows"] = int(len(pod.get("t4", [])))
     d["n_tx"], d["n_po"], d["n_prod"] = int(len(tx)), int(len(po)), int(len(prod))
     d["n_bom_rows"], d["n_sup_rows"] = int(len(bom)), int(len(sup))
-    open_jobs = prod[(prod["status"] == "OPEN") & (pd.to_datetime(prod["due_date"]) < pd.Timestamp("2026-03-31"))]
+    open_jobs = prod[(prod["status"] == "OPEN") & (pd.to_datetime(prod["due_date"]) < pd.Timestamp(C.REMEDIATION_END))]
     d["n_open_jobs"] = int(len(open_jobs))
 
     # ── rows carrying at least one error, per ERP table (errors overlap, so
@@ -375,7 +377,7 @@ def _samples(im, tx, po, sup, cross, txn, pod, lead, params, chronic, dead_nums)
 
     op = po[po["status"] == "OPEN"].copy()
     op["od"] = pd.to_datetime(op["order_date"])
-    op = op[op["od"] < pd.Timestamp("2026-03-31") - pd.Timedelta(days=90)].sort_values("od").head(2)
+    op = op[op["od"] < pd.Timestamp(C.REMEDIATION_END) - pd.Timedelta(days=90)].sort_values("od").head(2)
     s["open"] = (["PO", "Item", "Order date", "Ordered", "Received", "Status"],
                  [[r.po_id, r.item_number, r.order_date, int(r.qty_ordered), int(r.qty_received), r.status]
                   for r in op.itertuples(index=False)])

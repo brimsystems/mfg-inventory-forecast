@@ -13,7 +13,7 @@ Run:  python -m data_source.generate.run_generator
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -30,6 +30,7 @@ from .generators.service_orders import build_service_orders
 from .generators.consumption import build_consumption_events
 from .generators.replenishment import simulate, draw_drift_rates
 from .generators.counterfactual import corrected_inputs, replay_metrics
+from .generators.forward_metrics import window_metrics
 from .generators.purchase_orders import assemble_purchase_orders
 from .generators.inventory_transactions import build_ledger, post_count_adjustments
 from .generators.cycle_counts import build_cycle_counts
@@ -122,7 +123,13 @@ def run():
     print("[5/9] Service orders     (ERP)")
     service_orders = build_service_orders(service_demand, item_meta, dup_map, plan, rng)
     events = build_consumption_events(production_orders, bom_true, bom_recorded, service_orders,
-                                      manual_demand, item_meta, dup_map, omit_items, rng)
+                                      manual_demand, item_meta, dup_map, omit_items,
+                                      np.random.default_rng(C.RANDOM_SEED + 21))
+    # the same events with the bills never fixed, for the counterfactual that runs
+    # the old masters through the forward window
+    events_dirty = build_consumption_events(production_orders, bom_true, bom_recorded, service_orders,
+                                            manual_demand, item_meta, dup_map, omit_items,
+                                            np.random.default_rng(C.RANDOM_SEED + 21), fix_from=C.END_DATE)
 
     # the purchasing manager tracks the highest-value A items by hand
     primary = {}
@@ -137,24 +144,58 @@ def run():
     # ── Replenishment replay: purchase orders, rushes, shortages, counts ────
     print("[6/9] Purchase orders    (ERP) - replaying replenishment, this takes a minute")
     drift_rate = draw_drift_rates(item_meta, rng)
+    cost_by_item = plan.set_index("item_id")["unit_cost"].to_dict()
+
+    # the corrected masters the remediation loaded, which the shop runs on from
+    # the forward start; the demand model's monthly reorder points if it has them
+    ev_c, im_c, meta_c, base_lead, _ = corrected_inputs(events, item_master, item_meta, dup_map, drift_rate,
+                                                        drift_supplier_id, abc_by_item, rng)
+    imc = im_c.set_index("item_number")
+    forward = {"start": C.FORWARD_START, "never_closed": 0.0,
+               "lead": imc["master_lead_time_days"].to_dict(),
+               "rop": imc["reorder_point"].fillna(0).to_dict(),
+               "ss": imc["safety_stock"].fillna(0).to_dict(), "schedule": None,
+               "abc": {int(k): v for k, v in abc_by_item.items()}}
+    schedule_path = C.REPO_ROOT / "ml" / "data" / "policy" / "rop_schedule.json"
+    schedule = None
+    if schedule_path.exists():
+        sched = json.loads(schedule_path.read_text())
+        schedule = {num: [(date.fromisoformat(e[0]), e[1], e[2], e[3], e[4]) for e in entries]
+                    for num, entries in sched["items"].items()}
+        forward["schedule"] = {n: [(d_, r_, s_) for (d_, r_, s_, *_x) in e] for n, e in schedule.items()}
+        print(f"      Forward window: the demand model's reorder points ({len(schedule):,} items, {len(sched['months'])} months)")
+    else:
+        print("      Forward window: the remediation's recomputed reorder points (no model schedule yet)")
     sim = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
-                   buyer_nums, omit_items, rng, drift_rate=drift_rate)
+                   buyer_nums, omit_items, rng, drift_rate=drift_rate,
+                   forward=forward)
     production_orders = apply_delays(production_orders, sim["job_delays"])
     purchase_orders, po_truth = assemble_purchase_orders(sim["po_lines"], suppliers, item_master, rng)
 
-    # the same rule on the corrected masters, over the same demand and suppliers
+    # the same rule on the corrected masters over the whole history (the audit's 2025 counterfactual)
     print("      Counterfactual replay on corrected masters")
-    ev_c, im_c, meta_c, base_lead, _ = corrected_inputs(events, item_master, item_meta, dup_map, drift_rate,
-                                                        drift_supplier_id, abc_by_item, rng)
     sim_c = simulate(ev_c, im_c, meta_c, {}, plan, drift_supplier_id, sup_frag, buyer_nums, [],
                      np.random.default_rng(C.RANDOM_SEED + 11), drift_rate=drift_rate, never_closed=0.0,
                      actual_base=base_lead)
-    cost_by_item = plan.set_index("item_id")["unit_cost"].to_dict()
     counterfactual = {
         "year": C.MODEL_SPAN_END.year,
         "as_is": replay_metrics(sim, cost_by_item, primary, production_orders, C.MODEL_SPAN_END.year),
         "corrected": replay_metrics(sim_c, cost_by_item, primary, production_orders, C.MODEL_SPAN_END.year),
     }
+
+    # the forward window three ways over the same demand: as the shop ran it, with
+    # nothing fixed, and with the corrected masters but no model
+    print("      Forward-window counterfactuals (nothing fixed; corrected masters without the model)")
+    sim_dirty = simulate(events_dirty, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
+                         buyer_nums, omit_items, np.random.default_rng(C.RANDOM_SEED + 12), drift_rate=drift_rate,
+                         fix_from=C.END_DATE)
+    fwd_rule = dict(forward); fwd_rule["schedule"] = None
+    sim_rule = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
+                        buyer_nums, omit_items, np.random.default_rng(C.RANDOM_SEED + 13), drift_rate=drift_rate,
+                        forward=fwd_rule)
+    prod_for_windows = apply_delays(production_orders.drop(columns=["hold_reason", "delay_days"]), sim["job_delays"])
+    forward_results = _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_by_item,
+                                       abc_by_item, primary, prod_for_windows, total, wide)
 
     # ── Counts, ledger, spreadsheet ─────────────────────────────────────────
     print("[7/9] Inventory ledger   (ERP)")
@@ -199,6 +240,8 @@ def run():
                  omit_items, po_truth, tx_truth, buyer_truth, bf_true, sorted(affected_products),
                  C.N_PRODUCTS, sim, primary, sorted(buyer_nums))
     (TRUTH_DIR / "counterfactual.json").write_text(json.dumps(counterfactual, indent=2))
+    (TRUTH_DIR / "forward_results.json").write_text(json.dumps(forward_results, indent=2, default=float))
+    _print_forward(forward_results)
     a, c = counterfactual["as_is"], counterfactual["corrected"]
     print(f"Counterfactual {counterfactual['year']}: inventory ${a['inventory_value_avg']:,.0f} -> "
           f"${c['inventory_value_avg']:,.0f}  | purchases ${a['purchases']:,.0f} -> ${c['purchases']:,.0f}  | "
@@ -207,6 +250,74 @@ def run():
           f"{c['jobs_delayed']:,}")
     _summary(total, item_master, purchase_orders, transactions, cycle_counts, production_orders,
              service_orders, defects, sim)
+
+
+def _half(year, half):
+    return (date(year, 1, 1), date(year, 6, 30)) if half == 1 else (date(year, 7, 1), date(year, 12, 31))
+
+
+def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_by_item, abc_by_item,
+                     primary, production_orders, total, wide):
+    """The metric set over 1H25, 2H25 and the forward window, the latter three ways."""
+    iid_of = {n: i for i, n in primary.items()}
+    seg_by_iid = {int(i): classify(wide.loc[i].to_numpy(dtype=float)) for i in wide.index}
+    imx = item_master.set_index("item_number")
+    ss_dirty = {}
+    for n, i in iid_of.items():
+        v = imx["safety_stock"].get(n, 0.0)
+        ss_dirty[i] = 0.0 if pd.isna(v) else float(v)
+    ss_rule = {i: float(imc["safety_stock"].get(n, 0.0) or 0.0) for n, i in iid_of.items() if n in imc.index}
+
+    def ss_model(start, end):
+        if not schedule:
+            return ss_rule
+        out = {}
+        for n, entries in schedule.items():
+            i = iid_of.get(n)
+            if i is None:
+                continue
+            vals = [e[2] for e in entries if start <= e[0] <= end]
+            out[i] = float(np.mean(vals)) if vals else ss_rule.get(i, 0.0)
+        return out
+
+    y = C.MODEL_SPAN_END.year
+    windows = {"1H25": _half(y, 1), "2H25": _half(y, 2)}
+    f0 = C.FORWARD_START
+    fw = {"1H26": (f0, C.END_DATE)}
+    m3 = date(f0.year + (f0.month + 2) // 12, (f0.month + 2) % 12 + 1, 1)
+    fw["1H26_months_1_3"] = (f0, m3 - timedelta(days=1))
+    fw["1H26_months_4_6"] = (m3, C.END_DATE)
+
+    res = {"as_recorded": {}, "forward": {}, "schedule_used": bool(schedule)}
+    for k, (a, b) in windows.items():
+        res["as_recorded"][k] = window_metrics(sim, a, b, cost_by_item, abc_by_item, primary, production_orders,
+                                               ss_by_item=ss_dirty)
+    for k, (a, b) in fw.items():
+        res["forward"][k] = {
+            "model" if schedule else "clean_rule": window_metrics(sim, a, b, cost_by_item, abc_by_item, primary,
+                                                                  production_orders, ss_by_item=ss_model(a, b),
+                                                                  schedule=schedule, segment_by_item=seg_by_iid),
+            "dirty": window_metrics(sim_dirty, a, b, cost_by_item, abc_by_item, primary, production_orders,
+                                    ss_by_item=ss_dirty),
+        }
+        if schedule:
+            res["forward"][k]["clean_rule"] = window_metrics(sim_rule, a, b, cost_by_item, abc_by_item, primary,
+                                                             production_orders, ss_by_item=ss_rule)
+    return res
+
+
+def _print_forward(fr):
+    M = lambda x: f"${x:,.0f}"
+    print("\nForward window and the two halves of last year")
+    for k, m in fr["as_recorded"].items():
+        print(f"  {k:<18} fill {m['fill_rate']*100:5.1f}% | stockouts {m['stockout_episodes']:4d} ({m['stockout_days']:5d} days) | "
+              f"jobs held {m['jobs_delayed']:4d} | rush {m['rush_lines']:4d} {M(m['rush_spend']):>9} | inventory {M(m['avg_inventory_value']):>11} "
+              f"({(m['days_of_supply'] or 0):.0f} days) | lines {m['order_lines']:5d} | purchases {M(m['purchases'])}")
+    for k, variants in fr["forward"].items():
+        for v, m in variants.items():
+            print(f"  {k:<18} {v:<11} fill {m['fill_rate']*100:5.1f}% | stockouts {m['stockout_episodes']:4d} ({m['stockout_days']:5d} days) | "
+                  f"jobs held {m['jobs_delayed']:4d} | rush {m['rush_lines']:4d} {M(m['rush_spend']):>9} | inventory {M(m['avg_inventory_value']):>11} "
+                  f"({(m['days_of_supply'] or 0):.0f} days) | lines {m['order_lines']:5d} | purchases {M(m['purchases'])}")
 
 
 def _bom_dataset(bom_recorded, item_meta, dup_map):

@@ -78,9 +78,11 @@ def build_cycle_counts(sim, ledger, item_meta, dup_map, unreliable_nums, abc_by_
             continue
         cls = abc_by_item.get(meta["item_id"], "C")
         if cls == "A":
-            dates = [date(2026, m, int(rng.integers(2, 27))) for m in (1, 2, 3)]
+            dates = [date(C.FORWARD_START.year, m, int(rng.integers(2, 27)))
+                     for m in range(C.FORWARD_START.month, C.FORWARD_START.month + C.FORWARD_MONTHS)]
         elif cls == "B":
-            dates = [C.REMEDIATION_END + timedelta(days=int(rng.integers(7, 85)))]
+            dates = [C.REMEDIATION_END + timedelta(days=int(rng.integers(7, 85)) + 91 * q)
+                     for q in range(-(-C.FORWARD_MONTHS // 3))]
         else:
             dates = []
         for d in dates:

@@ -29,14 +29,16 @@ SAMPLE_SIZE = 200
 
 # ── Observation window ──────────────────────────────────────────────────────
 # A 36-month history used for training, validation and the rolling-origin
-# backtest, followed by a three-month forward window that stands in as the
-# current period. The reorder queue is generated as of the final day of the
-# forward window. The remediation period is the final ten weeks of the history.
+# backtest, followed by a six-month forward window in which the shop runs on the
+# cleaned masters and the demand model. The reorder queue is generated as of the
+# final day of the forward window. The remediation period is the final ten weeks
+# of the history.
 START_DATE      = date(2023, 1, 1)
 MODEL_SPAN_END  = date(2025, 12, 31)   # last month of history; end of remediation
 FORWARD_START   = date(2026, 1, 1)
-END_DATE        = date(2026, 3, 31)     # last day of generated history
-AS_OF_DATE      = date(2026, 3, 31)     # "today" for the reorder queue and on-hand
+END_DATE        = date(2026, 6, 30)     # last day of generated history
+AS_OF_DATE      = date(2026, 6, 30)     # "today" for the reorder queue and on-hand
+FORWARD_MONTHS  = 6
 
 # The engagement: the final ten weeks of the history window.
 REMEDIATION_WEEKS = 10
@@ -279,7 +281,7 @@ T1_MONTHLY_ADJ_PROB    = 0.45     # probability of a write-off adjustment in a g
 
 # T2 Adjustments as catch-all: ADJUST used for unrecorded issues, mis-receipts,
 # returns and scrap; most carry blank or generic reason codes.
-T2_ADJ_SHARE_OF_QTY    = 0.04     # share of quantity moved that flows through adjustments (15-25%)
+T2_ADJ_SHARE_OF_QTY    = 0.03     # share of quantity moved that flows through adjustments (15-25%)
 T2_BLANK_REASON_SHARE  = 0.60     # adjustments with blank or generic reason (60-75%)
 GENERIC_REASON_CODES   = ["", "ADJ", "VAR", "MISC", "COUNT"]
 SPECIFIC_REASON_CODES  = ["CYCLE", "DAMAGE", "SCRAP", "RECOUNT", "RETURN"]

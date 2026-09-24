@@ -43,8 +43,23 @@ def draw_drift_rates(item_meta, rng):
 
 
 def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
-             buyer_nums, omitted_item_ids, rng, drift_rate=None, never_closed=None, actual_base=None):
+             buyer_nums, omitted_item_ids, rng, drift_rate=None, never_closed=None, actual_base=None,
+             fix_from=None, forward=None):
+    """fix_from: the date the remediation's BOM corrections and controls take hold
+    (chronic write-offs on omitted items stop). A world that never fixes them
+    passes END_DATE.
+
+    forward: None, or the corrected masters the shop runs on from a date:
+      {"start": date, "lead": {num: days}, "rop": {num: units}, "ss": {num: units},
+       "schedule": {num: [(date, rop, ss), ...]} or None, "never_closed": 0.0}
+    On the start date each item's duplicate records merge into the primary in
+    stock units, the conversion is maintained, the phantom on-order balances are
+    closed, and the reorder point and lead time switch to the corrected values;
+    with a schedule, the reorder point then follows it month by month. Every item
+    draws from its own random stream, so the history before the start date is
+    identical whatever runs after it."""
     days = pd.date_range(C.START_DATE, C.END_DATE, freq="D")
+    fix_from = C.REMEDIATION_END if fix_from is None else fix_from
     N = len(days)
     ZERO = np.zeros(N)
     day_idx = {d.date(): i for i, d in enumerate(days)}
@@ -80,9 +95,29 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
     # the ERP's MRP look-ahead sees only recorded demand (scheduled jobs through
     # the recorded bill, service orders), so omitted components stay invisible
     cum_by_num = {n: np.concatenate([[0.0], np.cumsum(a)]) for n, a in book_by_num.items()}
+    # once the records are merged the look-ahead sees the whole part's recorded demand
+    cum_by_iid = {}
+    for iid, g in ev[ev["recorded"]].groupby("item_id"):
+        a = np.zeros(N); np.add.at(a, g["t"].to_numpy(), g["qty"].to_numpy())
+        cum_by_iid[int(iid)] = np.concatenate([[0.0], np.cumsum(a)])
+    fwd_t = day_idx.get(forward["start"]) if forward else None
+    # the look-ahead sees only what the ERP genuinely knows ahead of time:
+    # scheduled production (backflush on released jobs). Manual pulls and
+    # service orders are not known until they happen.
+    sched_t = 0
+    bf = ev[ev["recorded"] & (ev["channel"] == "BACKFLUSH")]
+    cum_bf_num, cum_bf_iid = {}, {}
+    for key, store in (("item_number", cum_bf_num), ("item_id", cum_bf_iid)):
+        for k, g in bf.groupby(key):
+            a = np.zeros(N); np.add.at(a, g["t"].to_numpy(), g["qty"].to_numpy())
+            store[int(k) if key == "item_id" else k] = np.concatenate([[0.0], np.cumsum(a)])
 
-    def ahead(n, t, L):
-        c = cum_by_num.get(n)
+    def ahead(n, t, L, iid=None):
+        merged = fwd_t is not None and t >= fwd_t
+        if t >= sched_t:
+            c = cum_bf_iid.get(iid) if merged else cum_bf_num.get(n)
+        else:
+            c = cum_by_iid.get(iid) if merged else cum_by_num.get(n)
         if c is None:
             return 0.0
         return c[min(t + L, N)] - c[t]
@@ -106,10 +141,15 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
 
     po_lines, adjustments, counts, shortages, rushes = [], [], [], [], []
     job_delays = {}
-    physical_series, book_series = {}, {}
+    physical_series, book_series, unmet_series, short_day_series = {}, {}, {}, {}
     line_seq = 0
+    outer_rng = rng
 
     for iid, nums in recorded.items():
+        # each item draws from its own stream, so what runs after the forward
+        # start cannot change the history before it
+        rng = np.random.default_rng([C.RANDOM_SEED, 7, int(iid)])
+        nc = never_closed                      # this item's share of short receipts left open
         phys_d = phys_by_iid.get(iid, np.zeros(N))
         avg_daily = max(phys_d[-365:].mean(), phys_d.mean(), 0.02)
         cost = float(cost_by_item.get(iid, 1.0))
@@ -141,8 +181,42 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         learned = False       # after a surprise shortage the floor watches the bin by sight
         suppressed_since = {n: None for n in nums}
         pseries = np.zeros(N); bseries = {n: np.zeros(N) for n in nums}
+        useries = np.zeros(N); sdays = np.zeros(N, dtype=bool)
+        prim = dup_map[iid]["primary"] if iid in dup_map else nums[0]
+        sched = (forward or {}).get("schedule") or {}
+        sched_by_t = {}
+        for (d_, r_, s_) in sched.get(prim, []):
+            if d_ in day_idx:
+                sched_by_t[day_idx[d_]] = (float(r_), float(s_))
 
         for t in range(N):
+            # ── the corrected masters take over on the forward start date ───
+            if fwd_t is not None and t == fwd_t:
+                total_book = sum(book.values()) * (conv if conv > 1 else 1)
+                for po in open_po:
+                    po["num"] = prim
+                    if po.get("phantom", 0) > 0:
+                        po["phantom"] = 0                  # closed in remediation
+                nums = [prim]; weights = [1.0]
+                book = {prim: total_book}
+                conv = 1; q_order = q_each
+                rop = {prim: float(forward["rop"].get(prim, rop.get(prim, 0.0)))}
+                mlead = {prim: int(forward["lead"].get(prim, mlead.get(prim, 21)))}
+                blead = {prim: blead.get(prim, 21)}
+                nc = forward.get("never_closed", nc)
+                book = {prim: max(physical, 0.0)}      # the baseline count restated the balance
+                suppressed_since = {prim: None}
+                last_order = {prim: max(last_order.values())}
+                bseries = {prim: bseries.get(prim, np.zeros(N))}
+                learned = False
+                tracked = False                            # the spreadsheet is retired
+            if t in sched_by_t:
+                rop[prim] = sched_by_t[t][0]
+            if fwd_t is not None and t > fwd_t and days[t].day == 1:
+                k = (days[t].year - C.FORWARD_START.year) * 12 + days[t].month - C.FORWARD_START.month
+                cls_abc = forward.get("abc", {}).get(iid, "C")
+                if cls_abc == "A" or (cls_abc == "B" and k % 3 == 0):
+                    book[prim] = max(physical, 0.0)
             # ── arrivals ────────────────────────────────────────────────
             for po in open_po:
                 if po["arrival"] == t and not po["received"]:
@@ -151,7 +225,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     if rng.random() < C.PARTIAL_RECEIPT_PROB:
                         got = max(1, int(round(qty * rng.uniform(*C.PARTIAL_RECEIVED_RANGE))))
                         po["qty_recv"] = got
-                        if rng.random() < never_closed:
+                        if rng.random() < nc:
                             po["phantom"] = qty - got      # balance never arrives, stays on order
                         else:
                             po["balance_arrival"] = t + int(rng.integers(7, 15))
@@ -192,6 +266,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     short = d - avail
                     physical -= avail
                     backlog += short
+                    useries[t] = short
                     for job in jobs_by_iid_day.get((iid, t), []):
                         waiting.append((job, t))
                     if not in_episode:
@@ -218,7 +293,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
             for n in nums:
                 book[n] -= book_by_num.get(n, ZERO)[t]
             # ── chronic write-offs on omitted items (T1) ─────────────────
-            if (iid in omitted and t in month_adj_days and days[t].date() <= C.REMEDIATION_END
+            if (iid in omitted and t in month_adj_days and days[t].date() <= fix_from
                     and rng.random() < C.T1_MONTHLY_ADJ_PROB):
                 for n in nums:
                     gap = book[n] - max(physical, 0) * (weights[nums.index(n)])
@@ -244,10 +319,15 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                 on_order_real = sum(po["qty_book"] for po in open_po if po["num"] == n and not po["received"])
                 if tracked:
                     level = avg_daily * C.BUYER_SAFETY_DAYS
-                    look = ahead(n, t, buyer_look)
+                    look = ahead(n, t, buyer_look, iid)
+                elif fwd_t is not None and t >= fwd_t:
+                    # on the corrected masters the decision is a plain reorder
+                    # point: the point already carries the lead-time demand
+                    level = rop[n]
+                    look = 0.0
                 else:
                     level = rop[n]
-                    look = ahead(n, t, mlead[n])
+                    look = ahead(n, t, mlead[n], iid)
                 position = book[n] + on_order - look
                 if position > level and book[n] + on_order_real <= level:
                     if suppressed_since[n] is None:
@@ -319,6 +399,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                                    "cause": cause, "freight": freight, "premium": round(prem, 3),
                                    "premium_usd": po["premium"], "tracked": tracked})
             pseries[t] = physical
+            sdays[t] = backlog > 0
             for n in nums:
                 bseries[n][t] = book[n]
 
@@ -326,8 +407,11 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         for job, t0 in waiting:
             job_delays[job] = max(job_delays.get(job, 0), N - 1 - t0)
         physical_series[iid] = pseries
+        unmet_series[iid] = useries
+        short_day_series[iid] = sdays
         for n in nums:
             book_series[n] = bseries[n]
+    rng = outer_rng
 
     po_df = pd.DataFrame([{
         "line_seq": p["line_seq"], "item_number": p["num"], "item_id": p["item_id"], "supplier_id": p["supplier"],
@@ -350,6 +434,9 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         "job_delays": job_delays,
         "physical": physical_series,
         "book": book_series,
+        "demand": phys_by_iid,
+        "unmet": unmet_series,
+        "short_days": short_day_series,
         "days": days,
     }
 

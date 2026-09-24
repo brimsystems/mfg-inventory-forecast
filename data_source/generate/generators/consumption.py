@@ -22,7 +22,12 @@ from .bom import effective_component_map
 
 
 def build_consumption_events(production_orders, bom_true, bom_recorded, service_orders,
-                             manual_demand, item_meta, dup_map, omitted_item_ids, rng):
+                             manual_demand, item_meta, dup_map, omitted_item_ids, rng, fix_from=None):
+    """fix_from: the date from which the bills are complete, so backflush and manual
+    pulls on the omitted components are recorded (the remediation's BOM corrections).
+    A world that never fixes them passes END_DATE. The random stream is consumed
+    identically either way, so two builds differ only in the recorded flag."""
+    fix_from = C.REMEDIATION_END if fix_from is None else fix_from
     true_map = effective_component_map(bom_true)
     rec_map = effective_component_map(bom_recorded)
 
@@ -44,7 +49,7 @@ def build_consumption_events(production_orders, bom_true, bom_recorded, service_
     for r in done.itertuples(index=False):
         cd = pd.to_datetime(r.completed_date).date()
         tmap = true_map.get(r.product_number, {})
-        rmap = rec_map.get(r.product_number, {})
+        rmap = tmap if cd > fix_from else rec_map.get(r.product_number, {})
         for c, qper in tmap.items():
             if c not in recorded:
                 continue
@@ -79,7 +84,8 @@ def build_consumption_events(production_orders, bom_true, bom_recorded, service_
                 continue
             num = route(iid)
             # the bills are completed in remediation, after which the pull is recorded
-            unrecorded = (iid in omitted) and day <= C.REMEDIATION_END and (rng.random() < C.T1_UNRECORDED_SHARE)
+            u = rng.random()
+            unrecorded = (iid in omitted) and day <= fix_from and (u < C.T1_UNRECORDED_SHARE)
             rows.append((num, iid, day, s, "MANUAL", f"WO-{int(rng.integers(100000, 999999))}", not unrecorded))
 
     ev = pd.DataFrame(rows, columns=["item_number", "item_id", "date", "qty", "channel", "job_id", "recorded"])
