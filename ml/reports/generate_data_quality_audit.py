@@ -722,7 +722,7 @@ inventory value is confirmed (up from {tr['reliable_value']['before']/tr['reliab
          "Items where the gap exceeds a week, weighted by spend",
          "Late reorders, line stops, expedite freight"),
         ("Stale Reorder Points",
-         "Reorder points and safety stocks that were never recomputed as usage and lead times changed.",
+         "Reorder points and safety stocks on the item record that no longer match how much the shop actually uses and how long deliveries take.",
          IM_LIVE, rows_of(d["params_changed"], d["n_live"]),
          "Reorder point vs recent usage over actual lead time",
          "Items where the point is too low (stockouts) or too high (excess)",
