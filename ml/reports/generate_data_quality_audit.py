@@ -931,7 +931,7 @@ shown below.</p>
 
 <p>Over the past 36 months, over <strong>{d['total_rows'] // 1000}K</strong> individual records were
 produced across the eight ERP tables. This audit reviewed all of these records and found <strong>16</strong>
-different types of data quality error recur over this period. These errors touched a significant
+different types of data quality errors recur over this period. These errors touched a significant
 share of the ERP's total records, leaving it unreliable as the shop's central data record.</p>
 
 
@@ -944,7 +944,7 @@ share of the ERP's total records, leaving it unreliable as the shop's central da
 <p style="font-size:18px;font-weight:700;color:{B.DARK_GREY};margin-top:34px;">Transaction-level Table Errors</p>
 {txn_table}
 
-<p>Three findings stand out for their scale. First, the item master was full of dead records:
+<p>Three errors stand out for their large scale within the ERP. First, the item master was full of dead records:
 {d['dead_pct']*100:.0f}% of its records ({d['n_dead']:,} of {d['n_master']:,}) were items with no
 movement in two years or more yet were still flagged as active, meaning reports, searches and reorder
 logic were polluted by inactive parts. Second, {d['n_lead_off']/d['n_live']*100:.0f}% of lead times
