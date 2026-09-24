@@ -1,10 +1,10 @@
-"""ML Model Overview and Performance Report for the demand forecaster -> docs/reports/model_overview.html
+"""ML Model Overview and Performance Report -> docs/reports/model_overview.html
 
-Plain-language companion to the Case 02 model overview: what the model predicts,
-how the winning algorithm was chosen, how it performs by demand segment and ABC
-class against the baseline the shop uses today, the headline duplicate-cleaning
-result, and how forecast error over lead time feeds the safety-stock policy. Runs
-as a package module so the shared brand kit imports cleanly:
+Plain-language report on the demand model and on what six months of running the
+shop on it delivered. The forward window (1H26) is compared two ways: against
+the two halves of 2025 as the shop actually ran them, and against the same
+1H26 demand replayed with nothing fixed and with the cleaned records but no
+model. Every figure is read from the generation run and the backtest.
 
     PYTHONIOENCODING=utf-8 "../mfg-oee-maintenance/.venv/Scripts/python.exe" -m ml.reports.generate_model_overview
 """
@@ -15,402 +15,338 @@ import numpy as np
 import pandas as pd
 
 from . import brand as B
-from .brand import (DARK_GREY, DARK_BLUE, LIGHT_BLUE, ACCENT_RED, MUTED_RED,
-                    AMBER, GREEN, MED_GREY, LIGHT_GREY)
+from .brand import DARK_BLUE, LIGHT_BLUE, MED_GREY, GREEN, DARK_GREY
 
-REPO     = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[2]
 BACKTEST = REPO / "ml" / "data" / "backtest"
-POLICY   = REPO / "ml" / "data" / "policy"
-OUT      = REPO / "docs" / "reports" / "model_overview.html"
+POLICY = REPO / "ml" / "data" / "policy"
+TRUTH = REPO / "data_source" / "truth"
+OUT = REPO / "docs" / "reports" / "model_overview.html"
 
-# ── Data ──────────────────────────────────────────────────────────────────────
+# ── data ──────────────────────────────────────────────────────────────────────
 metrics = json.loads((BACKTEST / "model_metrics.json").read_text(encoding="utf-8"))
-mbt     = pd.read_parquet(BACKTEST / "model_backtest.parquet")
-clean   = pd.read_parquet(BACKTEST / "clean_before_after.parquet")
-policy  = json.loads((POLICY / "policy_summary.json").read_text(encoding="utf-8"))
+tw = json.loads((BACKTEST / "threeway_overall.json").read_text(encoding="utf-8"))
+sched = json.loads((POLICY / "rop_schedule.json").read_text(encoding="utf-8"))
+fr = json.loads((TRUTH / "forward_results.json").read_text(encoding="utf-8"))
+cross = json.loads((TRUTH / "crosswalks.json").read_text(encoding="utf-8"))
+txd = json.loads((TRUTH / "txn_defects.json").read_text(encoding="utf-8"))
 
-# Three-way cleaning decomposition: the same forecaster rerun on data at three
-# stages of cleaning. Raw = untouched source, master = duplicates merged and
-# master data fixed, fully = transaction ledger also repaired.
-tw_overall = json.loads((BACKTEST / "threeway_overall.json").read_text(encoding="utf-8"))
-tw_raw    = pd.read_parquet(BACKTEST / "threeway_raw.parquet")
-tw_master = pd.read_parquet(BACKTEST / "threeway_master.parquet")
-tw_fully  = pd.read_parquet(BACKTEST / "threeway_fully.parquet")
-t1_attr   = pd.read_parquet(REPO / "ml" / "data" / "data_quality" / "txn" / "t1_attribution.parquet")
-
-CAND_LABEL   = {"Linear": "Linear (Ridge)", "RandomForest": "Random Forest", "XGBoost": "XGBoost"}
-CAND_ORDER   = ["Linear", "RandomForest", "XGBoost"]
-SEG_ORDER    = ["smooth", "erratic", "lumpy", "intermittent"]
-SEG_TITLE    = {"smooth": "Smooth", "erratic": "Erratic", "lumpy": "Lumpy", "intermittent": "Intermittent"}
-BASE_LABEL   = {"croston": "Croston", "ses": "Simple exponential smoothing", "snaive": "Seasonal naive",
-                "ma3": "3-month moving average", "ma6": "6-month moving average", "naive": "Naive"}
-WINNER       = metrics["winner"]
-
-seg_by = {s["segment"]: s for s in metrics["segments"]}
-overall_model = metrics["overall"]["model"]
-overall_base  = metrics["overall"]["baseline"]
-overall_lift  = (overall_base - overall_model) / overall_base
+REC = fr["as_recorded"]
+FW = fr["forward"]
+H1, H2 = REC["1H25"], REC["2H25"]
+F = FW["1H26"]
+M13, M46 = FW["1H26_months_1_3"], FW["1H26_months_4_6"]
+VARIANTS = [("dirty", "Nothing fixed"), ("clean_rule", "Cleaned records, recomputed rule"), ("model", "Cleaned records, demand model")]
+SEG_ORDER = ["smooth", "erratic", "lumpy", "intermittent"]
 
 
-def _wape(a, p):
-    a = np.asarray(a, float); p = np.asarray(p, float)
-    denom = np.abs(a).sum()
-    return float(np.abs(a - p).sum() / denom) if denom else float("nan")
+def _wape_on(name, items=None):
+    t = pd.read_parquet(BACKTEST / f"threeway_{name}.parquet")
+    if items is not None:
+        t = t[t["item"].isin(items)]
+    return float((t["target"] - t["pred"]).abs().sum() / t["target"].abs().sum())
 
 
-# Moving average the shop uses today (3-month), for the headline comparison.
-ma_wape = _wape(mbt["actual"], mbt["ma3"])
-
-# ABC-level model vs baseline.
-abc_rows = []
-for abc in ["A", "B", "C"]:
-    g = mbt[mbt["abc"] == abc]
-    abc_rows.append({"abc": abc, "n": int(g["item"].nunique()),
-                     "model": _wape(g["actual"], g["pred"]),
-                     "base": _wape(g["actual"], g["base"])})
-
-# Three-way cleaning decomposition. Overall WAPE at each stage, plus the two
-# item groups each stage of cleaning is meant to repair: the duplicate items
-# (history split across duplicate part numbers) and the free-text items (demand
-# posted on typed-in ledger lines with no clean part number).
-tw_raw_w    = tw_overall["raw"]
-tw_master_w = tw_overall["master"]
-tw_fully_w  = tw_overall["fully"]
-master_gain = (tw_raw_w - tw_master_w) / tw_raw_w        # value of master-level cleaning
-txn_gain    = (tw_master_w - tw_fully_w) / tw_master_w   # value of transaction-level cleaning
-total_gain  = (tw_raw_w - tw_fully_w) / tw_raw_w
-
-dup_items = set(clean["item"])
-ft_items  = {i for i in t1_attr["probable_item"].unique() if i is not None}
+prim = {c["primary"] for c in cross["duplicate_clusters"].values()}
+unrec = {r["item_number"] for r in txd["t1"]}
+repaired = prim | unrec
+tw_rep = {k: _wape_on(k, repaired) for k in ["raw", "master", "fully"]}
+tw_dup = {k: _wape_on(k, prim) for k in ["raw", "fully"]}
 
 
-def _wape_sub(df, items):
-    g = df[df["item"].isin(items)]
-    return _wape(g["target"], g["pred"]), int(g["item"].nunique())
+def money(x):
+    return f"${x:,.0f}"
 
 
-# Duplicate items: rescued by master-level cleaning (raw -> master).
-dup_raw_w,    n_dup = _wape_sub(tw_raw, dup_items)
-dup_master_w, _     = _wape_sub(tw_master, dup_items)
-# Free-text items: rescued by transaction-level cleaning (master -> fully).
-ft_master_w, n_ft = _wape_sub(tw_master, ft_items)
-ft_fully_w,  _    = _wape_sub(tw_fully, ft_items)
-ft_gain = (ft_master_w - ft_fully_w) / ft_master_w
-
-# Working capital released at equal service (safety-stock section).
-wc_release = policy["corrected"]["inv"] - policy["forecast"]["inv"]
-wc_release_pct = wc_release / policy["corrected"]["inv"]
-
-n_items   = int(mbt["item"].nunique())
-n_origins = int(mbt["origin"].nunique())
+def k(x):
+    return f"${x/1e6:.2f}M" if abs(x) >= 1e6 else f"${x/1e3:.0f}K"
 
 
-# ── Charts ────────────────────────────────────────────────────────────────────
-def chart_candidates():
-    val  = [metrics["candidates"][c]["val_wape"] * 100 for c in CAND_ORDER]
-    test = [metrics["candidates"][c]["test_wape"] * 100 for c in CAND_ORDER]
-    x = np.arange(len(CAND_ORDER)); w = 0.36
-    fig, ax = B.make_fig(h=3.6)
-    b1 = ax.bar(x - w / 2, val, w, color=MED_GREY, label="Validation WAPE")
-    b2 = ax.bar(x + w / 2, test, w, color=DARK_BLUE, label="Test WAPE")
-    for bars in (b1, b2):
-        for bar in bars:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 2,
-                    f"{bar.get_height():.0f}%", ha="center", va="bottom", fontsize=9, color=DARK_GREY)
-    ax.set_xticks(x); ax.set_xticklabels([CAND_LABEL[c] for c in CAND_ORDER])
-    ax.set_ylabel("WAPE (lower is better)")
-    ax.set_ylim(0, max(val) * 1.15)
-    ax.yaxis.set_major_formatter(B.mticker.PercentFormatter())
-    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.16), frameon=False)
-    B.chart_style(ax); fig.tight_layout()
+def pct(x, d=1):
+    return f"{x*100:.{d}f}%"
+
+
+def widths(table_html, w):
+    cols = "".join(f'<col style="width:{v}%;">' for v in w)
+    return table_html.replace('<table class="data-table">',
+                              f'<table class="data-table" style="table-layout:fixed;"><colgroup>{cols}</colgroup>', 1)
+
+
+def sub(t):
+    return f'<p style="font-size:18px;font-weight:700;color:{DARK_GREY};margin-top:30px;">{t}</p>'
+
+
+# ── charts ────────────────────────────────────────────────────────────────────
+def chart_halves():
+    """Stockout episodes, days short and rush spend by half-year, as the shop ran it."""
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.2))
+    labels = ["1H25", "2H25", "1H26"]
+    series = [H1, H2, F["model"]]
+    panels = [("Stockout episodes", [s["stockout_episodes"] for s in series], "{:,.0f}"),
+              ("Jobs held for material", [s["jobs_delayed"] for s in series], "{:,.0f}"),
+              ("Rush spend ($000)", [s["rush_spend"] / 1000 for s in series], "${:,.0f}K")]
+    for ax, (title, vals, fmt) in zip(axes, panels):
+        bars = ax.bar(labels, vals, color=[MED_GREY, MED_GREY, DARK_BLUE], width=0.6)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v * 1.02, fmt.format(v), ha="center", fontsize=9, fontweight="bold")
+        ax.set_title(title, fontsize=10, color=DARK_GREY, pad=8)
+        ax.set_ylim(0, max(vals) * 1.22); ax.set_yticks([])
+        B.chart_style(ax)
+    fig.tight_layout(w_pad=2.0)
     return B.b64(fig)
 
 
-def chart_segment_vs_baseline():
-    model = [seg_by[s]["wape_model"] * 100 for s in SEG_ORDER]
-    base  = [seg_by[s]["wape_baseline"] * 100 for s in SEG_ORDER]
-    x = np.arange(len(SEG_ORDER)); w = 0.36
-    fig, ax = B.make_fig(h=3.8)
-    b1 = ax.bar(x - w / 2, base, w, color=MED_GREY, label="Segment baseline")
-    b2 = ax.bar(x + w / 2, model, w, color=DARK_BLUE, label="XGBoost model")
-    for bars in (b1, b2):
-        for bar in bars:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1.4,
-                    f"{bar.get_height():.0f}%", ha="center", va="bottom", fontsize=9, color=DARK_GREY)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{SEG_TITLE[s]}\n({BASE_LABEL[seg_by[s]['baseline_method']]})" for s in SEG_ORDER],
-                       fontsize=9)
-    ax.set_ylabel("WAPE (lower is better)")
-    ax.set_ylim(0, max(base + model) * 1.16)
-    ax.yaxis.set_major_formatter(B.mticker.PercentFormatter())
-    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.22), frameon=False)
-    B.chart_style(ax); fig.tight_layout()
+def chart_variants():
+    """The same 1H26 demand three ways, in steady state (months 4 to 6)."""
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.3))
+    names = ["Nothing\nfixed", "Cleaned,\nrule", "Cleaned,\nmodel"]
+    cols = [MED_GREY, LIGHT_BLUE, DARK_BLUE]
+    vals = [M46[v] for v, _ in VARIANTS]
+    panels = [("A-class fill rate", [x["fill_rate_by_abc"]["A"] * 100 for x in vals], "{:.1f}%", True),
+              ("Stockout episodes", [x["stockout_episodes"] for x in vals], "{:,.0f}", False),
+              ("Average inventory ($000)", [x["avg_inventory_value"] / 1000 for x in vals], "${:,.0f}K", False)]
+    for ax, (title, v, fmt, zoom) in zip(axes, panels):
+        bars = ax.bar(names, v, color=cols, width=0.62)
+        lo = min(v) - 3 if zoom else 0
+        for b, x in zip(bars, v):
+            ax.text(b.get_x() + b.get_width() / 2, x + (max(v) - lo) * 0.02, fmt.format(x), ha="center", fontsize=9, fontweight="bold")
+        if zoom:
+            ax.axhline(98, color=GREEN, linewidth=1, linestyle="--"); ax.text(-0.45, 98.15, "target 98%", fontsize=8, color=GREEN, ha="left", va="bottom")
+        ax.set_title(title, fontsize=10, color=DARK_GREY, pad=8)
+        ax.set_ylim(lo, max(v) + (max(v) - lo) * 0.18); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8.5)
+        B.chart_style(ax)
+    fig.tight_layout(w_pad=2.0)
     return B.b64(fig)
 
 
-def chart_threeway():
-    stages = ["Raw source\ndata",
-              "After master-level\ncleaning",
-              "After transaction-level\ncleaning"]
-    vals   = [tw_raw_w * 100, tw_master_w * 100, tw_fully_w * 100]
-    colors = [MED_GREY, LIGHT_BLUE, DARK_BLUE]
-    x = np.arange(len(stages))
-    fig, ax = B.make_fig(h=3.8)
-    bars = ax.bar(x, vals, 0.56, color=colors)
-    for bar in bars:
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                f"{bar.get_height():.1f}%", ha="center", va="bottom",
-                fontsize=10, color=DARK_GREY, fontweight="bold")
-    # Annotate what each stage of cleaning was worth.
-    ax.annotate(f"master cleaning\n{master_gain*100:+.1f}% overall",
-                xy=(0.5, (vals[0] + vals[1]) / 2), ha="center", va="center",
-                fontsize=8.5, color=DARK_BLUE)
-    ax.annotate(f"transaction cleaning\n{txn_gain*100:+.1f}% overall",
-                xy=(1.5, (vals[1] + vals[2]) / 2), ha="center", va="center",
-                fontsize=8.5, color=DARK_BLUE)
-    ax.set_xticks(x); ax.set_xticklabels(stages, fontsize=9)
-    ax.set_ylabel("Overall WAPE (lower is better)")
-    ax.set_ylim(0, max(vals) * 1.18)
-    ax.yaxis.set_major_formatter(B.mticker.PercentFormatter())
-    B.chart_style(ax); fig.tight_layout()
+def chart_accuracy():
+    """Forecast error at three stages of cleaning, all items and the repaired items."""
+    fig, ax = B.make_fig(3.3)
+    groups = ["All live items", f"Items the cleanup repaired ({len(repaired)})"]
+    stages = [("As recorded", "raw", MED_GREY), ("Records merged", "master", LIGHT_BLUE), ("Fully cleaned", "fully", DARK_BLUE)]
+    x = np.arange(2); w = 0.26
+    for i, (lab, key, col) in enumerate(stages):
+        v = [tw[key] * 100, tw_rep[key] * 100]
+        bars = ax.bar(x + (i - 1) * w, v, width=w, color=col, label=lab)
+        for b, val in zip(bars, v):
+            ax.text(b.get_x() + b.get_width() / 2, val + 0.8, f"{val:.0f}%", ha="center", fontsize=9, fontweight="bold")
+    ax.set_xticks(x); ax.set_xticklabels(groups)
+    ax.set_ylabel("Forecast error, WAPE (%)"); ax.set_ylim(0, max(tw["raw"], tw_rep["raw"]) * 100 * 1.25)
+    B.chart_style(ax)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=3, fontsize=9)
     return B.b64(fig)
 
 
-# ── Tables ────────────────────────────────────────────────────────────────────
-def candidate_table():
+# ── tables ────────────────────────────────────────────────────────────────────
+def halves_table():
     rows = []
-    for c in CAND_ORDER:
-        cand = metrics["candidates"][c]
-        win = c == WINNER
-        name = (f'<td style="font-weight:700;color:{DARK_BLUE};">{CAND_LABEL[c]} '
-                f'{B.badge("selected", GREEN)}</td>') if win else CAND_LABEL[c]
-        rows.append([name,
-                     f'{cand["val_wape"]*100:.1f}%',
-                     f'{cand["test_wape"]*100:.1f}%'])
-    return B.data_table(["Candidate", "Validation WAPE", "Test WAPE"], rows, right={1, 2})
+    m = F["model"]
+    spec = [
+        ("Fill rate", lambda s: pct(s["fill_rate"])),
+        ("Fill rate, A items", lambda s: pct(s["fill_rate_by_abc"]["A"])),
+        ("Fill rate, B items", lambda s: pct(s["fill_rate_by_abc"]["B"])),
+        ("Fill rate, C items", lambda s: pct(s["fill_rate_by_abc"]["C"])),
+        ("Stockout episodes", lambda s: f"{s['stockout_episodes']:,}"),
+        ("Stockout days (item-days short)", lambda s: f"{s['stockout_days']:,}"),
+        ("Jobs held for material", lambda s: f"{s['jobs_delayed']:,}"),
+        ("Days lost on held jobs", lambda s: f"{s['job_delay_days']:,}"),
+        ("Rush order lines", lambda s: f"{s['rush_lines']:,}"),
+        ("Rush freight and premiums", lambda s: money(s["rush_spend"])),
+        ("Average inventory value", lambda s: money(s["avg_inventory_value"])),
+        ("Days of supply", lambda s: f"{s['days_of_supply']:.0f}"),
+        ("Order lines placed", lambda s: f"{s['order_lines']:,}"),
+        ("Purchases", lambda s: money(s["purchases"])),
+    ]
+    for label, fn in spec:
+        rows.append([label, fn(H1), fn(H2), fn(m)])
+    return widths(B.data_table(["Measure", "1H25", "2H25", "1H26"], rows, right=[1, 2, 3]), [37, 21, 21, 21])
 
 
-def segment_table():
+def variants_table(window):
+    rows = []
+    spec = [
+        ("Fill rate", lambda s: pct(s["fill_rate"])),
+        ("Fill rate, A / B / C", lambda s: " / ".join(pct(s["fill_rate_by_abc"][a]) for a in "ABC")),
+        ("Stockout episodes", lambda s: f"{s['stockout_episodes']:,}"),
+        ("Stockout days, A items", lambda s: f"{s['stockout_days_by_abc']['A']:,}"),
+        ("Jobs held for material", lambda s: f"{s['jobs_delayed']:,}"),
+        ("Rush freight and premiums", lambda s: money(s["rush_spend"])),
+        ("Average inventory value", lambda s: money(s["avg_inventory_value"])),
+        ("Days of supply", lambda s: f"{s['days_of_supply']:.0f}"),
+        ("Safety stock (as set)", lambda s: money(s["safety_stock_value"])),
+        ("Cycle stock value", lambda s: money(s["cycle_stock_value"])),
+        ("Excess stock (over 12 months of supply)", lambda s: f"{money(s['excess_value'])} ({s['excess_items']} items)"),
+        ("Order lines placed", lambda s: f"{s['order_lines']:,}"),
+        ("Purchases", lambda s: money(s["purchases"])),
+        ("Consumption at cost", lambda s: money(s["consumption_value"])),
+    ]
+    for label, fn in spec:
+        rows.append([label] + [fn(window[v]) for v, _ in VARIANTS])
+    return widths(B.data_table(["Measure"] + [n for _, n in VARIANTS], rows, right=[1, 2, 3]), [31, 23, 23, 23])
+
+
+def purchases_table():
+    months = sorted(F["model"]["purchases_by_month"])
+    rows = []
+    for m in months:
+        rows.append([pd.Timestamp(m).strftime("%b %Y")] + [money(F[v]["purchases_by_month"].get(m, 0.0)) for v, _ in VARIANTS])
+    return widths(B.data_table(["Month"] + [n for _, n in VARIANTS], rows, right=[1, 2, 3]), [22, 26, 26, 26])
+
+
+def accuracy_table():
+    seg = {s["segment"]: s for s in metrics["segments"]}
+    fbias = F["model"].get("forecast_bias_by_segment") or {}
     rows = []
     for s in SEG_ORDER:
-        d = seg_by[s]
-        lift = d["lift"]
-        lift_col = GREEN if lift > 0.01 else (ACCENT_RED if lift < -0.01 else MED_GREY)
-        verdict = ("Model wins" if lift > 0.02 else
-                   "Baseline competitive" if lift >= -0.03 else "Use baseline")
-        rows.append([
-            SEG_TITLE[s],
-            BASE_LABEL[d["baseline_method"]],
-            f'{d["wape_baseline"]*100:.0f}%',
-            f'{d["wape_model"]*100:.0f}%',
-            f'<td style="text-align:right;color:{lift_col};font-weight:600;">{lift*100:+.0f}%</td>',
-            f'{d["mase"]:.2f}',
-            f'{d["bias"]*100:+.0f}%',
-            verdict,
-        ])
-    return B.data_table(
-        ["Segment", "Relevant baseline", "Baseline WAPE", "Model WAPE", "Lift", "MASE", "Bias", "Recommendation"],
-        rows, right={2, 3, 4, 5, 6})
+        if s not in seg:
+            continue
+        r = seg[s]
+        fb = fbias.get(s)
+        rows.append([s.capitalize(), pct(r["wape_model"], 0), pct(r["wape_baseline"], 0), f"{r['lift']*100:+.0f}%",
+                     f"{r['bias']*100:+.0f}%", f"{fb*100:+.0f}%" if fb is not None else "n/a"])
+    rows.append(["<strong>All items</strong>", f"<strong>{pct(metrics['overall']['model'], 0)}</strong>",
+                 f"<strong>{pct(metrics['overall']['baseline'], 0)}</strong>",
+                 f"<strong>{(metrics['overall']['baseline']-metrics['overall']['model'])/metrics['overall']['baseline']*100:+.0f}%</strong>", "", ""])
+    return widths(B.data_table(["Demand pattern", "Model error", "Best simple method", "Improvement",
+                                "Bias before correction", "Bias in 1H26, corrected"], rows, right=[1, 2, 3, 4, 5]),
+                  [20, 15, 18, 15, 16, 16])
 
 
-def abc_table():
-    rows = []
-    for r in abc_rows:
-        lift = (r["base"] - r["model"]) / r["base"]
-        rows.append([
-            f'Class {r["abc"]}',
-            f'{r["n"]}',
-            f'{r["base"]*100:.0f}%',
-            f'{r["model"]*100:.0f}%',
-            f'<td style="text-align:right;color:{GREEN if lift>0 else MED_GREY};font-weight:600;">{lift*100:+.0f}%</td>',
-        ])
-    return B.data_table(["ABC class", "Items", "Baseline WAPE", "Model WAPE", "Lift"], rows, right={1, 2, 3, 4})
+# ── report ────────────────────────────────────────────────────────────────────
+mod, rule, dirty = F["model"], F["clean_rule"], F["dirty"]
+mod46, rule46, dirty46 = M46["model"], M46["clean_rule"], M46["dirty"]
+k_abc, z = sched["safety_factor"], sched["normal_z"]
+bias = sched["bias_correction"]
+churn = sched["churn"]
 
+charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy()}
 
-MODEL_CARD = f"""
-<div class="model-card">
-  <div class="model-card-grid">
-    <div><div class="mc-label">What it predicts</div>
-      <div class="mc-value">Units consumed of each purchased item over that item's own replenishment lead time</div></div>
-    <div><div class="mc-label">Algorithm</div>
-      <div class="mc-value">XGBoost gradient-boosted trees, tuned with Optuna</div></div>
-    <div><div class="mc-label">Scored</div>
-      <div class="mc-value">Monthly, for all {n_items} canonical items</div></div>
-    <div><div class="mc-label">Accuracy metric</div>
-      <div class="mc-value">WAPE (weighted absolute percentage error); MASE and bias as supporting checks</div></div>
-    <div><div class="mc-label">Headline accuracy</div>
-      <div class="mc-value">{overall_model*100:.0f}% test WAPE, against {ma_wape*100:.0f}% for the moving average in use today</div></div>
-    <div><div class="mc-label">Intended use</div>
-      <div class="mc-value">Decision support for the three buyers: it sizes reorder demand, a person releases the PO</div></div>
-  </div>
-</div>
-"""
-
-
-# ── Assemble ──────────────────────────────────────────────────────────────────
-charts = {
-    "cand": chart_candidates(),
-    "seg": chart_segment_vs_baseline(),
-    "threeway": chart_threeway(),
-}
-
-toc = ('<a href="#summary">Executive Summary</a><hr>'
-       '<a href="#predicts">What the Model Predicts</a>'
-       '<a href="#selection">Model Selection</a>'
-       '<a href="#performance">Performance by Segment and ABC</a><hr>'
-       '<a href="#cleaning">What Each Stage of Cleaning Was Worth</a>'
-       '<a href="#safetystock">From Accuracy to Safety Stock</a>'
-       '<a href="#limits">Limitations and Intended Use</a>')
+toc = ('<a href="#summary">Summary</a>'
+       '<a href="#halves">Six Months on the New System</a>'
+       '<a href="#source">Where the Improvement Came From</a>'
+       '<a href="#accuracy">Forecast Accuracy</a>'
+       '<a href="#rop">From Forecast to Reorder Point</a>'
+       '<a href="#limits">Limitations and Next Step</a>')
 
 body = f"""
-{B.section("summary", "Section 1", "Executive Summary")}
-<p>This model tells the shop's three buyers how much of each purchased item they are likely to consume before
-their next order can arrive, so they can reorder the right quantity at the right time. It is the forecasting
-engine behind the reorder queue for a precision machining shop running about $25M in revenue across roughly
-800 active purchased items. Better demand numbers are what let the shop hold less stock without running out:
-the goal is to free up working capital tied up in excess inventory and to cut the scrap and rush-freight bills
-that come from buying the wrong amounts.</p>
-<p>The model is an XGBoost forecaster, and on a held-out test window it predicts lead-time demand with a
-<strong>weighted error (WAPE) of {overall_model*100:.0f}%</strong>. That is a large step up from the 3-month
-moving average the shop relies on today, whose error on the same items is about <strong>{ma_wape*100:.0f}%</strong>.
-Feeding these forecasts into the reorder policy, at an equal service level of roughly 97%, releases about
-<strong>${wc_release:,.0f}</strong> of working capital ({wc_release_pct:.0%}) versus running the corrected
-policy on simpler numbers, while holding fill rate steady.</p>
+{B.section("summary", "Section 1", "Summary")}
+<p>From January through June 2026 the shop ran its purchasing on the cleaned records and on reorder points set
+each month by the demand model. Against the first half of 2025, run the same way the shop had always run it,
+the fill rate rose from {pct(H1['fill_rate'])} to {pct(mod['fill_rate'])}, stockout episodes fell from
+{H1['stockout_episodes']:,} to {mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to
+{mod['jobs_delayed']}, and rush freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}. The
+shop holds more stock to do it: {k(mod['avg_inventory_value'])} on average against {k(H1['avg_inventory_value'])}.</p>
+<p>Most of that improvement is the cleanup, not the model. Replaying the same six months of demand with nothing
+fixed gives {dirty['stockout_episodes']:,} stockouts; with the cleaned records and reorder points recomputed by
+the simple rule, {rule['stockout_episodes']:,}; with the model, {mod['stockout_episodes']:,}. The model adds
+service on top of the cleanup, but it pays for it with inventory: once the new policy has settled (months 4 to
+6), it lifts A-item fill from {pct(rule46['fill_rate_by_abc']['A'])} to {pct(mod46['fill_rate_by_abc']['A'])}
+against a 98% target, on {k(mod46['avg_inventory_value'])} of stock against {k(rule46['avg_inventory_value'])}.
+Held to the target, the simpler rule gets there more cheaply. The model's safety stock is sized for every order
+cycle, and the shop's large order quantities already protect most of them; sizing it against a fill-rate target
+instead is the next step (Section 6).</p>
+
 {B.kpi_row(
-    B.kpi_card(f"{overall_model*100:.0f}%", "Test WAPE", "held-out backtest", DARK_BLUE),
-    B.kpi_card(f"{ma_wape*100:.0f}% → {overall_model*100:.0f}%", "vs shop moving average", "same items, same window", GREEN),
-    B.kpi_card(f"{overall_lift*100:+.0f}%", "Lift over segment baselines", "weighted across all items", DARK_BLUE),
-    B.kpi_card(f"${wc_release/1000:,.0f}K", "Working capital released", f"{wc_release_pct:.0%} at equal service", GREEN))}
-<p>The rest of this report is written for a non-technical reader. It explains what the model forecasts and why
-lead-time demand is the right target, how the winning algorithm was chosen from a field of candidates, where
-it beats the shop's current baselines and where an old-fashioned rule is still the honest choice, the two
-stages of data cleaning and what each one was worth to accuracy, and how the forecast error turns into the
-safety stock that protects the line.</p>
-{MODEL_CARD}
+    B.kpi_card(f"{pct(H1['fill_rate'])} &rarr; {pct(mod['fill_rate'])}", "Fill rate", "1H25 to 1H26", DARK_BLUE),
+    B.kpi_card(f"{H1['stockout_episodes']:,} &rarr; {mod['stockout_episodes']:,}", "Stockout episodes", "1H25 to 1H26", GREEN),
+    B.kpi_card(f"{k(H1['rush_spend'])} &rarr; {k(mod['rush_spend'])}", "Rush spend", "1H25 to 1H26", GREEN),
+    B.kpi_card(f"{pct(tw['raw'], 0)} &rarr; {pct(tw['fully'], 0)}", "Forecast error", "before and after cleaning", DARK_BLUE))}
 
-{B.section("predicts", "Section 2", "What the Model Predicts")}
-<p>The model does not forecast a fixed 30-day or 90-day window. For each item it predicts demand over that
-item's own <strong>replenishment lead time</strong>: the number of days between placing a purchase order and
-having the parts on the shelf ready to use. A bar stock item that arrives in a week and a casting that takes
-two months are two different questions, and the reorder decision only cares about the demand that will land
-before the next delivery does.</p>
-<p>That is why lead-time demand is the right target. The buyer's real question is never "how much will we use
-next month" in the abstract; it is "will what I have on hand, plus what is already on order, cover us until the
-next shipment arrives." Forecasting demand over each item's lead time answers that question directly, and it
-is the exact quantity the reorder point and safety stock are built on. The model is scored monthly against
-what actually happened, across all {n_items} canonical items and {n_origins} rolling forecast origins in the
-backtest, so its accuracy reflects repeated real reorder decisions rather than a single lucky month.</p>
+{B.section("halves", "Section 2", "Six Months on the New System")}
+<p>The first comparison is the one the shop lived through: the forward half-year against the two halves of
+2025, each as the shop actually ran it. The two 2025 halves are close to each other, which makes them a fair
+baseline; 2H25 includes the ten weeks of remediation, but the cleaned records and the new reorder points only
+took over on 1 January. A job counts as held for material when its production order hit a material-shortage
+hold, the same definition the data quality audit used for 2025.</p>
+{B.chart("Stockouts, held jobs and rush spend by half-year", charts["halves"])}
+{halves_table()}
+<p>Purchases rose in 1H26 ({k(mod['purchases'])} against {k(H1['purchases'])}) because the new reorder points
+rebuilt stock on items the stale parameters had been running short; the extra {k(mod['avg_inventory_value'] - H1['avg_inventory_value'])}
+of average inventory is where that money went. Different halves carry different demand, so the size of each
+change also reflects the season and the product mix. The next section removes that by holding demand fixed.</p>
 
-{B.section("selection", "Section 3", "Model Selection")}
-<p>Three candidate algorithms were put through the same tuning and the same held-out test: a linear model
-(Ridge), a Random Forest, and XGBoost, each searched over its hyperparameters with Optuna. They were compared
-on a validation window first, then scored once on a later test window they had never seen, so the winner is
-the one that generalizes, not the one that memorizes. The table and chart below report WAPE, where lower is
-better. XGBoost had the lowest error on both windows, so it was carried forward; the takeaway is that the
-tree-based models decisively beat the linear one, and XGBoost edged out the Random Forest on the unseen test
-data.</p>
-{candidate_table()}
-{B.chart("Candidate Comparison: Validation and Test WAPE", charts["cand"])}
-<p>The linear model sits far above the others because demand here is intermittent and non-linear, with long
-flat stretches broken by spikes, which a straight-line fit cannot follow. XGBoost's test WAPE of
-{metrics['candidates']['XGBoost']['test_wape']*100:.0f}% against the Random Forest's
-{metrics['candidates']['RandomForest']['test_wape']*100:.0f}% is a modest but consistent edge, and it holds up
-across the demand segments examined next.</p>
+{B.section("source", "Section 3", "Where the Improvement Came From")}
+<p>To separate what the cleanup did from what the model did, the same January to June 2026 demand, with the same
+supplier deliveries, was replayed three ways. With nothing fixed, the shop keeps the stale lead times and
+reorder points, the duplicate records, the phantom on-order and the unrecorded pulls. With the cleaned records
+and the recomputed rule, it runs on the corrected masters with reorder points recomputed from twelve months of
+usage over the corrected lead time. With the demand model, the corrected masters are the same, and the reorder
+point each month comes from the model's forecast. The only difference between the last two is the forecast
+behind the reorder point. None of the three can see future demand: the reorder decision knows scheduled
+production and nothing else, as the ERP does.</p>
+{B.chart("The same demand three ways, months 4 to 6 (steady state)", charts["variants"])}
+<p>The first three months are a transition: stock is being rebuilt on items that were short, and the old stale
+orders are still arriving. The comparison that matters is months 4 to 6, once the new policy has settled.
+Across the full six months:</p>
+{variants_table(F)}
+{sub("Months 1 to 3 (transition)")}
+{variants_table(M13)}
+{sub("Months 4 to 6 (steady state)")}
+{variants_table(M46)}
+<p>The cleanup does the heavy lifting: in steady state, stockout episodes fall from {dirty46['stockout_episodes']:,}
+with nothing fixed to {rule46['stockout_episodes']:,} on the cleaned records, and rush spend from
+{k(dirty46['rush_spend'])} to {k(rule46['rush_spend'])}. The model then cuts stockouts to
+{mod46['stockout_episodes']:,} and A-item days short from {rule46['stockout_days_by_abc']['A']:,} to
+{mod46['stockout_days_by_abc']['A']:,}, but with {k(mod46['safety_stock_value'] - rule46['safety_stock_value'])} more safety
+stock and {k(mod46['excess_value'] - rule46['excess_value'])} more excess. The order-line counts show the new policy
+does not buy its service with a flood of small orders: lines placed are within about ten percent across the three.</p>
+{sub("Purchases by month")}
+<p>Purchases should converge to consumption under any sound policy. The transition shows up as buying above
+consumption while stock is rebuilt, then settling.</p>
+{purchases_table()}
 
-{B.section("performance", "Section 4", "Performance by Segment and ABC")}
-<p>A single average hides more than it shows, because these items do not behave alike. Every item is sorted
-into a demand pattern, smooth, erratic, lumpy, or intermittent, and each pattern has its own sensible baseline
-that the shop could use instead of a model. The honest test is the model against the <em>right</em> baseline
-for each pattern, not against a weak straw man. The chart and table below show that comparison; the takeaway
-is that the model earns its place on the erratic and lumpy items, is a wash on smooth demand, and does not beat
-the baseline on the truly intermittent items, where the recommendation is to keep using the simpler rule.</p>
-{B.chart("Model vs Each Segment's Relevant Baseline (WAPE)", charts["seg"])}
-{segment_table()}
-<p>Reading the table: <strong>lift</strong> is how much the model reduces error versus that segment's baseline,
-<strong>MASE</strong> compares the model's error to a naive one-step forecast (below 1.0 means better than
-naive), and <strong>bias</strong> shows whether the model tends to under-forecast (negative) or over-forecast.
-The model delivers its clearest wins on <strong>erratic</strong> demand ({seg_by['erratic']['lift']*100:+.0f}%)
-and <strong>lumpy</strong> demand ({seg_by['lumpy']['lift']*100:+.0f}%), the volatile items where a moving
-average lags and overshoots. On <strong>smooth</strong> items it is a statistical tie with Croston
-({seg_by['smooth']['lift']*100:+.0f}%), which is fine because those items are already easy to forecast either
-way. On <strong>intermittent</strong> items the model is competitive at best ({seg_by['intermittent']['lift']*100:+.0f}%)
-and Croston is the honest choice; these items are mostly zeros with occasional demand, and no method predicts
-them well. The consistent negative bias across segments means the model leans slightly toward under-forecasting,
-which the safety stock in Section 6 is sized to absorb.</p>
-<p>The same picture holds when items are grouped by ABC value class rather than demand pattern. The model beats
-the blended baseline in every class, with the largest gains on the B and C items where demand is choppier.</p>
-{abc_table()}
-<p>The comparison that matters most to the shop, though, is not against these tuned per-segment baselines but
-against what the buyers actually use: a 3-month moving average applied to every item alike. Measured that way,
-the model cuts WAPE from about <strong>{ma_wape*100:.0f}% to {overall_model*100:.0f}%</strong>, because the
-moving average is badly mismatched to the lumpy and intermittent items that make up nearly half the catalog.</p>
+{B.section("accuracy", "Section 4", "Forecast Accuracy")}
+<p>The model forecasts each item's demand over its own replenishment lead time, because that is the quantity a
+reorder point has to cover. Accuracy is measured as weighted absolute percentage error (WAPE) on a held-out
+year, which reads like the familiar percentage error for a steady part and stays defined for the third of parts
+with months of zero demand. The same model, with the same features, was run on the history at three stages of
+cleaning. Across all items the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)}
+items whose history the cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls
+from {pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)}
+to {pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
+history; the other thirteen corrupt what the forecast is used for, which is why Section 3 is where the cleanup
+shows its value.</p>
+{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
+<p>On the cleaned history the model beats the best simple method for each demand pattern (a moving average,
+last year's month or Croston's method, whichever did best):</p>
+{accuracy_table()}
+<p>Bias is the diagnostic accuracy hides. Trained on log demand, the model forecasts something nearer the median
+than the mean, and ran {', '.join(f"{abs(s['bias'])*100:.0f}% low on {s['segment']}" for s in metrics['segments'])}
+parts. A reorder point needs the mean, so the forecast is corrected per demand pattern by the ratio of actual to
+forecast on the 2025 backtest; in the six forward months the corrected forecast ran within a few percent of
+actual demand for every pattern.</p>
 
-{B.section("cleaning", "Section 5", "What Each Stage of Cleaning Was Worth")}
-<p>Some of the accuracy did not come from the algorithm at all; it came from repairing the data before the
-model ever saw it. The records were cleaned in two stages, and to measure what each stage bought, the same
-forecaster was rerun three times: once on the raw source data, once after <strong>master-level cleaning</strong>
-(merging duplicate part numbers and fixing the item master), and once after <strong>transaction-level
-cleaning</strong> as well (repairing the ledger of individual stock movements, including the typed-in free-text
-lines). The chart below tracks the overall forecast error across those three stages; the takeaway is that each
-stage of cleaning lowered error, and the two stages together cut the overall WAPE from about
-<strong>{tw_raw_w*100:.1f}% to {tw_fully_w*100:.1f}%</strong>.</p>
-{B.chart("Overall Forecast Error at Three Stages of Cleaning", charts["threeway"])}
-<p>Read on the whole catalog, the gains look modest: master-level cleaning is worth about
-<strong>{master_gain*100:+.1f}%</strong> overall and transaction-level cleaning about
-<strong>{txn_gain*100:+.1f}%</strong> more. That is because most items were never broken in the first place, so
-averaging the repair across all {n_items} of them dilutes it. The honest way to see the value of cleaning is to
-look at the specific items each stage was meant to fix.</p>
-<p><strong>Master-level cleaning rescues the duplicate items.</strong> {n_dup} items had their history split
-across duplicate part numbers, so the demand for one physical item was scattered over two or more records and
-every forecast was working from a series with holes in it. Merging those duplicates into one canonical item and
-stitching the history back together dropped the forecast error on exactly those items from about
-<strong>{dup_raw_w*100:.0f}% to {dup_master_w*100:.0f}% WAPE</strong>. The overall number barely moves because
-these are {n_dup} items out of {n_items}, but for the buyers who order those parts the forecast went from
-untrustworthy to usable.</p>
-<p><strong>Transaction-level cleaning rescues the free-text items.</strong> {n_ft} items had a meaningful share
-of their demand posted on typed-in ledger lines that never carried a clean part number, so a slice of their real
-consumption was invisible to the forecast. Attributing those free-text movements back to the right item lowered
-the error on that group by about <strong>{ft_gain*100:+.1f}%</strong> (from {ft_master_w*100:.0f}% to
-{ft_fully_w*100:.0f}% WAPE). As with the duplicates, the effect is concentrated where the defect lived rather
-than spread evenly across the catalog.</p>
-<p>The point for the business is that model choice and data quality are not competing investments, and neither is
-a silver bullet on its own. Each stage of cleaning delivers a small overall gain but a large one on the items it
-repairs, and it is that item-level repair, not the headline average, that lets the reorder queue be trusted part
-by part rather than only in aggregate.</p>
+{B.section("rop", "Section 5", "From Forecast to Reorder Point")}
+<p>At the start of each forward month the model was retrained on the cleaned history to date, and each item's
+reorder point was set to the corrected forecast over the lead time plus a safety stock of k times the item's
+forecast error over the lead time. The factor k was calibrated on the 2025 backtest as the quantile of the
+errors at each class's service level, rather than assumed from the normal curve: A {k_abc['A']:.2f} (normal
+{z['A']:.2f}), B {k_abc['B']:.2f} ({z['B']:.2f}), C {k_abc['C']:.2f} ({z['C']:.2f}). The errors have slightly heavier
+tails than the normal curve assumes, so the calibrated buffers are a little larger.</p>
+<p>Buyers stop trusting numbers that jump around, so a point only moves when the fresh value differs from the
+current one by more than {sched['hysteresis']*100:.0f}%. Without that band every point would change every month,
+and {churn['without_hysteresis']*100:.0f}% of them by more than a fifth; with it, {churn['with_hysteresis']*100:.0f}% of
+item-months see a change at all, each one large enough to be worth acting on.</p>
 
-{B.section("safetystock", "Section 6", "From Accuracy to Safety Stock")}
-<p>Accuracy is not the end product; the reorder policy is. The forecast sets the expected demand over lead
-time, and the model's <em>error</em> over that same window sets the safety stock: the buffer held to cover the
-gap between what was forecast and what actually gets consumed while an order is in transit. Tighter, less biased
-forecasts mean a smaller buffer is enough to hit the same service target, which is exactly how better numbers
-turn into freed working capital. Safety stock is sized to each item's ABC service level, 98% for A items, 95%
-for B, and 90% for C, so the most valuable and most disruptive stockouts are protected first, and the long tail
-of C items is not over-insured. The inventory outcome of running these forecasts through that policy, roughly
-${wc_release/1000:,.0f}K of working capital released at an equal service level, is detailed in the analytics
-and policy deliverables; this report's job is the forecast quality that makes it possible.</p>
-
-{B.section("limits", "Section 7", "Limitations and Intended Use")}
-<p>Being clear about what the model cannot do is what makes it safe to rely on. It is a buyer's aid, not an
-autopilot.</p>
+{B.section("limits", "Section 6", "Limitations and Next Step")}
 <ul class="limitation-list">
-  <li><strong>Intermittent demand is genuinely hard.</strong> Items that sell in rare, irregular bursts are
-  the least predictable, and the model does not beat the Croston baseline on them. For those items the
-  recommendation is to keep the simpler rule and lean on safety stock, not to trust a tight point forecast.</li>
-  <li><strong>It forecasts quantity, not price or supply risk.</strong> The output is expected demand over lead
-  time. It does not predict cost changes, supplier delays, or a sudden engineering change that makes a part
-  obsolete; those still need human judgment and the supplier data.</li>
-  <li><strong>It assumes the past is a fair guide.</strong> The model learns from history, so a brand-new item
-  with no demand record, or a step change in the shop's product mix, will be forecast poorly until enough new
-  history accumulates. Lead times are taken as given from the corrected item attributes.</li>
-  <li><strong>It is decision support, not automated purchasing.</strong> The model sizes the reorder and
-  explains it; a buyer reviews the queue and releases the purchase order. It is built to inform the three
-  buyers, not to release POs on its own.</li>
-  <li><strong>It stays honest through monitoring.</strong> Demand patterns drift, so forecast accuracy is
-  tracked each period and the model is retrained when it slips, as covered in the monitoring report.</li>
+  <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
+      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical across the three
+      variants, so the differences between them are the policy; the size of each difference is an estimate.</li>
+  <li><strong>Safety stock is sized per cycle, not per unit filled.</strong> The model's buffer protects every
+      order cycle to the class's service level, and on items with large order quantities most cycles are already
+      protected by the order itself, so the model overshoots the A-item fill target. Setting safety stock against
+      a fill-rate target, which accounts for order quantity, would bring inventory down toward the rule's while
+      keeping the model's advantage on the parts that stop the line. That is the next change to make.</li>
+  <li><strong>The first three months are a transition.</strong> Purchases run above consumption while stock is
+      rebuilt; the steady-state comparison is months 4 to 6, and three months is a short steady state.</li>
 </ul>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text(B.page("ML Model Overview and Performance Report: Demand Forecaster",
-                      "", toc, body), encoding="utf-8")
-print(f"Model overview written to {OUT}")
+html = B.page("ML Model Overview and Performance", "", toc, body)
+html = html.replace("</style></head>", ".section-title-block.sub .section-title{font-size:18px;font-weight:700;}</style></head>", 1)
+OUT.write_text(html, encoding="utf-8")
+print(f"Model overview written to {OUT}  ({len(html)//1024} KB)")
