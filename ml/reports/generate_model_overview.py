@@ -521,7 +521,7 @@ erp_b64 = base64.b64encode(_png.read_bytes()).decode() if _png.exists() else ""
 charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy(),
           "invm": chart_inventory_months(), "valcat": chart_value_by_category(), "catseg": chart_category_patterns(),
           "unitcat": chart_units_by_category(),
-          "hist": chart_history_value(), "examples": chart_examples(), "pareto": chart_pareto()}
+          "examples": chart_examples()}
 
 toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#modeloverview">Model Overview</a>'
@@ -599,12 +599,6 @@ with no demand at all). One representative item within each pattern is shown bel
 {B.chart("Items in each category, by demand pattern", charts["catseg"])}
 <p>{TBL_TEXT}</p>
 {category_table()}
-<p>Value is concentrated. A small share of items carries most of the consumption value: {abc_n.get('A', 0)} A
-items, {abc_n.get('B', 0)} B items and {abc_n.get('C', 0)} C items. That concentration is why order quantities are
-set by cost: buying the A items in smaller, more frequent lots frees most of the working capital, while the
-buffers that protect against stockouts are set by how unpredictable each part is.</p>
-{B.chart("Consumption value concentration, 2025", charts["pareto"])}
-
 {B.section("performance", "Section 3", "Model Performance")}
 
 {B.section("scoring", "Section 3.1", "Scoring Summary")}
