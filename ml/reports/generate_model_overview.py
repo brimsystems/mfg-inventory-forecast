@@ -742,7 +742,7 @@ four-and-a-half-month lots and with the data errors fully intact.</p>
 {dirty['stockout_episodes'] - mod['stockout_episodes']:,} ({fall(dirty['stockout_episodes'], mod['stockout_episodes'])}),
 jobs held for material by {dirty['jobs_delayed'] - mod['jobs_delayed']:,} ({fall(dirty['jobs_delayed'], mod['jobs_delayed'])}),
 rush spend by {k(dirty['rush_spend'] - mod['rush_spend'])} ({fall(dirty['rush_spend'], mod['rush_spend'])}), and the
-ending inventory balance by {k(end_dirty - end_mod)} ({fall(end_dirty, end_mod)}), to {k(end_mod)} on June 30.</p>
+ending inventory balance by {k(end_dirty - end_mod)} ({fall(end_dirty, end_mod)}).</p>
 {B.chart("Average inventory by month, without and with the model", charts["invm"])}
 """
 
