@@ -107,12 +107,13 @@ directly into the ERP for each of the 1,300 stocked items. The model's reorder d
 current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
 and a safety buffer based on how unpredictable each part's demand and deliveries have been.</p>
 <div style="display:flex;align-items:stretch;gap:0;margin:22px 0;flex-wrap:wrap;"><div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;"><div style="font-weight:700;color:#322B4B;margin-bottom:6px;">1. What it reads</div><div style="font-size:16px;line-height:1.55;">Three years of cleaned consumption history for every stocked item, with its demand pattern, value class, cost and supplier lead time.</div></div><div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div><div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;"><div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div><div style="font-size:16px;line-height:1.55;">Every week, one forecast per item: how many units the shop will use before a new order placed today could arrive.</div></div><div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div><div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;"><div style="font-weight:700;color:#322B4B;margin-bottom:6px;">3. What it produces</div><div style="font-size:16px;line-height:1.55;">For every item, when to reorder and how much, loaded into the ERP, which checks every item daily and flags what to order.</div></div></div>
-<p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month. The
+<p>The model refreshes its forecasts every week and is retrained on the latest history once a month. The
 model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
 to order. To keep working capital low, the recommendations for how much to order are informed by the item's cost:
 expensive items are bought every few weeks in small lots, and cheap items a few times a year in larger lots.</p>
 <p>The ERP's reorder queue ranks every stocked item against the model's weekly reorder point: items at or below it
-are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items outside of it "OK". Each line also
+are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items more than two weeks outside of
+it "OK". Each line also
 shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast, the safety
 stock and the suggested order quantity, as seen in the screenshot of the ERP system below:</p>
 <div class="chart-wrap" style="padding:6px;">
