@@ -399,14 +399,15 @@ def category_table():
 
 _hi = cat_tbl.loc[[c for c in ["Mechanical", "Electrical"] if c in cat_tbl.index]]
 _lo = cat_tbl.loc[[c for c in ["Fasteners", "Hardware"] if c in cat_tbl.index]]
-TBL_TEXT = (f"Cost and usage run in opposite directions across the categories. Mechanical and electrical parts "
+TBL_TEXT = (f"Item cost and usage move in opposite directions across the categories. Mechanical and electrical parts "
             f"(motors, gearboxes, drives, controls) are {pct(_hi['item_share'].sum(), 0)} of items and "
             f"{pct(_hi['value_share'].sum(), 0)} of consumption value, with median unit costs of "
             f"${cat_tbl.loc['Mechanical', 'med_cost']:,.0f} and ${cat_tbl.loc['Electrical', 'med_cost']:,.0f}, but only "
             f"{pct(_hi['unit_share'].sum(), 0)} of the units used. Fasteners and hardware are the reverse: "
             f"{pct(_lo['unit_share'].sum(), 0)} of the units used but {pct(_lo['value_share'].sum(), 0)} of the value, "
             f"at median unit costs under ${max(cat_tbl.loc['Fasteners', 'med_cost'], cat_tbl.loc['Hardware', 'med_cost']) + 0.5:,.0f}. "
-            f"The shop's money is tied up in a few hundred expensive, slower-moving parts, not in the high-volume floor stock.")
+            f"The shop's working capital is therefore tied up in a few hundred expensive, slower-moving parts, not in the "
+            f"high-volume floor stock.")
 
 
 def chart_category_patterns():
