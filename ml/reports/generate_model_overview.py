@@ -139,9 +139,29 @@ def chart_actions():
     for b_, v in zip(bars, vals):
         ax.text(b_.get_x() + b_.get_width() / 2, v + n_scored * 0.005, f"{v:,}\n({v / n_scored:.0%})",
                 ha="center", va="bottom", fontsize=10)
-    ax.set_ylabel("Item-weeks")
+    ax.set_ylabel("Predictions")
     ax.set_ylim(0, max(vals) * 1.18)
     ax.yaxis.set_major_formatter(__import__("matplotlib.ticker", fromlist=["FuncFormatter"]).FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    B.chart_style(ax); fig.tight_layout()
+    return B.b64(fig)
+
+
+def chart_actions_by_month():
+    """Predictions by reorder action, grouped by month."""
+    months = sorted({d_[:7] for d_ in _sw})
+    x = np.arange(len(months)); w = 0.26
+    fig, ax = B.make_fig(3.4)
+    vals = {st: [sum(v.get(st, 0) for d_, v in _sw.items() if d_[:7] == m_) for m_ in months] for st in STATUS}
+    top = max(max(v) for v in vals.values())
+    for i, st in enumerate(STATUS):
+        bars = ax.bar(x + (i - 1) * w, vals[st], w, color=STATUS_COL[st], label=st)
+        for b_, v in zip(bars, vals[st]):
+            ax.text(b_.get_x() + b_.get_width() / 2, v + top * 0.012, f"{v:,}", ha="center", va="bottom",
+                    fontsize=7.5, color=DARK_GREY)
+    ax.set_xticks(x); ax.set_xticklabels([pd.Timestamp(m_ + "-01").strftime("%b %Y") for m_ in months])
+    ax.set_ylabel("Predictions"); ax.set_ylim(0, top * 1.15)
+    ax.yaxis.set_major_formatter(__import__("matplotlib.ticker", fromlist=["FuncFormatter"]).FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=3, fontsize=9)
     B.chart_style(ax); fig.tight_layout()
     return B.b64(fig)
 
@@ -614,7 +634,7 @@ import base64
 _png = REPO / "docs" / "screenshots" / "erp_queue.png"
 erp_b64 = base64.b64encode(_png.read_bytes()).decode() if _png.exists() else ""
 
-charts = {"halves": chart_halves(), "variants": chart_variants(), "actions": chart_actions(),
+charts = {"halves": chart_halves(), "variants": chart_variants(), "actions": chart_actions(), "actions_m": chart_actions_by_month(),
           "invm": chart_inventory_months(), "valcat": chart_value_by_category(), "catseg": chart_category_patterns(),
           "unitcat": chart_units_by_category(),
           "examples": chart_examples()}
@@ -698,12 +718,13 @@ with no demand at all). One representative item within each pattern is shown bel
 
 {B.section("scoring", "Section 3.1", "Scoring Summary")}
 <p>From January to June 2026 the model refreshed the reorder points of all {n_items:,} items every week. Across
-those {n_weeks} weekly refreshes it scored {n_scored:,} item-weeks: <strong>{status_tot['ORDER NOW']:,}</strong>
+those {n_weeks} weekly refreshes it made {n_scored:,} predictions: <strong>{status_tot['ORDER NOW']:,}</strong>
 ({status_tot['ORDER NOW'] / n_scored:.0%}) were marked ORDER NOW and <strong>{status_tot['ORDER SOON']:,}</strong>
 ({status_tot['ORDER SOON'] / n_scored:.0%}) ORDER SOON, and the rest were OK. In a typical week that is about
 {status_tot['ORDER NOW'] / n_weeks:.0f} items to order now and {status_tot['ORDER SOON'] / n_weeks:.0f} to order soon,
 a short, ranked list for the buyers to work through.</p>
-{B.chart("Item-weeks by Reorder Action, January to June 2026", charts["actions"])}
+{B.chart("Predictions by Reorder Action, January to June 2026", charts["actions"])}
+{B.chart("Predictions by Reorder Action, by Month", charts["actions_m"])}
 <p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
 before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
 {halves_table()}
