@@ -167,7 +167,7 @@ def chart_actions_by_month():
     return B.b64(fig)
 
 
-PAIR = [("dirty", "Without the model"), ("model", "With the model")]
+PAIR = [("dirty", "Status quo"), ("model", "With the model")]
 
 
 def chart_variants():
@@ -741,7 +741,7 @@ four-and-a-half-month lots and with the data errors fully intact.</p>
 <p>The model improves results across the board, underscoring its effectiveness at keeping the right items in
 stock: fewer stockouts and held jobs, less spent rushing orders in, and less inventory on the shelf.</p>
 {B.chart("Status quo and with the model, January to June 2026", charts["variants"])}
-{B.chart("Average inventory by month, without and with the model", charts["invm"])}
+{B.chart("Average inventory by month, status quo and with the model", charts["invm"])}
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
