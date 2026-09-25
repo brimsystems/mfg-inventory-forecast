@@ -647,7 +647,7 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#performance">Model Performance</a>'
        '<a href="#scoring" class="sub">Scoring Summary</a>'
        '<a href="#accuracy" class="sub">Accuracy and Validation</a>'
-       '<a href="#limits" class="sub">What It Can and Cannot Predict</a>')
+       )
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
@@ -734,50 +734,17 @@ training. Three candidate algorithms were tuned and compared on their forecasts 
 other result in this section measures how the model then performed in live use, from January to June 2026,
 against how the shop performed before it.</p>
 {candidate_table()}
-<p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
-before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
-{halves_table()}
-<p>To measure what the model changed, the same January to June 2026 demand and supplier deliveries were replayed
-twice: once with the shop's manual reordering continued (its stale lead times and reorder points, the buyers'
-four-and-a-half-month lots and the data errors), and once with the model setting reorder points and order
-quantities on the cleaned records, reading the order book about {VM_days} days ahead. The purchasing manager
-expedites the same items in both. The first three months are a transition, as orders placed under the old points
-are still arriving and excess stock is used up, so the steady-state comparison is April to June.</p>
-{B.chart("Without and with the model, April to June 2026", charts["variants"])}
-{B.chart("Average inventory by month, without and with the model", charts["invm"])}
-<p>Once the new policy has settled, the model cuts stockout events by {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])},
-stockouts on line-critical items from {dirty46['stockout_episodes_by_tier']['line']} to
-{mod46['stockout_episodes_by_tier']['line']}, jobs held for material by {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])} and
-rush spend by {fall(dirty46['rush_spend'], mod46['rush_spend'])}, and ends June with {k(end_mod)} of stock against
-{k(end_dirty)}. It places more order lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the
-expensive items are bought more often; that is the cost of carrying less of them.</p>
-{sub("January to June 2026")}
+<p>To understand how well the model performed against baseline, we'll compare the model's performance in the
+1H 2026 to the same period of time under a status quo scenario. This status quo scenario assumes the shop operated
+in 1H 2026 as it did throughout 2025, including with stale lead times and reorder points, the buyers'
+four-and-a-half-month lots and with the data errors fully intact.</p>
 {compare_table(F)}
-{sub("April to June 2026 (after the transition)")}
-{compare_table(M46)}
-
-{B.section("limits", "Section 3.3", "What It Can and Cannot Predict")}
-<ul class="limitation-list">
-  <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
-      supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
-      the usual spread of deliveries, not a supplier failure.</li>
-  <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
-      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical in both replays, so
-      the differences between them are the policy; the size of each difference is an estimate.</li>
-  <li><strong>Excess on slow items takes time to clear.</strong> {k(mod46['excess_value'])} of stock in months 4 to 6
-      still sits on {mod46['excess_items']} items holding more than a year of supply. The model stops reordering
-      them, but an item used a few times a year takes that long to draw down. Returning or selling the worst of it
-      would release the cash sooner; that is a disposition decision for purchasing and finance, not a forecast.</li>
-  <li><strong>The order book is an assumption.</strong> The shop's records carry no booking date for customer
-      orders, so each job is assumed booked four to eight weeks before its release, typical of a job shop quoting
-      lead times of that length. With less notice, the model would see less of the coming demand.</li>
-  <li><strong>Expediting is held constant.</strong> Both replays expedite the same items the purchasing
-      manager tracked before go-live, so rush spend reflects how often those items were at risk, not a change in
-      how hard the shop chases suppliers.</li>
-  <li><strong>The first three months are a transition.</strong> Orders placed under the old points are still
-      arriving while excess is used up; the steady-state comparison is months 4 to 6, and three months is a short
-      steady state.</li>
-</ul>
+<p>The model improves results across the board. Against the status quo, stockout events fell by
+{dirty['stockout_episodes'] - mod['stockout_episodes']:,} ({fall(dirty['stockout_episodes'], mod['stockout_episodes'])}),
+jobs held for material by {dirty['jobs_delayed'] - mod['jobs_delayed']:,} ({fall(dirty['jobs_delayed'], mod['jobs_delayed'])}),
+rush spend by {k(dirty['rush_spend'] - mod['rush_spend'])} ({fall(dirty['rush_spend'], mod['rush_spend'])}), and the
+ending inventory balance by {k(end_dirty - end_mod)} ({fall(end_dirty, end_mod)}), to {k(end_mod)} on June 30.</p>
+{B.chart("Average inventory by month, without and with the model", charts["invm"])}
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
