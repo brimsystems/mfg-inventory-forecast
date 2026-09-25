@@ -654,24 +654,18 @@ body = f"""
 <p>The demand forecasting model sets the shop's reorder decisions for all {n_items:,} stocked items. Every week it
 forecasts how much of each item the shop will use before a new order could arrive, and turns that forecast into a
 reorder point and an order quantity that are loaded straight into the ERP's purchasing screen. The model has been
-live for the past six months, January through June 2026, and in that time every reorder decision the shop made
+live for the past six months, January through June 2026, and in that time every reorder decision the shop has made
 came from it.</p>
-<p>Before the model, reordering was manual and ran on data the shop could not trust. Reorder points and lead times
-had been set at go-live and never revisited, so they were far too high on some items and too low on others, while
-duplicate item records, orders that showed as inbound but never arrived, and usage that was never recorded
-distorted the rest. Buyers compensated by padding safety stock and buying about four and a half months of an item
-at a time. The result was the worst of both: in 2025 the shop carried about {k(avg25)} of inventory on average,
-roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logged
-{H1['stockout_episodes'] + H2['stockout_episodes']:,} stockout events, held {H1['jobs_delayed'] + H2['jobs_delayed']}
-jobs for missing material and spent {k(H1['rush_spend'] + H2['rush_spend'])} on rush freight and premiums.</p>
-<p>In its first six months, the model improved all four outcomes that matter most. Against the average half of
-2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for material
-{fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend {fall(HALF('rush_spend'), mod['rush_spend'])}, and
-the inventory balance at the end of June was {k(end_mod)}, {fall(avg25, end_mod)} below the 2025 average.
-Replaying the same six months with the old approach shows how much is the model's own doing: against that status
-quo, stockout events were {fall(dirty['stockout_episodes'], mod['stockout_episodes'])} lower, held jobs
-{fall(dirty['jobs_delayed'], mod['jobs_delayed'])} lower, rush spend {fall(dirty['rush_spend'], mod['rush_spend'])}
-lower and the ending inventory balance {fall(end_dirty, end_mod)} lower.</p>
+<p>Before the model, reordering was manual and ran on data that was messy and couldn't be trusted. Buyers
+compensated by padding safety stock, keeping their own spreadsheets of stock and lead times, checking the shelves by
+eye before ordering, and rushing orders in when stock ran short. The result was the shop carrying excess inventory,
+roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logging elevated stockout
+events, held jobs for missing material and rush freight spend.</p>
+<p>In its first six months, the model improved the four outcomes that matter most to keeping production running
+without tying up cash. Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])},
+jobs held for material {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend
+{fall(HALF('rush_spend'), mod['rush_spend'])}, and the inventory balance at the end of June was {k(end_mod)},
+{fall(avg25, end_mod)} below the 2025 average.</p>
 {B.chart("2025 against the model's first six months", charts["halves"])}
 
 {B.section("modeloverview", "Section 2", "Model Overview")}
