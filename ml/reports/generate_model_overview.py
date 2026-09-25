@@ -519,7 +519,7 @@ as excess on slow parts is used up and not replaced.</p>
 decisions. Every week, the model predicts which items need to be reordered, and these predictions are then fed
 directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
 current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
-and a safety buffer sized to how unpredictable each part's demand and deliveries have been.</p>
+and a safety buffer based on how unpredictable each part's demand and deliveries have been.</p>
 {FLOW_HTML}
 <p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month. The
 model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
