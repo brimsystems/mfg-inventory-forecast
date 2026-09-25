@@ -450,26 +450,12 @@ decisions. Every week, the model predicts which items need to be reordered, and 
 directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
 current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
 and a safety buffer sized to how critical the part is.</p>
-<p>The model is built on {WIN_DESC}. It answers one question for every
-stocked item, every week: <strong>how much of this part will the shop use before a new order placed today could
-arrive?</strong> That window differs by part. A fastener that arrives in two weeks and a gearmotor that takes two
-months are different questions, and the reorder decision only cares about the demand that lands before the next
-delivery does.</p>
 {FLOW_HTML}
 <p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month. The
 model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
-to order.</p>
-<ul class="limitation-list">
-  <li><strong>When to reorder is informed by how critical the item is.</strong> The reorder point is the expected
-      usage over the lead time plus a safety buffer, and the buffer is sized to a service target by the item's
-      criticality. Production parts are held to a {tgt(FT['line'])} fill rate, spare parts to {tgt(FT['service'])},
-      and other shop supplies to {tgt(FT['standard'])}. This methodology aims to prevent stockouts that would stop
-      the line or delay a customer.</li>
-  <li><strong>How much to order is informed by the part's usage and cost.</strong> In order to keep working capital
-      low, expensive parts are bought every few weeks in small lots, and cheap parts a few times a year in larger
-      lots.</li>
-</ul>
-<p>The ERP's reorder queue ranks every stocked item against this week's latest reorder point: items at or below it
+to order. To keep working capital low, the recommendations for how much to order are informed by the item's cost:
+expensive items are bought every few weeks in small lots, and cheap items a few times a year in larger lots.</p>
+<p>The ERP's reorder queue ranks every stocked item against the model's weekly reorder point: items at or below it
 are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items outside of it "OK". Each line also
 shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast, the safety
 stock and the suggested order quantity, as seen in the screenshot of the ERP system below:</p>
