@@ -193,7 +193,7 @@ SERVICE_LEVEL_BY_ABC = {"A": 0.98, "B": 0.95, "C": 0.90}
 # They are deliberately miscalibrated: a multiplicative error is baked in so the
 # recomputed policy has room to improve.
 CURRENT_POLICY_ERROR_STD = 0.60   # go-live points never revisited as each part's demand moved: wrong both ways
-CURRENT_POLICY_SS_SHARE  = 1.0    # go-live safety stock as a share of lead-time demand (padded)
+CURRENT_POLICY_SS_SHARE  = 1.5    # go-live safety stock as a share of lead-time demand (padded)
 
 # ── Supplier master ─────────────────────────────────────────────────────────
 N_SUPPLIERS      = 40
@@ -343,7 +343,7 @@ RUSH_FREIGHT_BY_CLASS   = {       # freight charge on a rush line, by item class
     "Fittings": (60, 150), "Fasteners": (60, 150), "Hardware": (60, 150),
     "Consumables": (60, 150), "Outside Service": (100, 300),
 }
-COUNT_NOISE_SD          = 0.01    # counting noise on a physical count, share of quantity
+COUNT_NOISE_SD          = 0.005   # counting noise on a physical count, share of quantity
 
 # ── Transaction volume and floor conditions ─────────────────────────────────
 LOCATIONS       = ["MAIN", "FLOOR", "RECV", "CRIB"]

@@ -252,6 +252,22 @@ FT = sched["fill_rate_target"]
 tier_n = pd.Series(sched["criticality"]).value_counts().to_dict()
 LOT_LO, LOT_HI = sched["lot_days"]
 end_mod, end_dirty = F["model"]["end_inventory_value"], F["dirty"]["end_inventory_value"]
+end_rule = F["clean_rule"]["end_inventory_value"]
+dec_avg, dec_end = H2["inventory_by_month"]["2025-12"], H2["end_inventory_value"]
+jun_avg = F["model"]["inventory_by_month"]["2026-06"]
+jun_dirty = F["dirty"]["inventory_by_month"]["2026-06"]
+_m, _r = M46["model"]["avg_inventory_value"], M46["clean_rule"]["avg_inventory_value"]
+if _m <= _r:
+    AVG_NOTE = (f"It also carries the least stock of the three on average over months 4 to 6 ({k(_m)}), though it "
+                "gets there gradually: it first builds buffers on the parts that stop the line, then runs down the rest.")
+else:
+    AVG_NOTE = ("It gets there more gradually than the rule: it first builds buffers on the parts that stop the line, "
+                f"then runs down the rest, so its average over months 4 to 6 ({k(_m)}) sits above the rule's.")
+avg25 = float(np.mean(list(H1["inventory_by_month"].values()) + list(H2["inventory_by_month"].values())))
+
+
+def tgt(x):
+    return f"{round(x * 100, 1):g}%"
 
 
 def chg(a_, b_):
@@ -385,10 +401,11 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
 <p>From January through June 2026 the shop ran its purchasing on the cleaned records and on the model's reorder
-points and order quantities. Against the first half of 2025, run the way the shop had always run it, the shop
-carried less stock and ran short less often. Average inventory fell from {k(H1['avg_inventory_value'])} to
-{k(mod['avg_inventory_value'])}, and by the end of June it stood at {k(end_mod)}, {fall(H1['avg_inventory_value'], end_mod)}
-below the 1H25 average. Over the same half, stockout events fell from {H1['stockout_episodes']:,} to
+points and order quantities, and it carried less stock while running short less often. Inventory fell from an
+average of {k(avg25)} a month in 2025 under manual reordering to {k(jun_avg)} in June 2026, {fall(avg25, jun_avg)}
+lower. Part of that decline would have happened anyway: replaying 2026 with manual reordering continued leaves
+June at {k(jun_dirty)}, so the model's own effect is the {fall(jun_dirty, jun_avg)} gap between the two Junes.
+Against the first half of 2025, run the way the shop had always run it, stockout events fell from {H1['stockout_episodes']:,} to
 {mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to {mod['jobs_delayed']}, and rush
 freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}.</p>
 {B.chart("Inventory, stockouts, held jobs and rush spend by half-year", charts["halves"])}
@@ -398,13 +415,12 @@ of a part at a time whatever it cost. The model moves the stock to where it prev
 production bill, whose shortage holds a job, get the largest buffers, and expensive parts are bought more
 often in smaller lots. Replaying the same six months of demand with nothing fixed shows the gain once the new
 policy has settled (months 4 to 6): stockout events fall {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])},
-jobs held for material {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])}, rush spend
-{fall(dirty46['rush_spend'], mod46['rush_spend'])} and average inventory
-{fall(dirty46['avg_inventory_value'], mod46['avg_inventory_value'])}. Inventory is still falling
-at the end of June, as excess on slow parts is used up and not replaced.</p>
+jobs held for material {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])}
+and rush spend {fall(dirty46['rush_spend'], mod46['rush_spend'])}. Inventory is still falling at the end of June,
+as excess on slow parts is used up and not replaced.</p>
 
 {B.kpi_row(
-    B.kpi_card(f"{k(H1['avg_inventory_value'])} &rarr; {k(end_mod)}", "Inventory", "1H25 average to June 2026", GREEN),
+    B.kpi_card(f"{k(avg25)} &rarr; {k(jun_avg)}", "Inventory", "2025 monthly average to June 2026", GREEN),
     B.kpi_card(f"{H1['stockout_episodes']:,} &rarr; {mod['stockout_episodes']:,}", "Stockout events", "1H25 to 1H26", GREEN),
     B.kpi_card(f"{H1['jobs_delayed']} &rarr; {mod['jobs_delayed']}", "Jobs held for material", "1H25 to 1H26", GREEN),
     B.kpi_card(f"{k(H1['rush_spend'])} &rarr; {k(mod['rush_spend'])}", "Rush spend", "1H25 to 1H26", GREEN))}
@@ -429,9 +445,9 @@ questions.</p>
   <li><strong>When to reorder is set by how critical the part is.</strong> The reorder point is the expected usage
       over the lead time plus a safety buffer, and the buffer is sized to a service target by criticality, not by
       price. {tier_n.get('line', 0)} parts sit on a production bill, where a shortage holds a job: they are held to a
-      {FT['line']*100:.0f}% fill rate. {tier_n.get('service', 0)} parts go out on service orders, where a shortage
-      delays a customer repair: {FT['service']*100:.0f}%. The other {tier_n.get('standard', 0)} (shop supplies and
-      pulls with no job waiting on them) are held to {FT['standard']*100:.0f}%. A $2 fitting on a bill gets the same
+      {tgt(FT['line'])} fill rate. {tier_n.get('service', 0)} parts go out on service orders, where a shortage
+      delays a customer repair: {tgt(FT['service'])}. The other {tier_n.get('standard', 0)} (shop supplies and
+      pulls with no job waiting on them) are held to {tgt(FT['standard'])}. A $2 fitting on a bill gets the same
       protection as a $900 motor.</li>
   <li><strong>How much to order is set by the part's cost.</strong> Every order line costs buyer, receiving and
       payables time, and every dollar on the shelf costs money to hold. The order quantity balances the two, so an
@@ -541,19 +557,19 @@ full six months:</p>
 {variants_table(M13)}
 {sub("Months 4 to 6 (steady state)")}
 {variants_table(M46)}
-<p>The recomputed rule alone trims inventory ({k(rule46['avg_inventory_value'])} against
-{k(dirty46['avg_inventory_value'])} with nothing fixed) but does not raise service: fill is
-{pct(rule46['fill_rate'])} against {pct(dirty46['fill_rate'])}, and {rule46['jobs_delayed']} jobs are held against
-{dirty46['jobs_delayed']}. It spreads a standard buffer evenly, so the parts that stop the line get no more
-protection than shop supplies. The model, on the same cleaned records, holds less stock still
-({k(mod46['avg_inventory_value'])}) and cuts stockout events to {mod46['stockout_episodes']:,}, stockouts on
-line-critical parts from {dirty46['stockout_episodes_by_tier']['line']} to {mod46['stockout_episodes_by_tier']['line']},
-and jobs held to {mod46['jobs_delayed']}. It places more order lines ({mod46['order_lines']:,} against
-{dirty46['order_lines']:,}) because the expensive parts are bought more often; that is the cost of carrying less
-of them.</p>
+<p>The recomputed rule alone lowers inventory (a June 30 balance of {k(end_rule)} against {k(end_dirty)} with
+nothing fixed) but does not raise service: fill is {pct(rule46['fill_rate'])} against {pct(dirty46['fill_rate'])},
+and {rule46['jobs_delayed']} jobs are held against {dirty46['jobs_delayed']}. It spreads a standard buffer evenly,
+so the parts that stop the line get no more protection than shop supplies. The model, on the same cleaned records,
+ends June with the least stock of the three ({k(end_mod)}) and cuts stockout events to
+{mod46['stockout_episodes']:,}, stockouts on line-critical parts from {dirty46['stockout_episodes_by_tier']['line']}
+to {mod46['stockout_episodes_by_tier']['line']}, and jobs held to {mod46['jobs_delayed']}. {AVG_NOTE} It places more order
+lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the expensive parts are bought more often;
+that is the cost of carrying less of them.</p>
 {sub("Purchases by month")}
-<p>Purchases should converge to consumption under any sound policy. Under the model the transition shows up as
-buying below consumption while excess stock is used up.</p>
+<p>Purchases should converge to consumption under any sound policy. Under the model, purchases run above
+consumption at first while buffers are built on the line-critical parts, then below it as excess on the rest is
+used up.</p>
 {purchases_table()}
 
 {B.section("limits", "Section 3.4", "What It Can and Cannot Predict")}
