@@ -371,8 +371,8 @@ def chart_value_by_category():
 
 
 def chart_units_by_category():
-    return _chart_by_category("consumption", 1000, "Usage in items (000 / month)",
-                              "Average: {:,.1f}K items used per month")
+    return _chart_by_category("consumption", 1000, "Usage in units (000 / month)",
+                              "Average: {:,.1f}K units used per month")
 
 
 # cost and usage by category, 2025
@@ -393,8 +393,8 @@ def category_table():
              k(r.value), pct(r.value_share, 0)] for c, r in cat_tbl.iterrows()]
     rows.append(["<strong>All items</strong>", f"<strong>{int(cat_tbl['n'].sum()):,}</strong>", "", "", "<strong>100%</strong>",
                  f"<strong>{k(cat_tbl['value'].sum())}</strong>", "<strong>100%</strong>"])
-    return widths(B.data_table(["Category", "Items", "Median unit cost", "Median quantity used per item (2025)",
-                                "Share of quantity used (2025)", "Usage value (2025)", "Share of value (2025)"], rows,
+    return widths(B.data_table(["Category", "Items", "Median unit cost", "Median units used per item (2025)",
+                                "Share of units used (2025)", "Usage value (2025)", "Share of value (2025)"], rows,
                                right=[1, 2, 3, 4, 5, 6]), [20, 9, 14, 16, 13, 15, 13])
 
 
@@ -404,8 +404,8 @@ TBL_TEXT = (f"Item cost and usage move in opposite directions across the categor
             f"(motors, gearboxes, drives, controls) are {pct(_hi['item_share'].sum(), 0)} of items and "
             f"{pct(_hi['value_share'].sum(), 0)} of usage value, with median unit costs of "
             f"${cat_tbl.loc['Mechanical', 'med_cost']:,.0f} and ${cat_tbl.loc['Electrical', 'med_cost']:,.0f}, but only "
-            f"{pct(_hi['unit_share'].sum(), 0)} of the quantity used. Fasteners and hardware are the reverse: "
-            f"{pct(_lo['unit_share'].sum(), 0)} of the quantity used but {pct(_lo['value_share'].sum(), 0)} of the value, "
+            f"{pct(_hi['unit_share'].sum(), 0)} of the units used. Fasteners and hardware are the reverse: "
+            f"{pct(_lo['unit_share'].sum(), 0)} of the units used but {pct(_lo['value_share'].sum(), 0)} of the value, "
             f"at median unit costs under ${max(cat_tbl.loc['Fasteners', 'med_cost'], cat_tbl.loc['Hardware', 'med_cost']) + 0.5:,.0f}. "
             f"The shop's working capital is therefore tied up in a few hundred expensive, slower-moving items, not in the "
             f"high-volume floor stock.")
@@ -458,8 +458,8 @@ def chart_history_value():
     tot = w.sum(axis=1); x = np.arange(len(tot)); fit = np.polyfit(x, tot.to_numpy(), 1)
     ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2, label="Trend")
     ax.set_ylim(0, tot.max() * 1.35)
-    ax.set_ylabel("Items used (000 / month)")
-    _avg_box(ax, f"Average: {round(tot.mean() * 10) * 100:,.0f} items used per month")
+    ax.set_ylabel("Units used (000 / month)")
+    _avg_box(ax, f"Average: {round(tot.mean() * 10) * 100:,.0f} units used per month")
     B.chart_style(ax)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=5, fontsize=9)
     fig.tight_layout()
@@ -482,7 +482,7 @@ def chart_examples():
         ax.xaxis.set_major_locator(__import__("matplotlib.dates", fromlist=["YearLocator"]).YearLocator())
         ax.xaxis.set_major_formatter(__import__("matplotlib.dates", fromlist=["DateFormatter"]).DateFormatter("%Y"))
         B.chart_style(ax)
-    axes[0].set_ylabel("Items / month", fontsize=8)
+    axes[0].set_ylabel("Units / month", fontsize=8)
     fig.tight_layout(w_pad=1.2)
     return B.b64(fig)
 
@@ -513,7 +513,7 @@ FLOW_HTML = (
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div>'
-    '<div style="font-size:16px;line-height:1.55;">Every week, one forecast per item: how many items the shop will use '
+    '<div style="font-size:16px;line-height:1.55;">Every week, one forecast per item: how many units the shop will use '
     'before a new order placed today could arrive.</div></div>'
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
@@ -595,7 +595,7 @@ stock and the suggested order quantity, as seen in the screenshot of the ERP sys
 years of this usage data (2023 through 2025, as shown below), and is continually trained on every new month
 of data.</p>
 {B.chart("MONTHLY USAGE IN VALUE, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["valcat"])}
-{B.chart("MONTHLY USAGE IN ITEMS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
+{B.chart("MONTHLY USAGE IN UNITS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
 <p>Demand is steady in aggregate over the three years, but individual items exhibit very different demand patterns.
 We've categorized these individual item demand patterns into four groups, which the model is calibrated against:
 {seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but variable),
@@ -648,7 +648,7 @@ year's month or Croston's method, whichever did best):</p>
 {', '.join(f"{abs(s_['bias'])*100:.0f}% low on {s_['segment']}" for s_ in metrics['segments'])} items. Each
 pattern's forecasts are scaled up by the ratio of actual to forecast demand in the 2025 backtest, and in the six
 forward months the corrected forecasts ran within {fb_max*100:.0f}% of actual demand for every pattern.</p>
-<p>The safety buffer is calibrated on the same backtest. The buffer is set so that the quantity an item is expected to
+<p>The safety buffer is calibrated on the same backtest. The buffer is set so that the units an item is expected to
 run short between deliveries stay within its fill-rate target, measured on the model's actual 2025 errors rather
 than on a normal curve. Those errors have fatter tails than a normal curve, so textbook multiples would leave the
 buffer short. The calculation accounts for the order quantity (a large lot protects most of its own cycle), for
