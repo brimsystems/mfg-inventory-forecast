@@ -586,8 +586,6 @@ stock and the suggested order quantity, as seen in the screenshot of the ERP sys
 <p>The model learns from the shop's weekly consumption of every stocked item. It was originally trained on three
 years of this consumption data (2023 through 2025, as shown below), and is continually trained on every new month
 of data.</p>
-<p>{TBL_TEXT}</p>
-{category_table()}
 {B.chart("MONTHLY CONSUMPTION IN VALUE, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["valcat"])}
 {B.chart("MONTHLY CONSUMPTION IN UNITS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
 <p>Demand is steady in aggregate over the three years, but individual items exhibit very different demand patterns.
@@ -598,6 +596,8 @@ with no demand at all). One representative item within each pattern is shown bel
 {B.chart("Three years of monthly consumption, one representative item per demand pattern", charts["examples"])}
 <p>{CAT_TEXT}</p>
 {B.chart("Items in each category, by demand pattern", charts["catseg"])}
+<p>{TBL_TEXT}</p>
+{category_table()}
 <p>Value is concentrated. A small share of items carries most of the consumption value: {abc_n.get('A', 0)} A
 items, {abc_n.get('B', 0)} B items and {abc_n.get('C', 0)} C items. That concentration is why order quantities are
 set by cost: buying the A items in smaller, more frequent lots frees most of the working capital, while the
