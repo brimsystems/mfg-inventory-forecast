@@ -152,8 +152,7 @@ def render(q):
             f'<td class="r">{_fmt(r.avail)}</td><td class="r">{r.lead:.0f}</td>'
             f'<td class="r">{_fmt(r.fc_lead)}</td><td class="r">{_fmt(r.ss)}</td><td class="r"><b>{_fmt(r.rop)}</b></td>'
             f'<td class="r"><b>{_fmt(r.suggested) if r.suggested else "&ndash;"}</b></td>'
-            f'<td><span class="badge" style="background:{badge[r.status]};">&bull; {r.status}</span></td>'
-            f'<td>{tags}</td></tr>')
+            f'<td><span class="badge" style="background:{badge[r.status]};">&bull; {r.status}</span></td></tr>')
     nav = "".join(f'<a class="{"on" if n == "Purchasing" else ""}">{n}</a>'
                   for n in ["Dashboard", "Work Orders", "Scheduling", "Inventory", "Purchasing", "Receiving", "Reports", "Admin"])
     day = pd.Timestamp(AS_OF).strftime("%A, %B %d, %Y")
@@ -209,7 +208,7 @@ def render(q):
   Action: <span class="sel">Order now + soon &#9662;</span> <span class="sel" style="width:220px;">&#128269; Search items...</span></div>
 <table><thead><tr><th>Item #</th><th>Description</th><th>Criticality</th><th>ABC</th><th>Supplier</th><th class="r">On hand</th>
 <th class="r">Allocated</th><th class="r">On order</th><th class="r">Available</th><th class="r">Lead (days)</th><th class="r">Forecast over lead</th><th class="r">Safety stock</th>
-<th class="r">Reorder point</th><th class="r">Suggested qty</th><th>Action <span class="ml">ML</span></th><th>Changed by cleanup</th></tr></thead>
+<th class="r">Reorder point</th><th class="r">Suggested qty</th><th>Action <span class="ml">ML</span></th></tr></thead>
 <tbody>{''.join(trs)}</tbody></table>
 </body></html>"""
     OUT.write_text(html, encoding="utf-8")

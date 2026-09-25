@@ -378,7 +378,7 @@ FLOW_HTML = (
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">1. What it reads</div>'
     '<div style="font-size:16px;line-height:1.55;">Three years of cleaned consumption history for every stocked item, '
-    'with its demand pattern, value class, cost and corrected supplier lead time.</div></div>'
+    'with its demand pattern, value class, cost and supplier lead time.</div></div>'
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div>'
@@ -387,9 +387,8 @@ FLOW_HTML = (
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">3. What it produces</div>'
-    '<div style="font-size:16px;line-height:1.55;">For every item, when to reorder (the forecast plus a buffer sized to '
-    'how critical the part is) and how much (a lot sized to the part\'s cost), loaded into the ERP, which checks every '
-    'item daily and flags what to order.</div></div></div>')
+    '<div style="font-size:16px;line-height:1.55;">For every item, when to reorder and how much, loaded into the ERP, '
+    'which checks every item daily and flags what to order.</div></div></div>')
 
 import base64
 _png = REPO / "docs" / "screenshots" / "erp_queue.png"
@@ -439,45 +438,33 @@ as excess on slow parts is used up and not replaced.</p>
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
 {B.section("what", "Section 2.1", "What This Model Does")}
-<p>Since January 2026 the demand forecasting model has set the shop's reorder decisions. Every week it gives
-the ERP two numbers for each of the {n_items:,} stocked items: the level of stock at which to reorder, and how
-much to order. Both come from a forecast of how much of the part the shop will use before a new order can arrive,
-learned from three years of cleaned consumption history, and from the part's corrected supplier lead time.</p>
+<p>Over the past six months (January 2026 to June 2026), the demand forecasting model has set the shop's reorder
+decisions. Every week, the model predicts which items need to be reordered, and these predictions are then fed
+directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
+current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
+and a safety buffer sized to how critical the part is.</p>
 <p>The model is built on {WIN_DESC}. It answers one question for every
 stocked item, every week: <strong>how much of this part will the shop use before a new order placed today could
 arrive?</strong> That window differs by part. A fastener that arrives in two weeks and a gearmotor that takes two
 months are different questions, and the reorder decision only cares about the demand that lands before the next
 delivery does.</p>
 {FLOW_HTML}
-<p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month; the ERP
-does the daily work. Each forecast becomes a reorder point and an order quantity, and the two answer different
-questions.</p>
+<p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month. The
+model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
+to order.</p>
 <ul class="limitation-list">
-  <li><strong>When to reorder is set by how critical the part is.</strong> The reorder point is the expected usage
-      over the lead time plus a safety buffer, and the buffer is sized to a service target by criticality, not by
-      price. {tier_n.get('line', 0)} parts sit on a production bill, where a shortage holds a job: they are held to a
-      {tgt(FT['line'])} fill rate. {tier_n.get('service', 0)} parts go out on service orders, where a shortage
-      delays a customer repair: {tgt(FT['service'])}. The other {tier_n.get('standard', 0)} (shop supplies and
-      pulls with no job waiting on them) are held to {tgt(FT['standard'])}. A $2 fitting on a bill gets the same
-      protection as a $900 motor.</li>
-  <li><strong>How much to order is set by the part's cost.</strong> Every order line costs buyer, receiving and
-      payables time, and every dollar on the shelf costs money to hold. The order quantity balances the two, so an
-      expensive part is bought every few weeks in small lots, and a cheap part a few times a year. This is where the
-      working capital comes from: the buyers had been buying about {sched['buyer_lot_days']} days of every part at
-      a time. Order quantity does not decide whether the part runs out; the buffer does.</li>
+  <li><strong>When to reorder is informed by how critical the item is.</strong> The reorder point is the expected
+      usage over the lead time plus a safety buffer, and the buffer is sized to a service target by the item's
+      criticality. Production parts are held to a {tgt(FT['line'])} fill rate, spare parts to {tgt(FT['service'])},
+      and shop supplies to {tgt(FT['standard'])}.</li>
+  <li><strong>How much to order is informed by the part's usage and cost.</strong> In order to keep working capital
+      low, expensive parts are bought every few weeks in small lots, and cheap parts a few times a year in larger
+      lots.</li>
 </ul>
-<p>Each day the ERP compares every item's stock on hand and on order, less the parts already committed to
-production jobs, against its point, and suggests an order when an item falls to it. The model reads the order
-book, so a job's parts count as committed from the day the customer order is booked, about {BK_days} days before
-the job is released to the floor. The ERP refreshes each supplier's lead time monthly from its recent deliveries,
-pushes back inbound orders an item no longer needs yet (never on a line-critical part), and flags the orders that
-will arrive too late on the parts the purchasing manager expedites. Points only change when the new forecast moves them by more than 20%,
-so buyers are not chasing small week-to-week changes.</p>
-<p>The model is embedded in the ERP's purchasing screen. The reorder queue below ranks every stocked item against
-this week's point: items at or below it are marked ORDER NOW, items within two weeks of it ORDER SOON, and each
-line shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast,
-the safety stock and the suggested order quantity, with tags where the cleanup changed
-the item (a merged record, a corrected lead time or bill, restored history) so the buyer sees why a number moved.</p>
+<p>The ERP's reorder queue ranks every stocked item against this week's latest reorder point: items at or below it
+are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items outside of it "OK". Each line also
+shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast, the safety
+stock and the suggested order quantity.</p>
 <div class="chart-wrap" style="padding:6px;">
   <img src="data:image/png;base64,{erp_b64}" alt="ERP reorder queue with the demand model's reorder points"
        style="width:100%;height:auto;display:block;border:1px solid #D5DCE1;">
