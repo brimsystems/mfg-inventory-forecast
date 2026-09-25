@@ -104,8 +104,8 @@ def chart_halves():
 def chart_inventory_months():
     """Average inventory value by month, the same demand three ways, against 1H25 as the shop ran it."""
     fig, ax = B.make_fig(3.4)
-    cols = {"dirty": MED_GREY, "clean_rule": LIGHT_BLUE, "model": DARK_BLUE}
-    for v, name in VARIANTS:
+    cols = {"dirty": MED_GREY, "model": DARK_BLUE}
+    for v, name in PAIR:
         mm = F[v]["inventory_by_month"]
         xs = [pd.Timestamp(m_) for m_ in sorted(mm)]
         ys = [mm[m_] / 1e6 for m_ in sorted(mm)]
@@ -123,16 +123,42 @@ def chart_inventory_months():
     return B.b64(fig)
 
 
+STATUS = ["ORDER NOW", "ORDER SOON", "OK"]
+STATUS_COL = {"ORDER NOW": B.ACCENT_RED, "ORDER SOON": B.AMBER, "OK": GREEN}
+_sw = fr.get("status_weekly", {})
+status_tot = {st: sum(w.get(st, 0) for w in _sw.values()) for st in STATUS}
+n_weeks = len(_sw)
+n_scored = sum(status_tot.values())
+
+
+def chart_actions():
+    """Item-weeks by reorder action across the weekly refreshes, January to June 2026."""
+    vals = [status_tot[st] for st in STATUS]
+    fig, ax = B.make_fig(3.4)
+    bars = ax.bar(STATUS, vals, color=[STATUS_COL[st] for st in STATUS], width=0.55)
+    for b_, v in zip(bars, vals):
+        ax.text(b_.get_x() + b_.get_width() / 2, v + n_scored * 0.005, f"{v:,}\n({v / n_scored:.0%})",
+                ha="center", va="bottom", fontsize=10)
+    ax.set_ylabel("Item-weeks")
+    ax.set_ylim(0, max(vals) * 1.18)
+    ax.yaxis.set_major_formatter(__import__("matplotlib.ticker", fromlist=["FuncFormatter"]).FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    B.chart_style(ax); fig.tight_layout()
+    return B.b64(fig)
+
+
+PAIR = [("dirty", "Without the model"), ("model", "With the model")]
+
+
 def chart_variants():
     """The same 1H26 demand three ways, in steady state (months 4 to 6)."""
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.3))
-    names = ["Nothing\nfixed", "Cleaned,\nrule", "Cleaned,\nmodel"]
-    cols = [MED_GREY, LIGHT_BLUE, DARK_BLUE]
-    vals = [M46[v] for v, _ in VARIANTS]
+    names = ["Without\nthe model", "With\nthe model"]
+    cols = [MED_GREY, DARK_BLUE]
+    vals = [M46[v] for v, _ in PAIR]
     panels = [("Stockout events", [x["stockout_episodes"] for x in vals], "{:,.0f}", False),
               ("Jobs held for material", [x["jobs_delayed"] for x in vals], "{:,.0f}", False),
-              ("Average inventory ($000)", [x["avg_inventory_value"] / 1000 for x in vals], "${:,.0f}K", False)]
+              ("Rush spend ($000)", [x["rush_spend"] / 1000 for x in vals], "${:,.0f}K", False)]
     for ax, (title, v, fmt, zoom) in zip(axes, panels):
         bars = ax.bar(names, v, color=cols, width=0.62)
         lo = min(v) - 3 if zoom else 0
@@ -221,6 +247,30 @@ def variants_table(window):
     for label, fn in spec:
         rows.append([label] + [fn(window[v]) for v, _ in VARIANTS])
     return widths(B.data_table(["Measure"] + [n for _, n in VARIANTS], rows, right=[1, 2, 3]), [31, 23, 23, 23])
+
+
+def compare_table(window):
+    """Without and with the model on the same demand, for one window."""
+    d_, m_ = window["dirty"], window["model"]
+    def chg_(a_, b_, money_=False):
+        if a_ == 0:
+            return ""
+        return f"{(b_ - a_) / a_ * 100:+.0f}%"
+    spec = [
+        ("Fill rate", lambda x: pct(x["fill_rate"]), lambda: f"{(m_['fill_rate'] - d_['fill_rate']) * 100:+.1f} pts"),
+        ("Stockout events", lambda x: f"{x['stockout_episodes']:,}", lambda: chg_(d_["stockout_episodes"], m_["stockout_episodes"])),
+        ("Stockout events, line-critical items", lambda x: f"{x['stockout_episodes_by_tier']['line']:,}",
+         lambda: chg_(d_["stockout_episodes_by_tier"]["line"], m_["stockout_episodes_by_tier"]["line"])),
+        ("Jobs held for material", lambda x: f"{x['jobs_delayed']:,}", lambda: chg_(d_["jobs_delayed"], m_["jobs_delayed"])),
+        ("Rush freight and premiums", lambda x: money(x["rush_spend"]), lambda: chg_(d_["rush_spend"], m_["rush_spend"])),
+        ("Average inventory value", lambda x: money(x["avg_inventory_value"]), lambda: chg_(d_["avg_inventory_value"], m_["avg_inventory_value"])),
+        ("Inventory at the end of the window", lambda x: money(x["end_inventory_value"]), lambda: chg_(d_["end_inventory_value"], m_["end_inventory_value"])),
+        ("Order lines placed", lambda x: f"{x['order_lines']:,}", lambda: chg_(d_["order_lines"], m_["order_lines"])),
+        ("Purchases", lambda x: money(x["purchases"]), lambda: chg_(d_["purchases"], m_["purchases"])),
+    ]
+    rows = [[label, fn(d_), fn(m_), ch()] for label, fn, ch in spec]
+    return widths(B.data_table(["Measure", "Without the model", "With the model", "Change"], rows, right=[1, 2, 3]),
+                  [40, 21, 21, 18])
 
 
 def purchases_table():
@@ -316,8 +366,10 @@ else:
 
 
 def candidate_table():
+    order = [metrics["winner"]] + [c for c in ["RandomForest", "XGBoost", "Linear"] if c != metrics["winner"]]
     rows = [[CAND_LABEL[c], pct(cand[c]["val_wape"]), pct(cand[c]["test_wape"]),
-             "Selected" if c == metrics["winner"] else ""] for c in ["Linear", "RandomForest", "XGBoost"]]
+             f'<span style="color:{GREEN};font-weight:700;">&#10004;</span> Selected' if c == metrics["winner"] else ""]
+            for c in order]
     return widths(B.data_table(["Candidate", "Validation error (WAPE)", "Test error (WAPE)", ""], rows, right=[1, 2]),
                   [34, 24, 24, 18])
 
@@ -525,7 +577,7 @@ import base64
 _png = REPO / "docs" / "screenshots" / "erp_queue.png"
 erp_b64 = base64.b64encode(_png.read_bytes()).decode() if _png.exists() else ""
 
-charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy(),
+charts = {"halves": chart_halves(), "variants": chart_variants(), "actions": chart_actions(),
           "invm": chart_inventory_months(), "valcat": chart_value_by_category(), "catseg": chart_category_patterns(),
           "unitcat": chart_units_by_category(),
           "examples": chart_examples()}
@@ -537,7 +589,6 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#performance">Model Performance</a>'
        '<a href="#scoring" class="sub">Scoring Summary</a>'
        '<a href="#accuracy" class="sub">Accuracy and Validation</a>'
-       '<a href="#source" class="sub">Where the Improvement Came From</a>'
        '<a href="#limits" class="sub">What It Can and Cannot Predict</a>')
 
 body = f"""
@@ -609,38 +660,28 @@ with no demand at all). One representative item within each pattern is shown bel
 {B.section("performance", "Section 3", "Model Performance")}
 
 {B.section("scoring", "Section 3.1", "Scoring Summary")}
-<p>From January to June 2026 the model refreshed the reorder points of all {n_items:,} items every week. The table compares that half-
-year with the two halves of 2025, each as the shop actually ran it. The two 2025 halves are close to each
-other, which makes them a fair baseline; 2H25 includes the ten weeks of remediation, but the cleaned records and
-the new reorder points only took over on 1 January. A job counts as held for material when its production order
-hit a material-shortage hold, the same definition the data quality audit used for 2025.</p>
+<p>From January to June 2026 the model refreshed the reorder points of all {n_items:,} items every week. Across
+those {n_weeks} weekly refreshes it scored {n_scored:,} item-weeks: <strong>{status_tot['ORDER NOW']:,}</strong>
+({status_tot['ORDER NOW'] / n_scored:.0%}) were marked ORDER NOW and <strong>{status_tot['ORDER SOON']:,}</strong>
+({status_tot['ORDER SOON'] / n_scored:.0%}) ORDER SOON, and the rest were OK. In a typical week that is about
+{status_tot['ORDER NOW'] / n_weeks:.0f} items to order now and {status_tot['ORDER SOON'] / n_weeks:.0f} to order soon,
+a short, ranked list for the buyers to work through.</p>
+{B.chart("Item-weeks by Reorder Action, January to June 2026", charts["actions"])}
+<p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
+before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
 {halves_table()}
-<p>Inventory is compared on the average month of 2025, as the shop ran it, against June 2026, the model's sixth
-month. A half-year average would mix in the first months of 2026, when the model was still working through the
-stock the manual process had built. The replay with manual reordering continued shows how much of the decline
-would have happened anyway.</p>
-{inventory_table()}
-<p>Purchases fell in 1H26 ({k(mod['purchases'])} against {k(H1['purchases'])}) because the model stopped
-reordering items that already held more than they needed and let that stock run down. Different halves carry
-different demand, so the size of each change also reflects the season and the product mix. Section 3.3 removes
-that by holding demand fixed.</p>
 
 {B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
-<p>Accuracy is measured as weighted absolute percentage error (WAPE) over each item's lead time, which reads like
-the familiar percentage error for a steady item and stays defined for the many items with weeks of zero demand.
-The model learned on the cleaned weekly history through 2024, was tuned on a block of validation weeks, and was
-then scored on a held-out year of weekly rolling forecasts in 2025. Three candidate algorithms were each tuned
-and compared on the validation weeks. {WIN_WHY}</p>
+<p>The model's forecasts are scored with weighted absolute percentage error (WAPE): the total gap between forecast
+and actual usage over each item's lead time, as a share of total actual usage. On a held-out year of weekly
+forecasts in 2025, the selected {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model scored
+<strong>{pct(metrics['overall']['model'], 0)}</strong>. In practical terms, for every 100 units an item actually
+used over its lead time, the forecast was off by about {metrics['overall']['model'] * 100:.0f} units, high or low,
+against about {metrics['overall']['baseline'] * 100:.0f} for the best simple method. The error is large because
+most items are used unevenly: a single job or spare-parts order can double an item's usage in a week. That is why
+each reorder point adds a safety buffer sized to the item's own forecast error, rather than trusting the forecast
+alone.</p>
 {candidate_table()}
-<p>The cleaning matters to what the model can learn.
-The same model, with the same features, was run on the history at three stages of cleaning (scored on monthly forecasts over the lead time). Across all items
-the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
-cleanup actually repaired (duplicates merged, unrecorded usage restored) it falls from
-{pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
-{pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
-history. The other thirteen corrupt the lead times, bills and stock records the reorder point is built on, and
-the model's results in Section 3.3 rest on those corrections.</p>
-{B.chart("Forecast error at three stages of cleaning", charts["acc"])}
 <p>On the held-out year the model beats the best simple method for each demand pattern (a moving average, last
 year's month or Croston's method, whichever did best):</p>
 {accuracy_table()}
@@ -654,51 +695,34 @@ than on a normal curve. Those errors have fatter tails than a normal curve, so t
 buffer short. The calculation accounts for the order quantity (a large lot protects most of its own cycle), for
 the part of demand the ERP already sees on released jobs, and for delivery variability from each item's own
 receipt history.</p>
+{sub("With and without the model, January to June 2026")}
+<p>To measure what the model changed, the same January to June 2026 demand and supplier deliveries were replayed
+twice: once with the shop's manual reordering continued (its stale lead times and reorder points, the buyers'
+four-and-a-half-month lots and the data errors), and once with the model setting reorder points and order
+quantities on the cleaned records, reading the order book about {VM_days} days ahead. The purchasing manager
+expedites the same items in both. The first three months are a transition, as orders placed under the old points
+are still arriving and excess stock is used up, so the steady-state comparison is April to June.</p>
+{B.chart("Without and with the model, April to June 2026", charts["variants"])}
+{B.chart("Average inventory by month, without and with the model", charts["invm"])}
+<p>Once the new policy has settled, the model cuts stockout events by {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])},
+stockouts on line-critical items from {dirty46['stockout_episodes_by_tier']['line']} to
+{mod46['stockout_episodes_by_tier']['line']}, jobs held for material by {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])} and
+rush spend by {fall(dirty46['rush_spend'], mod46['rush_spend'])}, and ends June with {k(end_mod)} of stock against
+{k(end_dirty)}. It places more order lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the
+expensive items are bought more often; that is the cost of carrying less of them.</p>
+{sub("January to June 2026")}
+{compare_table(F)}
+{sub("April to June 2026 (after the transition)")}
+{compare_table(M46)}
 
-{B.section("source", "Section 3.3", "Where the Improvement Came From")}
-<p>To separate what the cleanup did from what the model did, the same January to June 2026 demand, with the same
-supplier deliveries, was replayed three ways. With nothing fixed, the shop keeps the stale lead times and
-reorder points, the duplicate records, the phantom on-order and the buyers' four-and-a-half-month lots. With the cleaned
-records and the recomputed rule, it runs on the corrected masters with reorder points recomputed each month from
-the last twelve months of usage over the corrected lead time, plus a standard buffer, and keeps the buyers' lots.
-With the demand model, the corrected masters are the same, and the reorder points and order quantities come from
-the model. Under the rule the ERP nets the items committed to released jobs, which it sees about {V_days} days
-ahead; the model also reads the order book, which extends that to about {VM_days} days, and keeps supplier lead
-times current. In every variant the purchasing manager expedites the same items she always has. None of the three can
-see future demand beyond that, as the ERP cannot.</p>
-{B.chart("The same demand three ways, months 4 to 6 (steady state)", charts["variants"])}
-{B.chart("Average inventory by month, the same demand three ways", charts["invm"])}
-<p>The first three months are a transition: orders placed under the old points are still arriving, and excess
-stock is being used up. The comparison that matters is months 4 to 6, once the new policy has settled. Across the
-full six months:</p>
-{variants_table(F)}
-{sub("Months 1 to 3 (transition)")}
-{variants_table(M13)}
-{sub("Months 4 to 6 (steady state)")}
-{variants_table(M46)}
-<p>The recomputed rule alone lowers inventory (a June 30 balance of {k(end_rule)} against {k(end_dirty)} with
-nothing fixed) and {RULE_SVC}: fill is {pct(rule46['fill_rate'])} against {pct(dirty46['fill_rate'])}, and
-{rule46['jobs_delayed']} jobs are held against {dirty46['jobs_delayed']}. But its textbook buffer assumes steadier
-demand than the shop's items show, so the lumpy, hard-to-predict items still run short. The model, on the same cleaned records,
-{END_NOTE} and cuts stockout events to
-{mod46['stockout_episodes']:,}, stockouts on line-critical items from {dirty46['stockout_episodes_by_tier']['line']}
-to {mod46['stockout_episodes_by_tier']['line']}, and jobs held to {mod46['jobs_delayed']}. {AVG_NOTE} It places more order
-lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the expensive items are bought more often;
-that is the cost of carrying less of them.</p>
-{sub("Purchases by month")}
-<p>Purchases should converge to usage under any sound policy. Under the model, purchases run above
-usage at first while buffers are built on the items that were running short, then below it as excess on
-the rest is used up.</p>
-{purchases_table()}
-
-{B.section("limits", "Section 3.4", "What It Can and Cannot Predict")}
+{B.section("limits", "Section 3.3", "What It Can and Cannot Predict")}
 <ul class="limitation-list">
   <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
       supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
       the usual spread of deliveries, not a supplier failure.</li>
   <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
-      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical across the three
-      variants, so the differences between them are the policy; the size of each difference is an estimate.</li>
+      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical in both replays, so
+      the differences between them are the policy; the size of each difference is an estimate.</li>
   <li><strong>Excess on slow items takes time to clear.</strong> {k(mod46['excess_value'])} of stock in months 4 to 6
       still sits on {mod46['excess_items']} items holding more than a year of supply. The model stops reordering
       them, but an item used a few times a year takes that long to draw down. Returning or selling the worst of it
@@ -706,10 +730,7 @@ the rest is used up.</p>
   <li><strong>The order book is an assumption.</strong> The shop's records carry no booking date for customer
       orders, so each job is assumed booked four to eight weeks before its release, typical of a job shop quoting
       lead times of that length. With less notice, the model would see less of the coming demand.</li>
-  <li><strong>The comparison rule is a textbook rule.</strong> The recomputed rule uses the standard buffer a
-      planner would set by hand. A planner could pad it further and buy more service with more stock; what the
-      model adds is putting that stock on the items whose demand is hardest to predict.</li>
-  <li><strong>Expediting is held constant.</strong> All three variants expedite the same items the purchasing
+  <li><strong>Expediting is held constant.</strong> Both replays expedite the same items the purchasing
       manager tracked before go-live, so rush spend reflects how often those items were at risk, not a change in
       how hard the shop chases suppliers.</li>
   <li><strong>The first three months are a transition.</strong> Orders placed under the old points are still

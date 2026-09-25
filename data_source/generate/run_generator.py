@@ -316,6 +316,8 @@ def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_
     fw["1H26_months_4_6"] = (m3, C.END_DATE)
 
     res = {"as_recorded": {}, "forward": {}, "schedule_used": bool(schedule)}
+    if schedule:
+        res["status_weekly"] = sim.get("status_weekly", {})
     for k, (a, b) in windows.items():
         res["as_recorded"][k] = window_metrics(sim, a, b, cost_by_item, abc_by_item, primary, production_orders,
                                                tier_by_item=tier_by_iid, ss_by_item=ss_dirty)

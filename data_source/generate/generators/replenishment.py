@@ -154,6 +154,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
 
     po_lines, adjustments, counts, shortages, rushes = [], [], [], [], []
     job_delays = {}
+    status_weekly = {}    # model forward: ORDER NOW / SOON / OK counts on each Monday's queue
     physical_series, book_series, unmet_series, short_day_series = {}, {}, {}, {}
     line_seq = 0
     outer_rng = rng
@@ -388,6 +389,13 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     level = rop[n]
                     look = ahead(n, t, mlead[n], iid)
                 position = book[n] + on_order - look
+                if q_sched and fwd_t is not None and t >= fwd_t and days[t].weekday() == 0:
+                    # the queue as the buyer sees it on Monday: at or below the point, within
+                    # two weeks of usage of it, or clear
+                    st_ = ("ORDER NOW" if position <= level else
+                           "ORDER SOON" if position <= level + avg_daily * 14 else "OK")
+                    wk_ = status_weekly.setdefault(days[t].date().isoformat(), {"ORDER NOW": 0, "ORDER SOON": 0, "OK": 0})
+                    wk_[st_] += 1
                 if position > level and book[n] + on_order_real <= level:
                     if suppressed_since[n] is None:
                         suppressed_since[n] = t
@@ -510,6 +518,7 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         "shortages": pd.DataFrame(shortages),
         "rushes": pd.DataFrame(rushes),
         "job_delays": job_delays,
+        "status_weekly": status_weekly,
         "physical": physical_series,
         "book": book_series,
         "demand": phys_by_iid,
