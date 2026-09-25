@@ -673,7 +673,8 @@ jobs held for material {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rus
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
 {B.section("what", "Section 2.1", "What This Model Does")}
-<p>The demand forecasting model is built on a random forest, an ensemble decision-tree algorithm. Over the past six
+<p>The demand forecasting model is built on an ensemble decision-tree algorithm called a random
+forest. Over the past six
 months (January 2026 to June 2026), the demand forecasting model has set the shop's reorder
 decisions. Every week, the model predicts which items need to be reordered, and these predictions are then fed
 directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
