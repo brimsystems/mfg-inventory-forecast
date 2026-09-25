@@ -240,7 +240,10 @@ def run():
     pj = prod[prod["completed_date"].notna() & (prod["due_date"] >= "2025-01-01") & (prod["due_date"] < C.FORWARD_START.isoformat())
               & (prod["delay_days"] == 0)]
     V = float((pd.to_datetime(pj["completed_date"]) - pd.to_datetime(pj["release_date"])).dt.days.median())
-    print(f"  MRP visibility horizon (median release to completion, 2025): {V:.0f} days")
+    # the model also reads the order book: a job is known from the day it is booked
+    Bk = float((pd.to_datetime(pj["release_date"]) - pd.to_datetime(pj["booked_date"])).dt.days.median())
+    VM = V + Bk
+    print(f"  MRP visibility horizon (median release to completion, 2025): {V:.0f} days; with the order book {VM:.0f}")
 
     # criticality: on a corrected production bill, issued to service orders, or neither
     bom = pd.read_csv(RAW / "erp" / "bill_of_materials.csv")
@@ -252,8 +255,9 @@ def run():
     tier_of = {i: ("line" if i in on_bill else "service" if i in on_service else "standard") for i in attrs.index}
     print("  criticality:", pd.Series(tier_of).value_counts().to_dict())
 
-    def level_of(fc, share, L, ss):
-        return fc - (1.0 - share) * fc * min(L, V) / max(L, 1.0) + ss
+    def level_of(fc, share, L, ss, horizon=None):
+        h_ = V if horizon is None else horizon
+        return fc - (1.0 - share) * fc * min(L, h_) / max(L, 1.0) + ss
 
     # ── the forward window: retrain monthly, refresh every Monday ─────────────
     origins = [pd.Timestamp(C.FORWARD_START)] + [w for w in weeks if w > pd.Timestamp(C.FORWARD_START) and w <= pd.Timestamp(C.END_DATE)]
@@ -284,7 +288,7 @@ def run():
             sd_fc *= np.sqrt(L / (7.0 * h)); sL = lt_sd(item)
             share = float(unsched.get(item, 1.0))
             # the scheduled demand MRP already sees carries no forecast error
-            sd_fc *= np.sqrt(max(0.05, 1.0 - (1.0 - share) * min(L, V) / max(L, 1.0)))
+            sd_fc *= np.sqrt(max(0.05, 1.0 - (1.0 - share) * min(L, VM) / max(L, 1.0)))
             sigma = float(np.sqrt(sd_fc ** 2 + (d * sL) ** 2))
             cost = float(a["standard_cost"]) if pd.notna(a["standard_cost"]) and a["standard_cost"] > 0 else 1.0
             eoq = np.sqrt(2.0 * d * 365.0 * ORDER_LINE_COST / (HOLDING_RATE * cost)) if d > 0 else 1.0
@@ -296,7 +300,7 @@ def run():
             if last is not None and last[5] > 0 and abs(rop_raw - last[5]) / last[5] <= HYSTERESIS:
                 entry = [o.date().isoformat(), last[1], last[2], round(pc, 3), 7 * h, last[5], last[6], last[7]]
             else:
-                entry = [o.date().isoformat(), round(level_of(fc_lead, share, L, ss), 2), round(ss, 2), round(pc, 3), 7 * h,
+                entry = [o.date().isoformat(), round(level_of(fc_lead, share, L, ss, VM), 2), round(ss, 2), round(pc, 3), 7 * h,
                          round(rop_raw, 2), round(share, 3), round(q_lot, 1)]
             prev[item] = entry
             model_sched.setdefault(item, []).append(entry)
@@ -324,7 +328,7 @@ def run():
         return moves / n if n else 0.0
 
     meta = {"origins": [o.date().isoformat() for o in origins], "hysteresis": HYSTERESIS, "model": winner,
-            "mrp_visibility_days": V,
+            "mrp_visibility_days": V, "order_book_days": Bk, "model_visibility_days": VM,
             "bias_correction": bias, "safety_factor": k_abc, "normal_z": Z_BY_ABC,
             "fill_rate_target": FILL_TARGET, "criticality": tier_of, "order_line_cost": ORDER_LINE_COST, "holding_rate": HOLDING_RATE,
             "lot_days": list(LOT_DAYS), "buyer_lot_days": C.ORDER_COVER_DAYS,

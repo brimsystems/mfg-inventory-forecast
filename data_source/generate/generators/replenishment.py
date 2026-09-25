@@ -44,7 +44,7 @@ def draw_drift_rates(item_meta, rng):
 
 def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
              buyer_nums, omitted_item_ids, rng, drift_rate=None, never_closed=None, actual_base=None,
-             fix_from=None, forward=None, release_by_job=None):
+             fix_from=None, forward=None, release_by_job=None, booked_by_job=None):
     """fix_from: the date the remediation's BOM corrections and controls take hold
     (chronic write-offs on omitted items stop). A world that never fixes them
     passes END_DATE.
@@ -112,22 +112,28 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
     bf = ev[ev["recorded"] & (ev["channel"] == "BACKFLUSH")].copy()
     rel = release_by_job or {}
     bf["r"] = bf["job_id"].map(lambda j: day_idx.get(rel.get(j), 0) if rel.get(j) in day_idx else 0).astype(int)
+    # with the order book, a job is visible from the day its customer order is booked
+    bk = booked_by_job or {}
+    bf["b"] = [min(r_, day_idx.get(bk.get(j), r_)) for j, r_ in zip(bf["job_id"], bf["r"])]
+    order_book = bool((forward or {}).get("order_book"))
     known_num, known_iid = {}, {}
     for key, store in (("item_number", known_num), ("item_id", known_iid)):
         for k, g in bf.groupby(key):
             g = g.sort_values("t")
-            store[int(k) if key == "item_id" else k] = (g["t"].to_numpy(), g["r"].to_numpy(), g["qty"].to_numpy(float))
+            store[int(k) if key == "item_id" else k] = (g["t"].to_numpy(), g["r"].to_numpy(), g["b"].to_numpy(),
+                                                        g["qty"].to_numpy(float))
 
     def ahead(n, t, L, iid=None):
         merged = fwd_t is not None and t >= fwd_t
         arr = known_iid.get(iid) if merged else known_num.get(n)
         if arr is None:
             return 0.0
-        c, r, q = arr
+        c, r, b, q = arr
+        vis = b if (merged and order_book) else r
         lo = int(np.searchsorted(c, t, side="right")); hi = int(np.searchsorted(c, t + L, side="right"))
         if hi <= lo:
             return 0.0
-        return float(q[lo:hi][r[lo:hi] <= t].sum())
+        return float(q[lo:hi][vis[lo:hi] <= t].sum())
 
     jobs_by_iid_day = {}
     for r in ev[ev["channel"] == "BACKFLUSH"].itertuples(index=False):
@@ -205,8 +211,13 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         sched_by_t = {}
         for (d_, r_, s_, *q_) in sched.get(prim, []):
             if d_ in day_idx:
-                sched_by_t[day_idx[d_]] = (float(r_), float(s_), (float(q_[0]) if q_ and q_[0] else None))
+                sched_by_t[day_idx[d_]] = (float(r_), float(s_), (float(q_[0]) if q_ and q_[0] else None),
+                                           (float(q_[1]) if len(q_) > 1 and q_[1] else 0.0))
         q_sched = None        # the model's order quantity, when it sets one
+        d_sched = 0.0         # the model's daily forecast, for the lead-time refresh
+        update_lead = bool((forward or {}).get("update_lead"))
+        lead_obs = []         # (receipt day, days from order to receipt) on regular orders
+        l_base = None         # the lead time the schedule's points were built on
 
         for t in range(N):
             # ── the corrected masters take over on the forward start date ───
@@ -235,6 +246,14 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
             if t in sched_by_t:
                 rop[prim] = sched_by_t[t][0]
                 q_sched = sched_by_t[t][2]
+                d_sched = sched_by_t[t][3]
+            # the ERP refreshes each supplier lead time monthly from the last six months of receipts
+            if update_lead and fwd_t is not None and t >= fwd_t and days[t].day == 1:
+                if l_base is None:
+                    l_base = mlead[prim]
+                recent = [lt_ for (tr_, lt_) in lead_obs if tr_ >= t - 180]
+                if len(recent) >= 3:
+                    mlead[prim] = max(1, int(round(float(np.median(recent)))))
             if t % 7 == 0 or t == fwd_t or t in sched_by_t:
                 avg_daily = usage(t)
                 q_each = max(1, int(round(q_sched if q_sched else avg_daily * C.ORDER_COVER_DAYS)))
@@ -261,6 +280,8 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     physical += po["qty_recv"] * (conv if conv > 1 else 1)
                     book[po["num"]] += po["qty_recv"]
                     po["recv_day"] = t
+                    if not po["rush"] and not po.get("deferred"):
+                        lead_obs.append((t, t - po["order_t"]))
                     if backlog > 0:
                         take = min(backlog, max(physical, 0.0))
                         physical -= take; backlog -= take
@@ -359,6 +380,8 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     # cannot see (forecast unscheduled usage plus safety stock), and
                     # MRP nets the requirements of released jobs on top of it
                     level = rop[n]
+                    if update_lead and l_base is not None and d_sched:
+                        level += d_sched * (mlead[n] - l_base)       # a refreshed lead time moves the point
                     look = ahead(n, t, mlead[n], iid)
                 else:
                     level = rop[n]
@@ -404,7 +427,8 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                           "rush": False, "freight": 0.0, "received": False, "phantom": 0}
                     open_po.append(po); po_lines.append(po); last_order[n] = t
             # ── reschedule-out: MRP pushes back inbound the item does not need yet ─
-            if q_sched and fwd_t is not None and t >= fwd_t and t % 7 == 0:
+            if (q_sched and fwd_t is not None and t >= fwd_t and t % 7 == 0
+                    and prim not in ((forward or {}).get("critical") or set())):   # never defer a line-critical part
                 n = prim
                 inbound = [po for po in open_po if not po["received"] and not po["rush"] and po["num"] == n]
                 pos = book[n] + sum(po["qty_book"] for po in inbound) - ahead(n, t, mlead[n], iid)

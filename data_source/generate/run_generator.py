@@ -158,6 +158,7 @@ def run():
                "abc": {int(k): v for k, v in abc_by_item.items()}}
     # a job's component requirements become visible to MRP on its release date
     release_by_job = {r.order_id: pd.to_datetime(r.release_date).date() for r in production_orders.itertuples(index=False)}
+    booked_by_job = {r.order_id: pd.to_datetime(r.booked_date).date() for r in production_orders.itertuples(index=False)}
 
     def _load(name):
         path = C.REPO_ROOT / "ml" / "data" / "policy" / name
@@ -170,14 +171,17 @@ def run():
     if _meta.exists():
         forward["critical"] = {n for n, t in json.loads(_meta.read_text()).get("criticality", {}).items() if t == "line"}
     if schedule:
-        forward["schedule"] = {n: [(e[0], e[1], e[2], (e[7] if len(e) > 7 else None)) for e in es]
-                               for n, es in schedule.items()}
+        forward["schedule"] = {n: [(e[0], e[1], e[2], (e[7] if len(e) > 7 else None), e[3] / max(1.0, e[4]))
+                                   for e in es] for n, es in schedule.items()}
+        # the model reads the order book and the ERP keeps supplier lead times current
+        forward["order_book"] = True
+        forward["update_lead"] = True
         print(f"      Forward window: the demand model's weekly reorder points ({len(schedule):,} items)")
     else:
         print("      Forward window: the remediation's recomputed reorder points (no model schedule yet)")
     sim = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
                    buyer_nums, omit_items, rng, drift_rate=drift_rate,
-                   forward=forward, release_by_job=release_by_job)
+                   forward=forward, release_by_job=release_by_job, booked_by_job=booked_by_job)
     production_orders = apply_delays(production_orders, sim["job_delays"])
     purchase_orders, po_truth = assemble_purchase_orders(sim["po_lines"], suppliers, item_master, rng)
 
@@ -200,6 +204,7 @@ def run():
                          fix_from=C.END_DATE, release_by_job=release_by_job)
     # the rule the shop would run without the model, netted and buffered the same way
     fwd_rule = dict(forward)
+    fwd_rule["order_book"] = False; fwd_rule["update_lead"] = False
     fwd_rule["schedule"] = {n: [(e[0], e[1], e[2]) for e in es] for n, es in rule_schedule.items()} if rule_schedule else None
     sim_rule = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
                         buyer_nums, omit_items, np.random.default_rng(C.RANDOM_SEED + 13), drift_rate=drift_rate,

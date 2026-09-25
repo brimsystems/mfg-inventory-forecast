@@ -59,6 +59,12 @@ def build_production_orders(builds, products, rng):
                 "status":            "COMPLETED" if done else "OPEN",
             })
     df = pd.DataFrame(rows)
+    # the customer order is booked weeks before its job is released to the floor
+    # (an independent stream, so the rest of the build is unchanged)
+    brng = np.random.default_rng(C.RANDOM_SEED + 41)
+    lead = brng.integers(C.BOOKING_LEAD_DAYS[0], C.BOOKING_LEAD_DAYS[1] + 1, len(df))
+    booked = pd.to_datetime(df["release_date"]) - pd.to_timedelta(lead, unit="D")
+    df.insert(df.columns.get_loc("release_date"), "booked_date", booked.dt.date.astype(str))
 
     # T5: a share of finished jobs are never closed in the system. The work is
     # reported complete (quantity and date are recorded) but the status stays

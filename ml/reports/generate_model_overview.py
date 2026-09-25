@@ -246,6 +246,8 @@ k_abc, z = sched["safety_factor"], sched["normal_z"]
 bias = sched["bias_correction"]
 churn = sched["churn"]
 V_days = int(round(sched["mrp_visibility_days"]))
+VM_days = int(round(sched.get("model_visibility_days", sched["mrp_visibility_days"])))
+BK_days = int(round(sched.get("order_book_days", 0)))
 FT = sched["fill_rate_target"]
 tier_n = pd.Series(sched["criticality"]).value_counts().to_dict()
 LOT_LO, LOT_HI = sched["lot_days"]
@@ -438,9 +440,11 @@ questions.</p>
       a time. Order quantity does not decide whether the part runs out; the buffer does.</li>
 </ul>
 <p>Each day the ERP compares every item's stock on hand and on order, less the parts already committed to
-production jobs released to the floor, against its point, and suggests an order when an item falls to it. It
-pushes back inbound orders an item no longer needs yet, and flags the orders that will arrive too late on the
-parts the purchasing manager expedites. Points only change when the new forecast moves them by more than 20%,
+production jobs, against its point, and suggests an order when an item falls to it. The model reads the order
+book, so a job's parts count as committed from the day the customer order is booked, about {BK_days} days before
+the job is released to the floor. The ERP refreshes each supplier's lead time monthly from its recent deliveries,
+pushes back inbound orders an item no longer needs yet (never on a line-critical part), and flags the orders that
+will arrive too late on the parts the purchasing manager expedites. Points only change when the new forecast moves them by more than 20%,
 so buyers are not chasing small week-to-week changes.</p>
 <p>The model is embedded in the ERP's purchasing screen. The reorder queue below ranks every stocked item against
 this week's point: items at or below it are marked ORDER NOW, items within two weeks of it ORDER SOON, and each
@@ -523,8 +527,9 @@ reorder points, the duplicate records, the phantom on-order and the buyers' four
 records and the recomputed rule, it runs on the corrected masters with reorder points recomputed each month from
 the last twelve months of usage over the corrected lead time, plus a standard buffer, and keeps the buyers' lots.
 With the demand model, the corrected masters are the same, and the reorder points and order quantities come from
-the model. In both cleaned variants the ERP nets the parts committed to released jobs, which it sees about
-{V_days} days ahead, and the purchasing manager expedites the same parts she always has. None of the three can
+the model. Under the rule the ERP nets the parts committed to released jobs, which it sees about {V_days} days
+ahead; the model also reads the order book, which extends that to about {VM_days} days, and keeps supplier lead
+times current. In every variant the purchasing manager expedites the same parts she always has. None of the three can
 see future demand beyond that, as the ERP cannot.</p>
 {B.chart("The same demand three ways, months 4 to 6 (steady state)", charts["variants"])}
 {B.chart("Average inventory by month, the same demand three ways", charts["invm"])}
@@ -553,8 +558,8 @@ buying below consumption while excess stock is used up.</p>
 
 {B.section("limits", "Section 3.4", "What It Can and Cannot Predict")}
 <ul class="limitation-list">
-  <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes the
-      supplier's lead time from the recomputed master and does not predict a late delivery. The buffer covers
+  <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
+      supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
       the usual spread of deliveries, not a supplier failure.</li>
   <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
       and supplier behaviour, not observed. Demand, deliveries and the forecast are identical across the three
@@ -563,6 +568,9 @@ buying below consumption while excess stock is used up.</p>
       still sits on {mod46['excess_items']} items holding more than a year of supply. The model stops reordering
       them, but a part used a few times a year takes that long to draw down. Returning or selling the worst of it
       would release the cash sooner; that is a disposition decision for purchasing and finance, not a forecast.</li>
+  <li><strong>The order book is an assumption.</strong> The shop's records carry no booking date for customer
+      orders, so each job is assumed booked four to eight weeks before its release, typical of a job shop quoting
+      lead times of that length. With less notice, the model would see less of the coming demand.</li>
   <li><strong>The comparison rule is a textbook rule.</strong> The recomputed rule uses the standard buffer a
       planner would set by hand. A planner could pad it further and buy more service with more stock; what the
       model adds is putting that stock on the parts that stop the line.</li>

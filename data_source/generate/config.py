@@ -320,6 +320,7 @@ T8_DUP_SHARE           = 0.003    # share of transactions posted a second time (
 # times against book on-hand and book on-order, so the errors in those records
 # produce their consequences: suppressed orders, late arrivals, rush buys and
 # shortages. Physical stock is tracked alongside the books.
+BOOKING_LEAD_DAYS       = (28, 56)  # a customer order is booked this many days before its job is released
 ORDER_COVER_DAYS        = 120     # the buyers' lot: about four months of average demand at a time
 INITIAL_STOCK_COVER     = 1.5     # opening stock as a multiple of the reorder point
 REORDER_GAP_DAYS        = 5       # no second regular order within this many days
