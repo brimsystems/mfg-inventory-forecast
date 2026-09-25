@@ -147,19 +147,20 @@ def chart_actions():
 
 
 def chart_actions_by_month():
-    """Predictions by reorder action, grouped by month."""
+    """Average weekly predictions by reorder action, by month (months have four or five Monday refreshes)."""
     months = sorted({d_[:7] for d_ in _sw})
     x = np.arange(len(months)); w = 0.26
     fig, ax = B.make_fig(3.4)
-    vals = {st: [sum(v.get(st, 0) for d_, v in _sw.items() if d_[:7] == m_) for m_ in months] for st in STATUS}
+    n_mon = {m_: sum(1 for d_ in _sw if d_[:7] == m_) for m_ in months}
+    vals = {st: [sum(v.get(st, 0) for d_, v in _sw.items() if d_[:7] == m_) / n_mon[m_] for m_ in months] for st in STATUS}
     top = max(max(v) for v in vals.values())
     for i, st in enumerate(STATUS):
         bars = ax.bar(x + (i - 1) * w, vals[st], w, color=STATUS_COL[st], label=st)
         for b_, v in zip(bars, vals[st]):
-            ax.text(b_.get_x() + b_.get_width() / 2, v + top * 0.012, f"{v:,}", ha="center", va="bottom",
+            ax.text(b_.get_x() + b_.get_width() / 2, v + top * 0.012, f"{v:,.0f}", ha="center", va="bottom",
                     fontsize=7.5, color=DARK_GREY)
     ax.set_xticks(x); ax.set_xticklabels([pd.Timestamp(m_ + "-01").strftime("%b %Y") for m_ in months])
-    ax.set_ylabel("Predictions"); ax.set_ylim(0, top * 1.15)
+    ax.set_ylabel("Predictions per week"); ax.set_ylim(0, top * 1.15)
     ax.yaxis.set_major_formatter(__import__("matplotlib.ticker", fromlist=["FuncFormatter"]).FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=3, fontsize=9)
     B.chart_style(ax); fig.tight_layout()
@@ -724,7 +725,7 @@ those {n_weeks} weekly refreshes it made {n_scored:,} predictions: <strong>{stat
 {status_tot['ORDER NOW'] / n_weeks:.0f} items to order now and {status_tot['ORDER SOON'] / n_weeks:.0f} to order soon,
 a short, ranked list for the buyers to work through.</p>
 {B.chart("Predictions by Reorder Action, January to June 2026", charts["actions"])}
-{B.chart("Predictions by Reorder Action, by Month", charts["actions_m"])}
+{B.chart("Average Weekly Predictions by Reorder Action, by Month", charts["actions_m"])}
 <p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
 before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
 {halves_table()}
