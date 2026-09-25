@@ -377,8 +377,9 @@ def chart_units_by_category():
 
 # cost and usage by category, 2025
 _h25 = hist[(hist["month"] >= "2025-01-01") & (hist["month"] < "2026-01-01")]
-_u25 = _h25.groupby("canonical").agg(units=("consumption", "sum"), value=("value", "sum"))
-_u25 = _u25.join(attrs.set_index("canonical_item_number")[["category", "standard_cost"]])
+# every stocked item counts, including the few with no usage in 2025
+_u25 = attrs.set_index("canonical_item_number")[["category", "standard_cost"]].join(
+    _h25.groupby("canonical").agg(units=("consumption", "sum"), value=("value", "sum"))).fillna({"units": 0, "value": 0})
 cat_tbl = _u25.groupby("category").agg(n=("units", "size"), med_cost=("standard_cost", "median"),
                                        med_units=("units", "median"), units=("units", "sum"), value=("value", "sum"))
 cat_tbl = cat_tbl.reindex([c for c in CAT_ORDER if c in cat_tbl.index])
@@ -414,14 +415,20 @@ def chart_category_patterns():
     """Number of items in each category, stacked by demand pattern."""
     fig, ax = B.make_fig(3.7)
     bottom = np.zeros(len(cat_seg))
+    totals = cat_seg.sum(axis=1).to_numpy()
     for seg in SEG_ORDER:
         vals = cat_seg[seg].to_numpy()
         ax.bar(cat_seg.index, vals, bottom=bottom, color=SEG_COL[seg], width=0.65, label=seg.capitalize())
+        # each segment's share of its category, where the segment is tall enough to hold a label
+        for i, (v, b0) in enumerate(zip(vals, bottom)):
+            if v >= 7:
+                ax.text(i, b0 + v / 2, f"{v / totals[i] * 100:.0f}%", ha="center", va="center", fontsize=7.5,
+                        color="white" if seg in ("smooth", "lumpy") else DARK_GREY)
         bottom += vals
     for i, tot_ in enumerate(bottom):
-        ax.text(i, tot_ + 2, f"{int(tot_)}", ha="center", fontsize=8.5, fontweight="bold")
+        ax.text(i, tot_ + 5, f"{int(tot_)}", ha="center", fontsize=8.5, fontweight="bold")
     ax.set_ylabel("Items")
-    ax.set_ylim(0, bottom.max() * 1.15)
+    ax.set_ylim(0, bottom.max() * 1.18)
     ax.set_xticks(range(len(cat_seg))); ax.set_xticklabels([c.replace(" ", "\n") for c in cat_seg.index])
     ax.tick_params(axis="x", labelsize=8.5)
     B.chart_style(ax)
