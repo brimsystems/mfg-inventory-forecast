@@ -464,7 +464,7 @@ to order.</p>
 <p>The ERP's reorder queue ranks every stocked item against this week's latest reorder point: items at or below it
 are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items outside of it "OK". Each line also
 shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast, the safety
-stock and the suggested order quantity.</p>
+stock and the suggested order quantity, as seen in the screenshot of the ERP system below:</p>
 <div class="chart-wrap" style="padding:6px;">
   <img src="data:image/png;base64,{erp_b64}" alt="ERP reorder queue with the demand model's reorder points"
        style="width:100%;height:auto;display:block;border:1px solid #D5DCE1;">
