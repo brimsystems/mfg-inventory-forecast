@@ -714,26 +714,6 @@ training. Three candidate algorithms were tuned and compared on their forecasts 
 {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model, with the lowest error, was selected. Every
 other result in this section measures how the model then performed in live use, from January to June 2026.</p>
 {candidate_table()}
-<p>The model's forecasts are scored with weighted absolute percentage error (WAPE): the total gap between forecast
-and actual usage over each item's lead time, as a share of total actual usage. From January to June 2026, the
-model's {len(live):,} forecasts (one per item, each week) scored <strong>{pct(live_model, 0)}</strong>. In
-practical terms, for every 100 units an item actually used over its lead time, the forecast was off by about
-{live_model * 100:.0f} units, high or low, against about {live_base * 100:.0f} for the best simple method. The
-errors largely cancel out across items: in total, the forecasts came within {abs(live_bias) * 100:.1f}% of actual
-usage. The error on any one item is large because most items are used unevenly: a single job or spare-parts order
-can double an item's usage in a week. That is why each reorder point adds a safety buffer sized to the item's own
-forecast error, rather than trusting the forecast alone.</p>
-<p>The model beat the best simple method (a moving average or last year's same weeks) for each demand pattern:</p>
-{accuracy_table()}
-<p>Bias is the diagnostic accuracy hides. Left alone, the model's forecasts run low, most of all on intermittent
-items, so each pattern's forecasts are scaled up by a fixed correction. With it, the forecasts ran within
-{live_bias_max * 100:.0f}% of actual usage for every pattern.</p>
-<p>The safety buffer is set so that the units an item is expected to run short between deliveries stay within its
-fill-rate target, measured on the model's own forecast errors rather than on a normal curve. Those errors have
-fatter tails than a normal curve, so textbook multiples would leave the buffer short. The calculation accounts for
-the order quantity (a large lot protects most of its own cycle), for the part of demand the ERP already sees on
-released jobs, and for delivery variability from each item's own receipt history.</p>
-{sub("With and without the model, January to June 2026")}
 <p>To measure what the model changed, the same January to June 2026 demand and supplier deliveries were replayed
 twice: once with the shop's manual reordering continued (its stale lead times and reorder points, the buyers'
 four-and-a-half-month lots and the data errors), and once with the model setting reorder points and order
