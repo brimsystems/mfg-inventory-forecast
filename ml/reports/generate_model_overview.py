@@ -366,12 +366,12 @@ def _chart_by_category(col, scale, ylabel, avg_fmt):
 
 
 def chart_value_by_category():
-    return _chart_by_category("value", 1000, "Usage at cost ($000 / month)",
+    return _chart_by_category("value", 1000, "Usage in value ($000 / month)",
                               "Average: ${:,.0f}K of parts used per month")
 
 
 def chart_units_by_category():
-    return _chart_by_category("consumption", 1000, "Units used (000 / month)",
+    return _chart_by_category("consumption", 1000, "Usage in units (000 / month)",
                               "Average: {:,.1f}K units used per month")
 
 
