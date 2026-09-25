@@ -322,14 +322,14 @@ SEG_COL = {"smooth": DARK_BLUE, "erratic": LIGHT_BLUE, "lumpy": "#8093A4", "inte
 
 
 def chart_history_value():
-    """Monthly consumption at standard cost over the three years, by demand pattern."""
+    """Monthly consumption in units over the three years, by demand pattern."""
     fig, ax = B.make_fig(3.6)
-    w = hist.pivot_table(index="month", columns="segment", values="value", aggfunc="sum").fillna(0)[SEG_ORDER] / 1000
+    w = hist.pivot_table(index="month", columns="segment", values="consumption", aggfunc="sum").fillna(0)[SEG_ORDER] / 1000
     ax.stackplot(w.index, [w[c] for c in SEG_ORDER], colors=[SEG_COL[c] for c in SEG_ORDER],
                  labels=[c.capitalize() for c in SEG_ORDER], alpha=0.95)
     tot = w.sum(axis=1); x = np.arange(len(tot)); fit = np.polyfit(x, tot.to_numpy(), 1)
     ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2, label="Trend")
-    ax.set_ylabel("Consumption at cost ($000 / month)")
+    ax.set_ylabel("Units consumed (000 / month)")
     B.chart_style(ax)
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), frameon=False, ncol=5, fontsize=9)
     return B.b64(fig)
@@ -477,7 +477,7 @@ data quality audit cleaned, with duplicate records merged, free-text purchases r
 components missing from the bills restored, so each series is the part's actual usage. Over the three years
 before the forward window the shop consumed about {k(hist['value'].sum()/3)} of parts a year at standard cost,
 across {n_items:,} items.</p>
-{B.chart("Monthly consumption at cost, January 2023 to December 2025, by demand pattern", charts["hist"])}
+{B.chart("Monthly consumption in units, January 2023 to December 2025, by demand pattern", charts["hist"])}
 <p>Demand is steady in aggregate, roughly flat over the three years, but the total hides very different behaviour
 underneath. The items fall into four demand patterns, which the model treats differently:
 {seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but variable),
