@@ -81,18 +81,21 @@ def chart_halves():
     """Inventory, stockout events, held jobs and rush spend by half-year, as the shop ran it."""
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 3.2))
-    labels = ["1H25", "2H25", "1H26"]
+    halves = ["1H25", "2H25", "1H26"]
     series = [H1, H2, F["model"]]
-    panels = [("Average inventory ($000)", [s["avg_inventory_value"] / 1000 for s in series], "${:,.0f}K"),
-              ("Stockout events", [s["stockout_episodes"] for s in series], "{:,.0f}"),
-              ("Jobs held for material", [s["jobs_delayed"] for s in series], "{:,.0f}"),
-              ("Rush spend ($000)", [s["rush_spend"] / 1000 for s in series], "${:,.0f}K")]
-    for ax, (title, vals, fmt) in zip(axes, panels):
-        bars = ax.bar(labels, vals, color=[MED_GREY, MED_GREY, DARK_BLUE], width=0.6)
+    hc = [MED_GREY, MED_GREY, DARK_BLUE]
+    # inventory: the average month of 2025 against June 2026, the model's sixth month
+    panels = [("Inventory ($000)", ["2025 avg\nmonth", "June\n2026"], [avg25 / 1000, jun_avg / 1000], "${:,.0f}K",
+               [MED_GREY, DARK_BLUE]),
+              ("Stockout events", halves, [s["stockout_episodes"] for s in series], "{:,.0f}", hc),
+              ("Jobs held for material", halves, [s["jobs_delayed"] for s in series], "{:,.0f}", hc),
+              ("Rush spend ($000)", halves, [s["rush_spend"] / 1000 for s in series], "${:,.0f}K", hc)]
+    for ax, (title, labels, vals, fmt, cols_) in zip(axes, panels):
+        bars = ax.bar(labels, vals, color=cols_, width=0.6)
         for b, v in zip(bars, vals):
             ax.text(b.get_x() + b.get_width() / 2, v * 1.02, fmt.format(v), ha="center", fontsize=8.5, fontweight="bold")
         ax.set_title(title, fontsize=9.5, color=DARK_GREY, pad=8)
-        ax.set_ylim(0, max(vals) * 1.22); ax.set_yticks([])
+        ax.set_ylim(0, max(vals) * 1.22); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8.5)
         B.chart_style(ax)
     fig.tight_layout(w_pad=1.6)
     return B.b64(fig)
@@ -109,8 +112,8 @@ def chart_inventory_months():
         ax.plot(xs, ys, marker="o", color=cols[v], linewidth=2.2 if v == "model" else 1.6, label=name)
         ax.text(xs[-1] + pd.Timedelta(days=4), ys[-1], f"${ys[-1]:.2f}M", fontsize=8.5, va="center", color=cols[v],
                 fontweight="bold" if v == "model" else "normal")
-    ax.axhline(H1["avg_inventory_value"] / 1e6, color=DARK_GREY, linestyle="--", linewidth=1)
-    ax.text(pd.Timestamp("2026-01-01"), H1["avg_inventory_value"] / 1e6 + 0.02, "1H25 average, as the shop ran it",
+    ax.axhline(avg25 / 1e6, color=DARK_GREY, linestyle="--", linewidth=1)
+    ax.text(pd.Timestamp("2026-01-01"), avg25 / 1e6 + 0.02, "2025 monthly average, as the shop ran it",
             fontsize=8, color=DARK_GREY)
     ax.set_ylabel("Average inventory ($M)")
     ax.xaxis.set_major_formatter(__import__("matplotlib.dates", fromlist=["DateFormatter"]).DateFormatter("%b"))
@@ -176,15 +179,23 @@ def halves_table():
         ("Days lost on held jobs", lambda s: f"{s['job_delay_days']:,}"),
         ("Rush order lines", lambda s: f"{s['rush_lines']:,}"),
         ("Rush freight and premiums", lambda s: money(s["rush_spend"])),
-        ("Average inventory value", lambda s: money(s["avg_inventory_value"])),
-        ("Inventory at the end of the half", lambda s: money(s["end_inventory_value"])),
-        ("Days of supply", lambda s: f"{s['days_of_supply']:.0f}"),
         ("Order lines placed", lambda s: f"{s['order_lines']:,}"),
         ("Purchases", lambda s: money(s["purchases"])),
     ]
     for label, fn in spec:
         rows.append([label, fn(H1), fn(H2), fn(m)])
     return widths(B.data_table(["Measure", "1H25", "2H25", "1H26"], rows, right=[1, 2, 3]), [37, 21, 21, 21])
+
+
+def inventory_table():
+    """Inventory: the average month of 2025 as the shop ran it, against June 2026 on the model."""
+    c25 = (H1["consumption_value"] + H2["consumption_value"]) / (H1["days"] + H2["days"])
+    c26 = F["model"]["consumption_value"] / F["model"]["days"]
+    rows = [["Inventory value", money(avg25), money(jun_avg), f"-{fall(avg25, jun_avg)}"],
+            ["Days of supply", f"{avg25 / c25:.0f}", f"{jun_avg / c26:.0f}", f"{jun_avg / c26 - avg25 / c25:+.0f} days"],
+            ["June 2026 with manual reordering continued", "", money(jun_dirty), ""]]
+    return widths(B.data_table(["Measure", "2025, average month", "June 2026", "Change"], rows, right=[1, 2, 3]),
+                  [37, 21, 21, 21])
 
 
 def variants_table(window):
@@ -408,7 +419,7 @@ June at {k(jun_dirty)}, so the model's own effect is the {fall(jun_dirty, jun_av
 Against the first half of 2025, run the way the shop had always run it, stockout events fell from {H1['stockout_episodes']:,} to
 {mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to {mod['jobs_delayed']}, and rush
 freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}.</p>
-{B.chart("Inventory, stockouts, held jobs and rush spend by half-year", charts["halves"])}
+{B.chart("Inventory (2025 average month against June 2026); stockouts, held jobs and rush spend by half-year", charts["halves"])}
 <p>The manual process held more stock than the shop needed, in the wrong places. Reorder points set at go-live
 and never revisited were far too high on some parts and too low on others, and buyers bought about four months
 of a part at a time whatever it cost. The model moves the stock to where it prevents a stoppage. Parts on a
@@ -501,6 +512,11 @@ other, which makes them a fair baseline; 2H25 includes the ten weeks of remediat
 the new reorder points only took over on 1 January. A job counts as held for material when its production order
 hit a material-shortage hold, the same definition the data quality audit used for 2025.</p>
 {halves_table()}
+<p>Inventory is compared on the average month of 2025, as the shop ran it, against June 2026, the model's sixth
+month. A half-year average would mix in the first months of 2026, when the model was still working through the
+stock the manual process had built. The replay with manual reordering continued shows how much of the decline
+would have happened anyway.</p>
+{inventory_table()}
 <p>Purchases fell in 1H26 ({k(mod['purchases'])} against {k(H1['purchases'])}) because the model stopped
 reordering parts that already held more than they needed and let that stock run down. Different halves carry
 different demand, so the size of each change also reflects the season and the product mix. Section 3.3 removes
