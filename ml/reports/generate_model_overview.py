@@ -456,8 +456,8 @@ to order.</p>
   <li><strong>When to reorder is informed by how critical the item is.</strong> The reorder point is the expected
       usage over the lead time plus a safety buffer, and the buffer is sized to a service target by the item's
       criticality. Production parts are held to a {tgt(FT['line'])} fill rate, spare parts to {tgt(FT['service'])},
-      and shop supplies to {tgt(FT['standard'])}. This puts the most protection where a stockout would stop the line
-      or delay a customer.</li>
+      and other shop supplies to {tgt(FT['standard'])}. This methodology aims to prevent stockouts that would stop
+      the line or delay a customer.</li>
   <li><strong>How much to order is informed by the part's usage and cost.</strong> In order to keep working capital
       low, expensive parts are bought every few weeks in small lots, and cheap parts a few times a year in larger
       lots.</li>
