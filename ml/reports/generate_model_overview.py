@@ -216,7 +216,7 @@ def variants_table(window):
         ("Excess stock (over 12 months of supply)", lambda s: f"{money(s['excess_value'])} ({s['excess_items']} items)"),
         ("Order lines placed", lambda s: f"{s['order_lines']:,}"),
         ("Purchases", lambda s: money(s["purchases"])),
-        ("Consumption at cost", lambda s: money(s["consumption_value"])),
+        ("Usage at cost", lambda s: money(s["consumption_value"])),
     ]
     for label, fn in spec:
         rows.append([label] + [fn(window[v]) for v, _ in VARIANTS])
@@ -366,13 +366,13 @@ def _chart_by_category(col, scale, ylabel, avg_fmt):
 
 
 def chart_value_by_category():
-    return _chart_by_category("value", 1000, "Consumption at cost ($000 / month)",
-                              "Average: ${:,.0f}K of parts consumed per month")
+    return _chart_by_category("value", 1000, "Usage at cost ($000 / month)",
+                              "Average: ${:,.0f}K of parts used per month")
 
 
 def chart_units_by_category():
-    return _chart_by_category("consumption", 1000, "Units consumed (000 / month)",
-                              "Average: {:,.1f}K units consumed per month")
+    return _chart_by_category("consumption", 1000, "Units used (000 / month)",
+                              "Average: {:,.1f}K units used per month")
 
 
 # cost and usage by category, 2025
@@ -394,7 +394,7 @@ def category_table():
     rows.append(["<strong>All items</strong>", f"<strong>{int(cat_tbl['n'].sum()):,}</strong>", "", "", "<strong>100%</strong>",
                  f"<strong>{k(cat_tbl['value'].sum())}</strong>", "<strong>100%</strong>"])
     return widths(B.data_table(["Category", "Items", "Median unit cost", "Median units used per item (2025)",
-                                "Share of units used (2025)", "Consumption value (2025)", "Share of value (2025)"], rows,
+                                "Share of units used (2025)", "Usage value (2025)", "Share of value (2025)"], rows,
                                right=[1, 2, 3, 4, 5, 6]), [20, 9, 14, 16, 13, 15, 13])
 
 
@@ -402,7 +402,7 @@ _hi = cat_tbl.loc[[c for c in ["Mechanical", "Electrical"] if c in cat_tbl.index
 _lo = cat_tbl.loc[[c for c in ["Fasteners", "Hardware"] if c in cat_tbl.index]]
 TBL_TEXT = (f"Item cost and usage move in opposite directions across the categories. Mechanical and electrical parts "
             f"(motors, gearboxes, drives, controls) are {pct(_hi['item_share'].sum(), 0)} of items and "
-            f"{pct(_hi['value_share'].sum(), 0)} of consumption value, with median unit costs of "
+            f"{pct(_hi['value_share'].sum(), 0)} of usage value, with median unit costs of "
             f"${cat_tbl.loc['Mechanical', 'med_cost']:,.0f} and ${cat_tbl.loc['Electrical', 'med_cost']:,.0f}, but only "
             f"{pct(_hi['unit_share'].sum(), 0)} of the units used. Fasteners and hardware are the reverse: "
             f"{pct(_lo['unit_share'].sum(), 0)} of the units used but {pct(_lo['value_share'].sum(), 0)} of the value, "
@@ -458,8 +458,8 @@ def chart_history_value():
     tot = w.sum(axis=1); x = np.arange(len(tot)); fit = np.polyfit(x, tot.to_numpy(), 1)
     ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2, label="Trend")
     ax.set_ylim(0, tot.max() * 1.35)
-    ax.set_ylabel("Units consumed (000 / month)")
-    _avg_box(ax, f"Average: {round(tot.mean() * 10) * 100:,.0f} units consumed per month")
+    ax.set_ylabel("Units used (000 / month)")
+    _avg_box(ax, f"Average: {round(tot.mean() * 10) * 100:,.0f} units used per month")
     B.chart_style(ax)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=5, fontsize=9)
     fig.tight_layout()
@@ -498,7 +498,7 @@ def chart_pareto():
         x_ = n_ / len(v) * 100; y_ = float(cum.iloc[min(n_, len(v)) - 1])
         ax.axvline(x_, color=MED_GREY, linestyle=":", linewidth=1)
         ax.text(x_ + 1, 8, f"{lab} items end\n{x_:.0f}% of items, {y_:.0f}% of value", fontsize=8, color=DARK_GREY)
-    ax.set_xlabel("Share of items, highest consumption value first (%)"); ax.set_ylabel("Cumulative share of value (%)")
+    ax.set_xlabel("Share of items, highest usage value first (%)"); ax.set_ylabel("Cumulative share of value (%)")
     ax.set_xlim(0, 100); ax.set_ylim(0, 102)
     B.chart_style(ax)
     return B.b64(fig)
@@ -508,7 +508,7 @@ FLOW_HTML = (
     '<div style="display:flex;align-items:stretch;gap:0;margin:22px 0;flex-wrap:wrap;">'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">1. What it reads</div>'
-    '<div style="font-size:16px;line-height:1.55;">Three years of cleaned consumption history for every stocked item, '
+    '<div style="font-size:16px;line-height:1.55;">Three years of cleaned usage history for every stocked item, '
     'with its demand pattern, value class, cost and supplier lead time.</div></div>'
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
@@ -573,7 +573,7 @@ as excess on slow parts is used up and not replaced.</p>
 <p>Over the past six months (January 2026 to June 2026), the demand forecasting model has set the shop's reorder
 decisions. Every week, the model predicts which items need to be reordered, and these predictions are then fed
 directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
-current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
+current stock on hand and on order for each item, the forecasted usage over each supplier's delivery time,
 and a safety buffer based on how unpredictable each part's demand and deliveries have been.</p>
 {FLOW_HTML}
 <p>The model refreshes its forecasts every week and is retrained on the latest history once a month. The
@@ -591,17 +591,17 @@ stock and the suggested order quantity, as seen in the screenshot of the ERP sys
 </div>
 
 {B.section("data", "Section 2.2", "Training Data Overview")}
-<p>The model learns from the shop's weekly consumption of every stocked item. It was originally trained on three
-years of this consumption data (2023 through 2025, as shown below), and is continually trained on every new month
+<p>The model learns from the shop's weekly usage of every stocked item. It was originally trained on three
+years of this usage data (2023 through 2025, as shown below), and is continually trained on every new month
 of data.</p>
-{B.chart("MONTHLY CONSUMPTION IN VALUE, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["valcat"])}
-{B.chart("MONTHLY CONSUMPTION IN UNITS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
+{B.chart("MONTHLY USAGE IN VALUE, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["valcat"])}
+{B.chart("MONTHLY USAGE IN UNITS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
 <p>Demand is steady in aggregate over the three years, but individual items exhibit very different demand patterns.
 We've categorized these individual item demand patterns into four groups, which the model is calibrated against:
 {seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but variable),
 {seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent (many months
 with no demand at all). One representative item within each pattern is shown below.</p>
-{B.chart("Three years of monthly consumption, one representative item per demand pattern", charts["examples"])}
+{B.chart("Three years of monthly usage, one representative item per demand pattern", charts["examples"])}
 <p>{CAT_TEXT}</p>
 {B.chart("Items in each category, by demand pattern", charts["catseg"])}
 <p>{TBL_TEXT}</p>
@@ -635,7 +635,7 @@ and compared on the validation weeks. {WIN_WHY}</p>
 <p>The cleaning matters to what the model can learn.
 The same model, with the same features, was run on the history at three stages of cleaning (scored on monthly forecasts over the lead time). Across all items
 the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
-cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls from
+cleanup actually repaired (duplicates merged, unrecorded usage restored) it falls from
 {pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
 {pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
 history. The other thirteen corrupt the lead times, bills and stock records the reorder point is built on, and
@@ -686,8 +686,8 @@ to {mod46['stockout_episodes_by_tier']['line']}, and jobs held to {mod46['jobs_d
 lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the expensive parts are bought more often;
 that is the cost of carrying less of them.</p>
 {sub("Purchases by month")}
-<p>Purchases should converge to consumption under any sound policy. Under the model, purchases run above
-consumption at first while buffers are built on the parts that were running short, then below it as excess on
+<p>Purchases should converge to usage under any sound policy. Under the model, purchases run above
+usage at first while buffers are built on the parts that were running short, then below it as excess on
 the rest is used up.</p>
 {purchases_table()}
 
