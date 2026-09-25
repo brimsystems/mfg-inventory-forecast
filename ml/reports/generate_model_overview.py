@@ -83,10 +83,10 @@ def chart_halves():
     fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 3.3))
     m = F["model"]
     half = lambda key: (H1[key] + H2[key]) / 2
-    panels = [("Stockout events", ["1H/2H '25 Avg.", "1H '26"], half("stockout_episodes"), m["stockout_episodes"], "{:,.0f}"),
-              ("Jobs held for material", ["1H/2H '25 Avg.", "1H '26"], half("jobs_delayed"), m["jobs_delayed"], "{:,.0f}"),
-              ("Rush spend ($000)", ["1H/2H '25 Avg.", "1H '26"], half("rush_spend") / 1000, m["rush_spend"] / 1000, "${:,.0f}K"),
-              ("Inventory balance ($M)", ["2025 Avg.", "June 30, '26"], avg25 / 1e6, end_mod / 1e6, "${:,.2f}M")]
+    panels = [("Stockout events", ["1H/2H '25\nAvg.", "1H '26"], half("stockout_episodes"), m["stockout_episodes"], "{:,.0f}"),
+              ("Jobs held for material", ["1H/2H '25\nAvg.", "1H '26"], half("jobs_delayed"), m["jobs_delayed"], "{:,.0f}"),
+              ("Rush spend ($000)", ["1H/2H '25\nAvg.", "1H '26"], half("rush_spend") / 1000, m["rush_spend"] / 1000, "${:,.0f}K"),
+              ("Inventory balance ($M)", ["2025\nAvg.", "June 30, '26"], avg25 / 1e6, end_mod / 1e6, "${:,.2f}M")]
     for ax, (title, labels, a_, b_, fmt) in zip(axes, panels):
         bars = ax.bar(labels, [a_, b_], color=[MED_GREY, DARK_BLUE], width=0.6)
         ax.text(bars[0].get_x() + bars[0].get_width() / 2, a_ * 1.02, fmt.format(a_), ha="center", fontsize=8.5,
@@ -96,6 +96,7 @@ def chart_halves():
         ax.set_title(title, fontsize=9.5, color=DARK_GREY, pad=8)
         ax.set_ylim(0, max(a_, b_) * 1.3); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8)
         B.chart_style(ax)
+        ax.spines["left"].set_visible(False)
     fig.tight_layout(w_pad=1.6)
     return B.b64(fig)
 
@@ -666,7 +667,8 @@ without tying up cash. Compared to 2025, stockout events fell {fall(HALF('stocko
 jobs held for material {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend
 {fall(HALF('rush_spend'), mod['rush_spend'])}, and the inventory balance at the end of June was {k(end_mod)},
 {fall(avg25, end_mod)} below the 2025 average.</p>
-{B.chart("2025 against the model's first six months", charts["halves"])}
+<div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
+<img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
