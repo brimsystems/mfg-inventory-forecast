@@ -97,6 +97,11 @@ def run():
 
     products, subs = build_catalog(rng)
     bom_true, prod_subs, sub_components = build_bom(products, subs, plan, rng)
+    # expensive parts on a bill are drawn by the job; little of their demand is hand-pulled
+    on_bill = set(bom_true.loc[bom_true["component_type"] == "purchased", "component_item"].astype(int))
+    cls_of = plan.set_index("item_id")["item_class"].to_dict()
+    keep = manual_demand["item_id"].map(lambda i: C.BOM_DIRECT_KEEP.get(cls_of.get(i), 1.0) if i in on_bill else 1.0)
+    manual_demand = manual_demand.assign(qty=(manual_demand["qty"] * keep).round().astype(int))
     bom_recorded, omissions, omit_items = apply_m3_omissions(bom_true, plan, rng)
     builds = build_product_builds(products, rng)
     bf_recorded = explode_builds(builds, bom_recorded)

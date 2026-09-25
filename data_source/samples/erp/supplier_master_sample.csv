@@ -1,45 +1,45 @@
 supplier_id,supplier_name,supplier_type,payment_terms,status
-SUP-001,"Rodriguez, Figueroa and Sanchez",Mechanical,2/10 Net 30,ACTIVE
-SUP-002,Doyle Ltd,Electrical,Net 60,ACTIVE
+SUP-001,"Rodriguez, Figueroa and Sanchez",Mechanical,Net 45,ACTIVE
+SUP-002,Doyle Ltd,Electrical,2/10 Net 30,ACTIVE
 SUP-003,"Mcclain, Miller and Henderson",Fasteners,Net 45,ACTIVE
-SUP-004,Davis and Sons,Distributor,Net 60,ACTIVE
-SUP-005,"Guzman, Hoffman and Baldwin",Outside Service,Net 45,ACTIVE
-SUP-006,"Gardner, Robinson and Lawrence",Material,Net 30,ACTIVE
-SUP-007,Blake and Sons,Mechanical,2/10 Net 30,ACTIVE
-SUP-008,"Henderson, Ramirez and Lewis",Electrical,Net 30,ACTIVE
-SUP-009,Garcia-James,Fasteners,Net 45,ACTIVE
+SUP-004,Davis and Sons,Distributor,2/10 Net 30,ACTIVE
+SUP-005,"Guzman, Hoffman and Baldwin",Outside Service,Net 30,ACTIVE
+SUP-006,"Gardner, Robinson and Lawrence",Material,2/10 Net 30,ACTIVE
+SUP-007,Blake and Sons,Mechanical,Net 30,ACTIVE
+SUP-008,"Henderson, Ramirez and Lewis",Electrical,Net 45,ACTIVE
+SUP-009,Garcia-James,Fasteners,Net 30,ACTIVE
 SUP-010,Abbott-Munoz,Distributor,Net 45,ACTIVE
-SUP-011,Blair PLC,Outside Service,Net 30,ACTIVE
-SUP-012,Dudley Group,Material,Net 30,ACTIVE
-SUP-013,Arnold Ltd,Mechanical,2/10 Net 30,ACTIVE
+SUP-011,Blair PLC,Outside Service,2/10 Net 30,ACTIVE
+SUP-012,Dudley Group,Material,Net 45,ACTIVE
+SUP-013,Arnold Ltd,Mechanical,Net 45,ACTIVE
 SUP-014,"Mcclure, Ward and Lee",Electrical,Net 30,ACTIVE
-SUP-015,Williams and Sons,Fasteners,Net 30,ACTIVE
-SUP-016,Galloway-Wyatt,Distributor,Net 30,ACTIVE
-SUP-017,James Group,Outside Service,Net 45,ACTIVE
-SUP-018,"Flowers, Martin and Kelly",Material,Net 60,ACTIVE
-SUP-019,"Adams, Zuniga and Wong",Mechanical,Net 30,ACTIVE
-SUP-020,"Reid, Ferguson and Sanchez",Electrical,Net 30,ACTIVE
-SUP-021,Gray-Mayo,Fasteners,Net 30,ACTIVE
+SUP-015,Williams and Sons,Fasteners,2/10 Net 30,ACTIVE
+SUP-016,Galloway-Wyatt,Distributor,2/10 Net 30,ACTIVE
+SUP-017,James Group,Outside Service,Net 30,ACTIVE
+SUP-018,"Flowers, Martin and Kelly",Material,Net 30,ACTIVE
+SUP-019,"Adams, Zuniga and Wong",Mechanical,Net 60,ACTIVE
+SUP-020,"Reid, Ferguson and Sanchez",Electrical,Net 45,ACTIVE
+SUP-021,Gray-Mayo,Fasteners,Net 60,ACTIVE
 SUP-022,"Watts, Robinson and Nguyen",Distributor,Net 30,ACTIVE
-SUP-023,Perez Inc,Outside Service,Net 30,ACTIVE
-SUP-024,Morales-Jones,Material,Net 45,ACTIVE
-SUP-025,"Walter, Edwards and Rios",Mechanical,2/10 Net 30,ACTIVE
-SUP-026,Wilkerson-Day,Electrical,Net 30,ACTIVE
-SUP-027,Baker and Sons,Fasteners,Net 45,ACTIVE
+SUP-023,Perez Inc,Outside Service,Net 45,ACTIVE
+SUP-024,Morales-Jones,Material,Net 60,ACTIVE
+SUP-025,"Walter, Edwards and Rios",Mechanical,Net 30,ACTIVE
+SUP-026,Wilkerson-Day,Electrical,2/10 Net 30,ACTIVE
+SUP-027,Baker and Sons,Fasteners,Net 60,ACTIVE
 SUP-028,"Hoffman, Baker and Richards",Distributor,Net 45,ACTIVE
-SUP-029,"Ross, Robinson and Bright",Outside Service,Net 45,ACTIVE
-SUP-030,"Snyder, Campos and Callahan",Material,Net 45,ACTIVE
-SUP-031,Burton Ltd,Mechanical,Net 30,ACTIVE
-SUP-032,Carlson-Cruz,Electrical,Net 30,ACTIVE
-SUP-033,Ferrell Rice and Maddox,Fasteners,2/10 Net 30,ACTIVE
-SUP-034,Frazier Inc,Distributor,2/10 Net 30,ACTIVE
-SUP-035,"Dyer, Potter and Mack",Outside Service,Net 30,ACTIVE
+SUP-029,"Ross, Robinson and Bright",Outside Service,2/10 Net 30,ACTIVE
+SUP-030,Snyder Campos and Callahan,Material,Net 60,ACTIVE
+SUP-031,Burton Ltd,Mechanical,2/10 Net 30,ACTIVE
+SUP-032,Carlson-Cruz,Electrical,Net 60,ACTIVE
+SUP-033,"Ferrell, Rice and Maddox",Fasteners,Net 30,ACTIVE
+SUP-034,Frazier Inc,Distributor,Net 45,ACTIVE
+SUP-035,"Dyer, Potter and Mack",Outside Service,Net 60,ACTIVE
 SUP-036,Rodriguez-Graham,Material,Net 60,ACTIVE
-SUP-037,Smith-Bowen,Mechanical,Net 30,ACTIVE
-SUP-038,Baker Mason and White,Electrical,2/10 Net 30,ACTIVE
-SUP-039,Harrell LLC,Fasteners,Net 30,ACTIVE
-SUP-040,"Romero, Gonzalez and Brooks",Distributor,2/10 Net 30,ACTIVE
-SUP-041,ARNOLD LTD,Mechanical,2/10 Net 30,ACTIVE
-SUP-042,Arnold Inc,Mechanical,Net 60,ACTIVE
-SUP-043,FERRELL RICE AND MADDOX,Fasteners,Net 60,ACTIVE
-SUP-044,BAKER MASON AND WHITE,Electrical,Net 60,ACTIVE
+SUP-037,Smith-Bowen,Mechanical,Net 45,ACTIVE
+SUP-038,"Baker, Mason and White",Electrical,Net 45,ACTIVE
+SUP-039,Harrell LLC,Fasteners,Net 45,ACTIVE
+SUP-040,"Romero, Gonzalez and Brooks",Distributor,Net 30,ACTIVE
+SUP-041,GARCIA-JAMES,Fasteners,Net 60,ACTIVE
+SUP-042,Garcia-James Inc,Fasteners,Net 30,ACTIVE
+SUP-043,SNYDER CAMPOS AND CALLAHAN,Material,Net 45,ACTIVE
+SUP-044,JAMES GROUP,Outside Service,Net 60,ACTIVE

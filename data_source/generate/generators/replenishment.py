@@ -358,8 +358,9 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                         adjustments.append({"item_number": n, "date": days[t].date().isoformat(), "qty": -mag,
                                             "kind": "chronic"})
             # ── annual physical count ────────────────────────────────────
-            if t in count_days:
-                # the count is keyed in the stock unit and replaces the book; the
+            if t in count_days and rng.random() < C.CYCLE_COUNT_ANNUAL_COVERAGE:
+                # the annual physical reaches most, not all, of the stockroom; the
+                # count is keyed in the stock unit and replaces the book; the
                 # ledger posts the correction against its own balance (see cycle_counts)
                 for n, w in zip(nums, weights):
                     counted = max(0, int(round(max(physical, 0) * w * (1 + rng.normal(0, C.COUNT_NOISE_SD)))))

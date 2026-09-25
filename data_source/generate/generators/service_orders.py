@@ -18,6 +18,7 @@ from .. import config as C
 def build_service_orders(service_demand, item_meta, dup_map, plan, rng):
     """service_demand: DataFrame item_id, month, qty (the service channel)."""
     cost_by_item = plan.set_index("item_id")["unit_cost"].to_dict()
+    usage_by_item = {int(i): C.CLASS_USAGE_MULT.get(c, 1.0) for i, c in zip(plan["item_id"], plan["item_class"])}
     recorded = {}
     for num, meta in item_meta.items():
         if not meta["dead"]:
@@ -29,7 +30,8 @@ def build_service_orders(service_demand, item_meta, dup_map, plan, rng):
         iid, q = int(r.item_id), int(r.qty)
         if q <= 0 or iid not in recorded:
             continue
-        n_lines = int(min(3, max(1, round(q / 6))))
+        # a customer orders fasteners by the box, not one line per six screws
+        n_lines = int(min(3, max(1, round(q / (6 * usage_by_item.get(iid, 1.0))))))
         for s in _split_int(q, n_lines, rng):
             if s <= 0:
                 continue

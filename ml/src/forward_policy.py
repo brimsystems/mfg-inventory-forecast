@@ -68,7 +68,7 @@ SERVICE = {"A": 0.98, "B": 0.95, "C": 0.90}     # cycle service levels, for refe
 # job as surely as a missing motor. Line-critical parts sit on a production bill
 # (a shortage holds a job), service-critical parts go out on service orders (a
 # shortage delays a customer repair), and the rest are shop supplies and pulls.
-FILL_TARGET = {"line": 0.99, "service": 0.98, "standard": 0.975}
+FILL_TARGET = {"line": 0.99, "service": 0.985, "standard": 0.985}
 K_MAX = 4.0
 HYSTERESIS = 0.20
 ORDER_LINE_COST = 35.0         # buyer, receiving and payables time per order line ($)

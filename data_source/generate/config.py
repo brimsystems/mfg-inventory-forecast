@@ -87,12 +87,26 @@ ITEM_CLASS_SHARES = {
 CLASS_COST_MULT = {
     "Raw Material":    2.0,
     "Mechanical":      6.0,
-    "Fittings":        1.1,
+    "Fittings":        0.8,
     "Electrical":      4.0,
-    "Fasteners":       0.25,
-    "Hardware":        0.5,
+    "Fasteners":       0.12,
+    "Hardware":        0.3,
     "Consumables":     0.8,
     "Outside Service": 1.6,
+}
+
+# Relative usage by class: a shop goes through fasteners and hardware by the
+# thousand and motors and drives by the dozen, so an item's demand level scales
+# with its class as well as its own draw.
+CLASS_USAGE_MULT = {
+    "Raw Material":    1.2,
+    "Mechanical":      0.5,
+    "Fittings":        2.0,
+    "Electrical":      0.7,
+    "Fasteners":       3.5,
+    "Hardware":        2.5,
+    "Consumables":     2.5,
+    "Outside Service": 1.0,
 }
 
 # Classes whose purchase orders carry many lines (distributor/hardware buys)
@@ -118,13 +132,23 @@ PRODUCT_FAMILIES = ["Conveyor", "Mixer", "Enclosure"]
 SUBASSY_PER_PRODUCT_RANGE   = (1, 3)    # subassemblies per product
 COMPONENTS_PER_PRODUCT_RANGE= (2, 5)    # direct purchased components per product
 COMPONENTS_PER_SUBASSY_RANGE= (2, 5)    # purchased components per subassembly
-BOM_QTY_PER_RANGE           = (1, 8)    # qty of a component per parent
+BOM_QTY_PER_RANGE           = (1, 8)    # qty of a component per parent (default)
+BOM_QTY_PER_BY_CLASS = {                # a frame takes dozens of bolts and one gearmotor
+    "Fasteners": (3, 16), "Hardware": (2, 10), "Fittings": (2, 9), "Consumables": (1, 6),
+    "Raw Material": (1, 7), "Outside Service": (1, 3), "Electrical": (1, 4), "Mechanical": (1, 3),
+}
 
 # Backflush from production is the dominant channel for the high-runner
 # components on BOMs; service parts and manual pulls are smaller item-level
 # channels. Lumpy and intermittent items are mostly service/manual (kept off the
 # BOM) so the item-level segment mix survives the product-driven smoothing.
 BOM_COMPONENT_SEGMENTS = ["smooth", "erratic"]   # segments eligible to sit on BOMs
+# Motors, drives, gearboxes and steel sit on the bills even though their demand is
+# lumpy: the lumpiness comes from the job mix, which the order book can see.
+BOM_LUMPY_CLASSES = ["Mechanical", "Electrical", "Raw Material"]
+# Share of such a part's hand-pull demand that remains once it sits on a bill
+# (a gearmotor is drawn by the job, rarely pulled by hand).
+BOM_DIRECT_KEEP = {"Mechanical": 0.35, "Electrical": 0.5, "Raw Material": 0.6}
 SERVICE_ITEM_SHARE = 0.20      # share of items that also carry a service channel
 SERVICE_SCALE      = 0.25      # service demand as a fraction of the item's engine demand
 
@@ -140,6 +164,21 @@ SEGMENT_MIX = {
     "erratic":      0.40,
     "lumpy":        0.29,
     "intermittent": 0.14,
+}
+
+# Demand pattern leans by class, though every class carries all four: floor
+# stock (fasteners, hardware, consumables) is pulled steadily, while motors,
+# drives and gearboxes go a few to a job or out as occasional spares. Relative
+# weights, raked so the overall mix still matches SEGMENT_MIX.
+CLASS_SEGMENT_TILT = {           # smooth, erratic, lumpy, intermittent
+    "Fasteners":       (2.0, 1.6, 0.5, 0.4),
+    "Hardware":        (1.8, 1.5, 0.6, 0.5),
+    "Consumables":     (2.0, 1.5, 0.5, 0.4),
+    "Fittings":        (1.3, 1.3, 0.8, 0.7),
+    "Raw Material":    (0.9, 1.0, 1.6, 0.7),
+    "Outside Service": (1.0, 1.0, 1.2, 0.8),
+    "Electrical":      (0.8, 0.9, 1.1, 1.4),
+    "Mechanical":      (0.6, 0.8, 1.3, 1.8),
 }
 
 # Per-segment demand process parameters. Monthly demand is built as a base level
@@ -180,9 +219,9 @@ SEASONAL_AMP_RANGE    = (0.15, 0.40)
 FAMILY_FACTOR_WEIGHT  = 0.35
 
 # ── Cost, ABC and current (stale) inventory policy ──────────────────────────
-STANDARD_COST_LOG_MEAN = 1.72   # exp(1.17) ~ $3.2 median before the class multiplier; sized so
+STANDARD_COST_LOG_MEAN = 1.95   # exp(1.17) ~ $3.2 median before the class multiplier; sized so
                                 # annual purchases land near $10M for a ~$28M builder
-STANDARD_COST_LOG_STD  = 0.75
+STANDARD_COST_LOG_STD  = 0.95
 # ABC by cumulative share of annual consumption value.
 ABC_A_CUM = 0.80
 ABC_B_CUM = 0.95
@@ -193,7 +232,7 @@ SERVICE_LEVEL_BY_ABC = {"A": 0.98, "B": 0.95, "C": 0.90}
 # They are deliberately miscalibrated: a multiplicative error is baked in so the
 # recomputed policy has room to improve.
 CURRENT_POLICY_ERROR_STD = 0.60   # go-live points never revisited as each part's demand moved: wrong both ways
-CURRENT_POLICY_SS_SHARE  = 1.5    # go-live safety stock as a share of lead-time demand (padded)
+CURRENT_POLICY_SS_SHARE  = 2.2    # go-live safety stock as a share of lead-time demand (padded)
 
 # ── Supplier master ─────────────────────────────────────────────────────────
 N_SUPPLIERS      = 40
@@ -277,7 +316,7 @@ M7_MISC_SHARE          = 0.12     # live items with item_class = MISC (10-14%)
 # T1 Unrecorded consumption: consequence of M3 plus incomplete manual issues and
 # unrecorded service-parts pulls; material leaves with no record, and chronic
 # downward adjustments follow the annual count.
-T1_UNRECORDED_SHARE    = 0.30     # share of an affected item's true usage that escapes
+T1_UNRECORDED_SHARE    = 0.14     # share of an affected item's true usage that escapes
 T1_MONTHLY_ADJ_PROB    = 0.45     # probability of a write-off adjustment in a given month
 
 # T2 Adjustments as catch-all: ADJUST used for unrecorded issues, mis-receipts,
@@ -321,7 +360,7 @@ T8_DUP_SHARE           = 0.003    # share of transactions posted a second time (
 # produce their consequences: suppressed orders, late arrivals, rush buys and
 # shortages. Physical stock is tracked alongside the books.
 BOOKING_LEAD_DAYS       = (28, 56)  # a customer order is booked this many days before its job is released
-ORDER_COVER_DAYS        = 120     # the buyers' lot: about four months of average demand at a time
+ORDER_COVER_DAYS        = 135     # the buyers' lot: about four and a half months of average demand at a time
 INITIAL_STOCK_COVER     = 1.5     # opening stock as a multiple of the reorder point
 REORDER_GAP_DAYS        = 5       # no second regular order within this many days
 PARTIAL_RECEIPT_PROB    = 0.09    # share of receipts that arrive short

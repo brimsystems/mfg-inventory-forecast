@@ -28,11 +28,25 @@ def _assign_by_share(n: int, shares: dict, rng) -> list:
     return list(rng.choice(labels, size=n, p=probs))
 
 
+def _segment_by_class(item_class, rng) -> list:
+    """Draw each item's demand pattern from a class-leaning mix, raked so the
+    overall mix still matches SEGMENT_MIX and each class keeps its share."""
+    classes = list(C.ITEM_CLASS_SHARES); segs = list(C.SEGMENT_MIX)
+    row = np.array([C.ITEM_CLASS_SHARES[c] for c in classes]); row = row / row.sum()
+    col = np.array([C.SEGMENT_MIX[s] for s in segs]); col = col / col.sum()
+    P = row[:, None] * col[None, :] * np.array([C.CLASS_SEGMENT_TILT[c] for c in classes])
+    for _ in range(200):                      # iterative proportional fitting
+        P *= (row / P.sum(axis=1))[:, None]
+        P *= (col / P.sum(axis=0))[None, :]
+    cond = {c: P[i] / P[i].sum() for i, c in enumerate(classes)}
+    return [segs[int(rng.choice(len(segs), p=cond[c]))] for c in item_class]
+
+
 def build_item_plan(rng) -> pd.DataFrame:
     """Return one row per canonical live item with all latent demand attributes."""
     n = C.N_LIVE_ITEMS
     item_class = _assign_by_share(n, C.ITEM_CLASS_SHARES, rng)
-    segment = _assign_by_share(n, C.SEGMENT_MIX, rng)
+    segment = _segment_by_class(item_class, rng)
 
     # Material family for the metal classes; others carry no family.
     fam_names = list(C.MATERIAL_FAMILIES)
@@ -53,6 +67,7 @@ def build_item_plan(rng) -> pd.DataFrame:
     unit_cost = (np.exp(rng.normal(C.STANDARD_COST_LOG_MEAN, C.STANDARD_COST_LOG_STD, n)) * class_mult).round(2)
     unit_cost = np.clip(unit_cost, 0.05, None)
     base_level = np.exp(rng.normal(C.BASE_DEMAND_LOG_MEAN, C.BASE_DEMAND_LOG_STD, n))
+    base_level = base_level * np.array([C.CLASS_USAGE_MULT[c] for c in item_class])   # screws by the thousand
 
     seasonal = rng.random(n) < C.SEASONAL_ITEM_SHARE
     seasonal_amp = np.where(seasonal, rng.uniform(*C.SEASONAL_AMP_RANGE, n), 0.0)

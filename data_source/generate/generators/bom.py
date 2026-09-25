@@ -51,7 +51,9 @@ def build_bom(products, subs, plan, rng):
     qty_per, level) keyed on canonical item_id for components."""
     # BOM components are drawn from the high-runner (smooth / erratic) items, so
     # lumpy and intermittent items stay off the BOM and keep their segment.
-    eligible = plan[plan["segment"].isin(C.BOM_COMPONENT_SEGMENTS)]
+    eligible = plan[plan["segment"].isin(C.BOM_COMPONENT_SEGMENTS)
+                    | (plan["item_class"].isin(C.BOM_LUMPY_CLASSES)
+                       & plan["segment"].isin(["lumpy", "intermittent"]))]
     comp_ids = (eligible["item_id"].to_numpy() if len(eligible) else plan["item_id"].to_numpy())
     comp_class = plan.set_index("item_id")["item_class"].to_dict()
     sub_numbers = subs["subassembly_number"].tolist()
@@ -66,7 +68,8 @@ def build_bom(products, subs, plan, rng):
         for c in comps:
             rows.append({"parent": s, "parent_type": "subassembly",
                          "component_item": int(c), "component_type": "purchased",
-                         "qty_per": int(rng.integers(*C.BOM_QTY_PER_RANGE)), "level": 2})
+                         "qty_per": int(rng.integers(*C.BOM_QTY_PER_BY_CLASS.get(comp_class.get(int(c)), C.BOM_QTY_PER_RANGE))),
+                         "level": 2})
 
     # Product content: a few subassemblies plus direct purchased components.
     prod_subs = {}
@@ -83,7 +86,8 @@ def build_bom(products, subs, plan, rng):
         for c in comps:
             rows.append({"parent": p, "parent_type": "product",
                          "component_item": int(c), "component_type": "purchased",
-                         "qty_per": int(rng.integers(*C.BOM_QTY_PER_RANGE)), "level": 1})
+                         "qty_per": int(rng.integers(*C.BOM_QTY_PER_BY_CLASS.get(comp_class.get(int(c)), C.BOM_QTY_PER_RANGE))),
+                         "level": 1})
 
     bom_true = pd.DataFrame(rows)
     return bom_true, prod_subs, sub_components

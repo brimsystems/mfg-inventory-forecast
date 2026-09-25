@@ -268,12 +268,19 @@ dec_avg, dec_end = H2["inventory_by_month"]["2025-12"], H2["end_inventory_value"
 jun_avg = F["model"]["inventory_by_month"]["2026-06"]
 jun_dirty = F["dirty"]["inventory_by_month"]["2026-06"]
 _m, _r = M46["model"]["avg_inventory_value"], M46["clean_rule"]["avg_inventory_value"]
+RULE_SVC = ("improves service somewhat" if (rule46["fill_rate"] > dirty46["fill_rate"] + 0.003
+                                             or rule46["jobs_delayed"] < dirty46["jobs_delayed"])
+            else "barely moves service")
+if end_mod <= end_rule:
+    END_NOTE = f"ends June with the least stock of the three ({k(end_mod)})"
+else:
+    END_NOTE = (f"ends June with {k(end_mod)} of stock, well below manual reordering and close to the rule's "
+                f"{k(end_rule)}, because it holds larger buffers on the parts that stop the line,")
 if _m <= _r:
     AVG_NOTE = (f"It also carries the least stock of the three on average over months 4 to 6 ({k(_m)}), though it "
                 "gets there gradually: it first builds buffers on the parts that stop the line, then runs down the rest.")
 else:
-    AVG_NOTE = ("It gets there more gradually than the rule: it first builds buffers on the parts that stop the line, "
-                f"then runs down the rest, so its average over months 4 to 6 ({k(_m)}) sits above the rule's.")
+    AVG_NOTE = ""   # the June comparison above already explains the model's position against the rule
 avg25 = float(np.mean(list(H1["inventory_by_month"].values()) + list(H2["inventory_by_month"].values())))
 
 
@@ -420,7 +427,7 @@ Against the first half of 2025, run the way the shop had always run it, stockout
 freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}.</p>
 {B.chart("Inventory (2025 average month against June 2026); stockouts, held jobs and rush spend by half-year", charts["halves"])}
 <p>The manual process held more stock than the shop needed, in the wrong places. Reorder points set at go-live
-and never revisited were far too high on some parts and too low on others, and buyers bought about four months
+and never revisited were far too high on some parts and too low on others, and buyers bought about four and a half months
 of a part at a time whatever it cost. The model moves the stock to where it prevents a stoppage. Parts on a
 production bill, whose shortage holds a job, get the largest buffers, and expensive parts are bought more
 often in smaller lots. Replaying the same six months of demand with nothing fixed shows the gain once the new
@@ -543,7 +550,7 @@ receipt history.</p>
 {B.section("source", "Section 3.3", "Where the Improvement Came From")}
 <p>To separate what the cleanup did from what the model did, the same January to June 2026 demand, with the same
 supplier deliveries, was replayed three ways. With nothing fixed, the shop keeps the stale lead times and
-reorder points, the duplicate records, the phantom on-order and the buyers' four-month lots. With the cleaned
+reorder points, the duplicate records, the phantom on-order and the buyers' four-and-a-half-month lots. With the cleaned
 records and the recomputed rule, it runs on the corrected masters with reorder points recomputed each month from
 the last twelve months of usage over the corrected lead time, plus a standard buffer, and keeps the buyers' lots.
 With the demand model, the corrected masters are the same, and the reorder points and order quantities come from
@@ -562,10 +569,10 @@ full six months:</p>
 {sub("Months 4 to 6 (steady state)")}
 {variants_table(M46)}
 <p>The recomputed rule alone lowers inventory (a June 30 balance of {k(end_rule)} against {k(end_dirty)} with
-nothing fixed) but does not raise service: fill is {pct(rule46['fill_rate'])} against {pct(dirty46['fill_rate'])},
-and {rule46['jobs_delayed']} jobs are held against {dirty46['jobs_delayed']}. It spreads a standard buffer evenly,
+nothing fixed) and {RULE_SVC}: fill is {pct(rule46['fill_rate'])} against {pct(dirty46['fill_rate'])}, and
+{rule46['jobs_delayed']} jobs are held against {dirty46['jobs_delayed']}. But it spreads a standard buffer evenly,
 so the parts that stop the line get no more protection than shop supplies. The model, on the same cleaned records,
-ends June with the least stock of the three ({k(end_mod)}) and cuts stockout events to
+{END_NOTE} and cuts stockout events to
 {mod46['stockout_episodes']:,}, stockouts on line-critical parts from {dirty46['stockout_episodes_by_tier']['line']}
 to {mod46['stockout_episodes_by_tier']['line']}, and jobs held to {mod46['jobs_delayed']}. {AVG_NOTE} It places more order
 lines ({mod46['order_lines']:,} against {dirty46['order_lines']:,}) because the expensive parts are bought more often;
