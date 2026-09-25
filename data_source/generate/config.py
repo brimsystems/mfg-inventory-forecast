@@ -192,7 +192,8 @@ SERVICE_LEVEL_BY_ABC = {"A": 0.98, "B": 0.95, "C": 0.90}
 # the master lead time and a rough monthly demand guess, then never revisited.
 # They are deliberately miscalibrated: a multiplicative error is baked in so the
 # recomputed policy has room to improve.
-CURRENT_POLICY_ERROR_STD = 0.35
+CURRENT_POLICY_ERROR_STD = 0.60   # go-live points never revisited as each part's demand moved: wrong both ways
+CURRENT_POLICY_SS_SHARE  = 1.0    # go-live safety stock as a share of lead-time demand (padded)
 
 # ── Supplier master ─────────────────────────────────────────────────────────
 N_SUPPLIERS      = 40
@@ -281,7 +282,7 @@ T1_MONTHLY_ADJ_PROB    = 0.45     # probability of a write-off adjustment in a g
 
 # T2 Adjustments as catch-all: ADJUST used for unrecorded issues, mis-receipts,
 # returns and scrap; most carry blank or generic reason codes.
-T2_ADJ_SHARE_OF_QTY    = 0.03     # share of quantity moved that flows through adjustments (15-25%)
+T2_ADJ_SHARE_OF_QTY    = 0.015    # share of quantity moved that flows through adjustments (15-25%)
 T2_BLANK_REASON_SHARE  = 0.60     # adjustments with blank or generic reason (60-75%)
 GENERIC_REASON_CODES   = ["", "ADJ", "VAR", "MISC", "COUNT"]
 SPECIFIC_REASON_CODES  = ["CYCLE", "DAMAGE", "SCRAP", "RECOUNT", "RETURN"]
@@ -319,7 +320,7 @@ T8_DUP_SHARE           = 0.003    # share of transactions posted a second time (
 # times against book on-hand and book on-order, so the errors in those records
 # produce their consequences: suppressed orders, late arrivals, rush buys and
 # shortages. Physical stock is tracked alongside the books.
-ORDER_COVER_DAYS        = 75      # order quantity ~ this many days of average demand
+ORDER_COVER_DAYS        = 120     # the buyers' lot: about four months of average demand at a time
 INITIAL_STOCK_COVER     = 1.5     # opening stock as a multiple of the reorder point
 REORDER_GAP_DAYS        = 5       # no second regular order within this many days
 PARTIAL_RECEIPT_PROB    = 0.09    # share of receipts that arrive short
@@ -341,7 +342,7 @@ RUSH_FREIGHT_BY_CLASS   = {       # freight charge on a rush line, by item class
     "Fittings": (60, 150), "Fasteners": (60, 150), "Hardware": (60, 150),
     "Consumables": (60, 150), "Outside Service": (100, 300),
 }
-COUNT_NOISE_SD          = 0.02    # counting noise on a physical count, share of quantity
+COUNT_NOISE_SD          = 0.01    # counting noise on a physical count, share of quantity
 
 # ── Transaction volume and floor conditions ─────────────────────────────────
 LOCATIONS       = ["MAIN", "FLOOR", "RECV", "CRIB"]

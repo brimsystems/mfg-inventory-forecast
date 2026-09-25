@@ -1,121 +1,121 @@
 item_ref,on_hand_note,lead_time_note,reorder_note,preferred_supplier_note,last_updated
-brg 1hp,~929 on hand (runs short),long lead,keep 2 boxes,cheapest,2026-06-30
-relay 3ph,~52 on hand,2 wks stock,,primary vendor,2026-06-30
-ac motor 56c,~269 on hand (runs short),~6 wks,,primary vendor,2026-06-30
-terminal block 3ph,~45 on hand,3-4 wks,call rep,cheapest,2026-06-30
-ac motor 7.5hp,~81 on hand,expedite avail,call rep,cheapest,2026-06-30
-prox sns nema,~80 on hand (runs short),~6 wks,keep 2 boxes,,2026-06-30
-vfd 14awg,~659 on hand,~6 wks,reorder 50,backup only,2026-06-30
-gear redcr 5hp,~157 on hand,~6 wks,order early,cheapest,2026-06-30
-servo motor 1hp,~177 on hand,expedite avail,order early,backup only,2026-06-30
-photo sns 10a,~111 on hand,3-4 wks,reorder 50,primary vendor,2026-06-30
-v-belt 1750rpm,~41 on hand,3-4 wks,,cheapest,2026-06-30
-servo motor 184t,~4 on hand (runs short),~6 wks,,backup only,2026-06-30
-gear redcr 1hp,~79 on hand,long lead,keep 2 boxes,fast ship,2026-06-30
-roller 1750rpm,~36 on hand,2 wks stock,call rep,backup only,2026-06-30
-relay 16awg,~101 on hand,3-4 wks,call rep,fast ship,2026-06-30
-power supply 10a,~118 on hand,3-4 wks,order early,cheapest,2026-06-30
-timing belt 1hp,~78 on hand (runs short),expedite avail,min 20,fast ship,2026-06-30
-encl 3ph,~210 on hand (runs short),~8 wks,keep 2 boxes,fast ship,2026-06-30
-brg 7.5hp,~199 on hand,~8 wks,reorder 50,primary vendor,2026-06-30
-brg 5hp,~58 on hand,~6 wks,keep 2 boxes,,2026-06-30
-pillow block 184t,~0 on hand,~8 wks,keep 2 boxes,,2026-06-30
-gear redcr 1750rpm,~195 on hand,long lead,min 20,cheapest,2026-06-30
-servo motor 5hp,~137 on hand,~8 wks,order early,backup only,2026-06-30
-terminal block 480v,~157 on hand,long lead,keep 2 boxes,fast ship,2026-06-30
-gear redcr 1750rpm,~36 on hand (runs short),2 wks stock,,backup only,2026-06-30
-coupling 184t,~146 on hand,~8 wks,order early,fast ship,2026-06-30
-ac motor 5hp,~164 on hand (runs short),expedite avail,reorder 50,primary vendor,2026-06-30
-a36 angle channel,~120 on hand (runs short),2 wks stock,reorder 50,,2026-06-30
-prox sns nema,~168 on hand,expedite avail,order early,primary vendor,2026-06-30
-gear redcr 1hp,~30 on hand (runs short),long lead,,,2026-06-30
-limit switch nema,~142 on hand,~8 wks,call rep,,2026-06-30
-pillow block 10hp,~0 on hand,~6 wks,min 20,fast ship,2026-06-30
-coupling 184t rev-a,~105 on hand,long lead,keep 2 boxes,,2026-06-30
-pillow block 7.5hp,~0 on hand (runs short),long lead,order early,fast ship,2026-06-30
-gear redcr 184t,~459 on hand (runs short),3-4 wks,call rep,,2026-06-30
-pillow block 10hp,~0 on hand (runs short),expedite avail,keep 2 boxes,cheapest,2026-06-30
-vfd 25a,~457 on hand (runs short),expedite avail,,,2026-06-30
-powder coat black,~0 on hand,long lead,,fast ship,2026-06-30
-5052 sheet flat,~278 on hand,~8 wks,,cheapest,2026-06-30
-ac motor 1hp,~46 on hand (runs short),3-4 wks,call rep,,2026-06-30
-photo sns nema,~16 on hand,expedite avail,call rep,primary vendor,2026-06-30
-pillow block 184t,~41 on hand (runs short),3-4 wks,,primary vendor,2026-06-30
-gear redcr 7.5hp,~136 on hand,~8 wks,call rep,,2026-06-30
-timing belt 7.5hp,~120 on hand,3-4 wks,call rep,primary vendor,2026-06-30
-photo sns 24vdc,~88 on hand,expedite avail,call rep,fast ship,2026-06-30
-gear redcr 1hp,~300 on hand,~8 wks,keep 2 boxes,backup only,2026-06-30
-gearmtr 1750rpm 56c,~57 on hand (runs short),~8 wks,keep 2 boxes,backup only,2026-06-30
-roller 5hp,~260 on hand,long lead,keep 2 boxes,,2026-06-30
-flow control -6,~286 on hand,2 wks stock,reorder 50,,2026-06-30
-power supply 480v,~65 on hand,3-4 wks,keep 2 boxes,backup only,2026-06-30
-roller 5hp 56c,~172 on hand (runs short),long lead,order early,cheapest,2026-06-30
-quick coupler -8,~200 on hand,long lead,order early,primary vendor,2026-06-30
-timing belt 5hp,~259 on hand (runs short),~8 wks,min 20,,2026-06-30
-gearmtr 5hp,~65 on hand (runs short),long lead,,backup only,2026-06-30
-gear redcr 7.5hp,~165 on hand,expedite avail,,primary vendor,2026-06-30
-gear redcr 145t,~420 on hand,expedite avail,,fast ship,2026-06-30
-gear redcr 1750rpm,~403 on hand (runs short),2 wks stock,keep 2 boxes,cheapest,2026-06-30
-limit switch 14awg,~78 on hand (runs short),expedite avail,call rep,primary vendor,2026-06-30
-brg 184t tefc,~114 on hand (runs short),2 wks stock,min 20,backup only,2026-06-30
-gearmtr 1750rpm rev-a,~112 on hand (runs short),~8 wks,,backup only,2026-06-30
-photo sns nema,~94 on hand (runs short),~8 wks,,,2026-06-30
-ac motor 145t,~190 on hand (runs short),~8 wks,call rep,primary vendor,2026-06-30
-gearmtr 5hp tefc,~45 on hand,3-4 wks,keep 2 boxes,,2026-06-30
-roller 1750rpm 56c,~349 on hand,~8 wks,reorder 50,cheapest,2026-06-30
-brg 5hp tefc,~39 on hand,~6 wks,min 20,fast ship,2026-06-30
-6063 tube tube,~444 on hand,3-4 wks,call rep,backup only,2026-06-30
-coupling 145t,~161 on hand,~8 wks,,,2026-06-30
-coupling 7.5hp,~59 on hand,2 wks stock,reorder 50,fast ship,2026-06-30
-vfd nema 12,~51 on hand,3-4 wks,,fast ship,2026-06-30
-relay 12awg,~78 on hand,~8 wks,,fast ship,2026-06-30
-sprocket 56c rev-a,~0 on hand,~6 wks,keep 2 boxes,cheapest,2026-06-30
-terminal block 12awg,~22 on hand,expedite avail,reorder 50,primary vendor,2026-06-30
-pillow block 56c,~82 on hand,2 wks stock,,fast ship,2026-06-30
-5052 sheet channel,~349 on hand,~8 wks,keep 2 boxes,,2026-06-30
-ac motor 10hp,~156 on hand (runs short),3-4 wks,reorder 50,fast ship,2026-06-30
-sprocket 1750rpm 56c,~81 on hand,3-4 wks,order early,,2026-06-30
-roller 1750rpm tefc,~73 on hand (runs short),2 wks stock,order early,,2026-06-30
-brg 5hp 56c,~185 on hand,~6 wks,keep 2 boxes,cheapest,2026-06-30
-coupling 145t tefc,~440 on hand,~8 wks,keep 2 boxes,,2026-06-30
-316 sheet flat,~168 on hand (runs short),3-4 wks,,,2026-06-30
-servo motor 2hp,~66 on hand (runs short),expedite avail,min 20,cheapest,2026-06-30
-timing belt 56c,~0 on hand,~8 wks,,cheapest,2026-06-30
-clevis pin 1/4,~242 on hand,~6 wks,call rep,cheapest,2026-06-30
-terminal block 12awg,~143 on hand,3-4 wks,call rep,fast ship,2026-06-30
-prox sns 25a,~142 on hand,~6 wks,call rep,cheapest,2026-06-30
-cable 10a rev-b,~538 on hand,~6 wks,min 20,primary vendor,2026-06-30
-power supply 24vdc,~152 on hand (runs short),~6 wks,,,2026-06-30
-gear redcr 2hp,~274 on hand,expedite avail,call rep,primary vendor,2026-06-30
-gearmtr 1hp rev-a,~302 on hand,3-4 wks,order early,,2026-06-30
-prox sns 24vdc,~99 on hand (runs short),3-4 wks,call rep,backup only,2026-06-30
-prox sns 480v,~14 on hand,3-4 wks,min 20,,2026-06-30
-prox sns 3ph,~89 on hand,~8 wks,,fast ship,2026-06-30
-coupling 1750rpm,~203 on hand,~6 wks,keep 2 boxes,primary vendor,2026-06-30
-gear redcr 7.5hp,~210 on hand,2 wks stock,reorder 50,cheapest,2026-06-30
-brg 56c,~235 on hand (runs short),~8 wks,call rep,fast ship,2026-06-30
-relay 10a ul,~349 on hand (runs short),2 wks stock,order early,cheapest,2026-06-30
-brg 2hp rev-a,~274 on hand,3-4 wks,keep 2 boxes,fast ship,2026-06-30
-pillow block 10hp,~1461 on hand (runs short),long lead,min 20,cheapest,2026-06-30
-brg 7.5hp 2,~115 on hand (runs short),3-4 wks,order early,primary vendor,2026-06-30
-sprocket 56c 2,~268 on hand,2 wks stock,order early,fast ship,2026-06-30
-sprocket 1hp tefc,~80 on hand,~8 wks,min 20,,2026-06-30
-cutoff wheel case,~471 on hand,2 wks stock,,primary vendor,2026-06-30
-timing belt 5hp,~69 on hand,~8 wks,call rep,backup only,2026-06-30
-wire 24vdc,~154 on hand,3-4 wks,keep 2 boxes,primary vendor,2026-06-30
-gear redcr 5hp,~62 on hand,3-4 wks,keep 2 boxes,backup only,2026-06-30
-brg 184t rev-a,~141 on hand (runs short),3-4 wks,reorder 50,cheapest,2026-06-30
-gear redcr 1hp,~57 on hand,expedite avail,keep 2 boxes,primary vendor,2026-06-30
-v-belt 56c tefc,~423 on hand (runs short),expedite avail,keep 2 boxes,primary vendor,2026-06-30
-ac motor 10hp,~394 on hand,3-4 wks,keep 2 boxes,backup only,2026-06-30
-photo sns 16awg,~365 on hand (runs short),long lead,call rep,,2026-06-30
-ac motor 10hp,~61 on hand,3-4 wks,reorder 50,,2026-06-30
-ac motor 10hp,~91 on hand (runs short),~6 wks,reorder 50,backup only,2026-06-30
-timing belt 10hp,~375 on hand,2 wks stock,order early,cheapest,2026-06-30
-ac motor 1hp,~223 on hand (runs short),~6 wks,reorder 50,primary vendor,2026-06-30
-sprocket 184t tefc,~34 on hand (runs short),expedite avail,reorder 50,cheapest,2026-06-30
-vfd 3ph 3,~203 on hand (runs short),3-4 wks,reorder 50,primary vendor,2026-06-30
-terminal block 10a,~418 on hand,long lead,min 20,primary vendor,2026-06-30
-gear redcr 7.5hp,~211 on hand,~8 wks,order early,backup only,2026-06-30
-power supply 25a,~148 on hand,expedite avail,order early,primary vendor,2026-06-30
-limit switch 16awg,~24 on hand (runs short),~8 wks,reorder 50,backup only,2026-06-30
+brg 1hp,~535 on hand,~6 wks,min 20,,2026-06-30
+relay 3ph,~30 on hand (runs short),expedite avail,order early,backup only,2026-06-30
+ac motor 56c,~976 on hand (runs short),~8 wks,min 20,fast ship,2026-06-30
+terminal block 3ph,~45 on hand,~6 wks,call rep,,2026-06-30
+ac motor 7.5hp,~12 on hand,2 wks stock,call rep,fast ship,2026-06-30
+prox sns nema,~28 on hand (runs short),~8 wks,,fast ship,2026-06-30
+vfd 14awg,~384 on hand,~8 wks,,,2026-06-30
+gear redcr 5hp,~49 on hand,~8 wks,order early,primary vendor,2026-06-30
+servo motor 1hp,~86 on hand (runs short),long lead,reorder 50,backup only,2026-06-30
+photo sns 10a,~44 on hand,long lead,keep 2 boxes,,2026-06-30
+v-belt 1750rpm,~18 on hand (runs short),long lead,keep 2 boxes,,2026-06-30
+servo motor 184t,~10 on hand,~8 wks,reorder 50,backup only,2026-06-30
+gear redcr 1hp,~99 on hand (runs short),~8 wks,keep 2 boxes,backup only,2026-06-30
+roller 1750rpm,~36 on hand (runs short),expedite avail,min 20,backup only,2026-06-30
+relay 16awg,~170 on hand,3-4 wks,min 20,cheapest,2026-06-30
+power supply 10a,~82 on hand (runs short),~6 wks,order early,fast ship,2026-06-30
+timing belt 1hp,~77 on hand,~6 wks,min 20,cheapest,2026-06-30
+encl 3ph,~65 on hand (runs short),2 wks stock,keep 2 boxes,fast ship,2026-06-30
+brg 7.5hp,~0 on hand (runs short),~6 wks,order early,primary vendor,2026-06-30
+brg 5hp,~10 on hand (runs short),expedite avail,min 20,primary vendor,2026-06-30
+pillow block 184t,~33 on hand,3-4 wks,keep 2 boxes,cheapest,2026-06-30
+gear redcr 1750rpm,~54 on hand (runs short),~8 wks,reorder 50,,2026-06-30
+servo motor 5hp,~115 on hand,3-4 wks,min 20,,2026-06-30
+terminal block 480v,~72 on hand,3-4 wks,keep 2 boxes,backup only,2026-06-30
+gear redcr 1750rpm,~6 on hand,long lead,keep 2 boxes,primary vendor,2026-06-30
+coupling 184t,~328 on hand (runs short),expedite avail,keep 2 boxes,backup only,2026-06-30
+ac motor 5hp,~91 on hand,long lead,order early,,2026-06-30
+a36 angle channel,~100 on hand (runs short),3-4 wks,min 20,fast ship,2026-06-30
+prox sns nema,~85 on hand,~8 wks,reorder 50,fast ship,2026-06-30
+gear redcr 1hp,~45 on hand (runs short),3-4 wks,reorder 50,backup only,2026-06-30
+limit switch nema,~90 on hand,long lead,,,2026-06-30
+pillow block 10hp,~25 on hand,3-4 wks,call rep,cheapest,2026-06-30
+coupling 184t rev-a,~55 on hand (runs short),long lead,call rep,cheapest,2026-06-30
+pillow block 7.5hp,~8 on hand,long lead,,,2026-06-30
+gear redcr 184t,~376 on hand (runs short),3-4 wks,keep 2 boxes,backup only,2026-06-30
+pillow block 10hp,~0 on hand (runs short),long lead,keep 2 boxes,backup only,2026-06-30
+vfd 25a,~211 on hand (runs short),3-4 wks,order early,fast ship,2026-06-30
+powder coat black,~24 on hand,~8 wks,min 20,cheapest,2026-06-30
+5052 sheet flat,~153 on hand,~8 wks,,primary vendor,2026-06-30
+ac motor 1hp,~351 on hand (runs short),~8 wks,call rep,cheapest,2026-06-30
+photo sns nema,~14 on hand (runs short),3-4 wks,keep 2 boxes,cheapest,2026-06-30
+pillow block 184t,~33 on hand,~8 wks,,fast ship,2026-06-30
+gear redcr 7.5hp,~95 on hand,long lead,min 20,primary vendor,2026-06-30
+timing belt 7.5hp,~149 on hand,~8 wks,order early,,2026-06-30
+photo sns 24vdc,~0 on hand,~6 wks,order early,,2026-06-30
+gear redcr 1hp,~121 on hand (runs short),long lead,min 20,cheapest,2026-06-30
+gearmtr 1750rpm 56c,~36 on hand,long lead,call rep,cheapest,2026-06-30
+roller 5hp,~195 on hand (runs short),3-4 wks,,cheapest,2026-06-30
+flow control -6,~238 on hand,expedite avail,,fast ship,2026-06-30
+power supply 480v,~110 on hand,long lead,reorder 50,primary vendor,2026-06-30
+roller 5hp 56c,~92 on hand (runs short),~8 wks,call rep,primary vendor,2026-06-30
+quick coupler -8,~125 on hand,3-4 wks,call rep,backup only,2026-06-30
+timing belt 5hp,~83 on hand (runs short),long lead,,backup only,2026-06-30
+gearmtr 5hp,~33 on hand,long lead,min 20,backup only,2026-06-30
+gear redcr 7.5hp,~151 on hand,long lead,min 20,cheapest,2026-06-30
+gear redcr 145t,~233 on hand (runs short),3-4 wks,,fast ship,2026-06-30
+gear redcr 1750rpm,~90 on hand (runs short),expedite avail,keep 2 boxes,backup only,2026-06-30
+limit switch 14awg,~14 on hand (runs short),~6 wks,,primary vendor,2026-06-30
+brg 184t tefc,~51 on hand,long lead,keep 2 boxes,,2026-06-30
+gearmtr 1750rpm rev-a,~30 on hand,long lead,,fast ship,2026-06-30
+photo sns nema,~10 on hand,expedite avail,order early,cheapest,2026-06-30
+ac motor 145t,~110 on hand (runs short),expedite avail,,primary vendor,2026-06-30
+gearmtr 5hp tefc,~29 on hand,~8 wks,keep 2 boxes,fast ship,2026-06-30
+roller 1750rpm 56c,~160 on hand,expedite avail,order early,fast ship,2026-06-30
+brg 5hp tefc,~23 on hand,3-4 wks,min 20,fast ship,2026-06-30
+6063 tube tube,~155 on hand (runs short),long lead,order early,,2026-06-30
+coupling 145t,~57 on hand,3-4 wks,call rep,,2026-06-30
+coupling 7.5hp,~76 on hand,3-4 wks,reorder 50,,2026-06-30
+vfd nema 12,~33 on hand,long lead,keep 2 boxes,,2026-06-30
+relay 12awg,~80 on hand,expedite avail,reorder 50,backup only,2026-06-30
+sprocket 56c rev-a,~16 on hand,long lead,min 20,cheapest,2026-06-30
+terminal block 12awg,~0 on hand (runs short),long lead,order early,backup only,2026-06-30
+pillow block 56c,~108 on hand,~6 wks,keep 2 boxes,primary vendor,2026-06-30
+5052 sheet channel,~138 on hand (runs short),expedite avail,call rep,fast ship,2026-06-30
+ac motor 10hp,~183 on hand (runs short),expedite avail,reorder 50,fast ship,2026-06-30
+sprocket 1750rpm 56c,~225 on hand,2 wks stock,,backup only,2026-06-30
+roller 1750rpm tefc,~38 on hand (runs short),3-4 wks,keep 2 boxes,cheapest,2026-06-30
+brg 5hp 56c,~141 on hand,long lead,order early,primary vendor,2026-06-30
+coupling 145t tefc,~336 on hand,~8 wks,,,2026-06-30
+316 sheet flat,~210 on hand,~8 wks,call rep,,2026-06-30
+servo motor 2hp,~99 on hand (runs short),~6 wks,,primary vendor,2026-06-30
+timing belt 56c,~65 on hand,expedite avail,min 20,,2026-06-30
+clevis pin 1/4,~101 on hand,long lead,min 20,backup only,2026-06-30
+terminal block 12awg,~246 on hand,expedite avail,call rep,backup only,2026-06-30
+prox sns 25a,~21 on hand (runs short),expedite avail,call rep,cheapest,2026-06-30
+cable 10a rev-b,~367 on hand,3-4 wks,min 20,primary vendor,2026-06-30
+power supply 24vdc,~190 on hand,~6 wks,min 20,primary vendor,2026-06-30
+gear redcr 2hp,~110 on hand (runs short),~8 wks,keep 2 boxes,backup only,2026-06-30
+gearmtr 1hp rev-a,~142 on hand (runs short),long lead,order early,primary vendor,2026-06-30
+prox sns 24vdc,~30 on hand,long lead,keep 2 boxes,cheapest,2026-06-30
+prox sns 480v,~21 on hand (runs short),~6 wks,keep 2 boxes,backup only,2026-06-30
+prox sns 3ph,~122 on hand,3-4 wks,keep 2 boxes,cheapest,2026-06-30
+coupling 1750rpm,~75 on hand,expedite avail,call rep,primary vendor,2026-06-30
+gear redcr 7.5hp,~159 on hand (runs short),2 wks stock,reorder 50,cheapest,2026-06-30
+brg 56c,~183 on hand (runs short),~8 wks,,cheapest,2026-06-30
+relay 10a ul,~204 on hand,3-4 wks,keep 2 boxes,backup only,2026-06-30
+brg 2hp rev-a,~133 on hand,long lead,,,2026-06-30
+pillow block 10hp,~1415 on hand,3-4 wks,call rep,,2026-06-30
+brg 7.5hp 2,~53 on hand,~8 wks,call rep,,2026-06-30
+sprocket 56c 2,~205 on hand (runs short),long lead,order early,,2026-06-30
+sprocket 1hp tefc,~82 on hand,expedite avail,keep 2 boxes,backup only,2026-06-30
+cutoff wheel case,~1012 on hand,~8 wks,call rep,cheapest,2026-06-30
+timing belt 5hp,~16 on hand,2 wks stock,keep 2 boxes,cheapest,2026-06-30
+wire 24vdc,~195 on hand,~8 wks,,cheapest,2026-06-30
+gear redcr 5hp,~49 on hand (runs short),2 wks stock,min 20,backup only,2026-06-30
+brg 184t rev-a,~27 on hand,3-4 wks,min 20,backup only,2026-06-30
+gear redcr 1hp,~181 on hand,long lead,reorder 50,,2026-06-30
+v-belt 56c tefc,~135 on hand (runs short),long lead,reorder 50,cheapest,2026-06-30
+ac motor 10hp,~155 on hand (runs short),expedite avail,reorder 50,fast ship,2026-06-30
+photo sns 16awg,~677 on hand,2 wks stock,,,2026-06-30
+ac motor 10hp,~28 on hand,~6 wks,keep 2 boxes,,2026-06-30
+ac motor 10hp,~65 on hand,2 wks stock,keep 2 boxes,primary vendor,2026-06-30
+timing belt 10hp,~271 on hand,expedite avail,order early,,2026-06-30
+ac motor 1hp,~324 on hand,~8 wks,,fast ship,2026-06-30
+sprocket 184t tefc,~16 on hand,2 wks stock,order early,fast ship,2026-06-30
+vfd 3ph 3,~125 on hand,long lead,call rep,,2026-06-30
+terminal block 10a,~376 on hand (runs short),~6 wks,order early,,2026-06-30
+gear redcr 7.5hp,~189 on hand,~8 wks,reorder 50,primary vendor,2026-06-30
+power supply 25a,~58 on hand (runs short),long lead,min 20,backup only,2026-06-30
+limit switch 16awg,~0 on hand (runs short),long lead,call rep,primary vendor,2026-06-30

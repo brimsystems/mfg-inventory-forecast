@@ -184,8 +184,9 @@ def build_item_master(plan, suppliers, annual_by_item, drift_supplier_id, sup_fr
 
         # Current (stale) policy, deliberately miscalibrated (M2).
         dol = avg_month * (master_lead / 30.0)
-        err = np.exp(rng.normal(0, C.CURRENT_POLICY_ERROR_STD))
-        cur_ss = max(0, round(0.5 * dol * err))
+        # wrong in both directions, neutral on average
+        err = np.exp(rng.normal(-C.CURRENT_POLICY_ERROR_STD ** 2 / 2, C.CURRENT_POLICY_ERROR_STD))
+        cur_ss = max(0, round(C.CURRENT_POLICY_SS_SHARE * dol * err))
         cur_rop = max(0, round((dol + cur_ss) * err))
         std_cost = float(row.unit_cost)
         if conv > 1:

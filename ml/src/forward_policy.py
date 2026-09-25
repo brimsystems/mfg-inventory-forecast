@@ -23,9 +23,22 @@ over the visibility horizon) and covers everything else. k is calibrated on the 
 each class's service level. The lead-time sd comes from each item's receipts. A
 point only moves when it changes by more than 20%.
 
+How much to order comes from the same forecast: an economic lot for each item,
+sqrt(2 x annual demand x cost of placing an order line / annual cost of holding
+a unit), kept between two weeks and four months of demand. Expensive, fast parts
+are bought often in small lots; cheap parts less often in larger ones.
+
+The buffer is set against a fill-rate target (98 / 95 / 90 percent of units by
+class), not against every order cycle: the expected units short per cycle,
+sigma x G(k), may not exceed (1 - fill rate) x the order quantity, where G is
+the loss function of the 2025 standardized errors for the item's class. A large
+lot protects most of its own cycle, so cheap parts carried in big lots need
+little buffer, and the stock goes to the parts ordered often.
+
 The rule the shop would run without the model is refreshed monthly from the
 trailing year's usage over the corrected lead time, with a Poisson demand buffer
-and the same lead-time term, netted the same way.
+and the same lead-time term, netted the same way. It keeps the buyers' lot
+size, so the difference between the two is the model.
 
 Writes ml/data/policy/rop_schedule.json (model), rule_schedule.json (rule) and
 ml/data/backtest/weekly_backtest.parquet, weekly_metrics.json.
@@ -50,8 +63,17 @@ BACKTEST = REPO / "ml" / "data" / "backtest"
 RAW = REPO / "data_source" / "raw"
 OUT = REPO / "ml" / "data" / "policy"
 Z_BY_ABC = {"A": 2.05, "B": 1.64, "C": 1.28}      # 98 / 95 / 90 percent service
-SERVICE = {"A": 0.98, "B": 0.95, "C": 0.90}
+SERVICE = {"A": 0.98, "B": 0.95, "C": 0.90}     # cycle service levels, for reference
+# fill-rate targets by criticality, not by value: a missing $2 fitting holds a
+# job as surely as a missing motor. Line-critical parts sit on a production bill
+# (a shortage holds a job), service-critical parts go out on service orders (a
+# shortage delays a customer repair), and the rest are shop supplies and pulls.
+FILL_TARGET = {"line": 0.99, "service": 0.98, "standard": 0.95}
+K_MAX = 4.0
 HYSTERESIS = 0.20
+ORDER_LINE_COST = 35.0         # buyer, receiving and payables time per order line ($)
+HOLDING_RATE = 0.25            # annual cost of holding a dollar of stock
+LOT_DAYS = (14, 120)           # an order covers between two weeks and four months of demand
 SEG_CODE = {"smooth": 0, "erratic": 1, "lumpy": 2, "intermittent": 3}
 ABC_CODE = {"A": 0, "B": 1, "C": 2}
 FEATS = ["s4", "s13", "s26", "s52", "nz13", "nz52", "since_nz", "cv13", "trend", "ly", "mean_all",
@@ -164,6 +186,22 @@ def run():
     seg_resid = (test["target"] - test["pred_c"]).groupby(test["segment"]).std()
     std_err = ((test["target"] - test["pred_c"]) / test["item"].map(resid)).replace([np.inf, -np.inf], np.nan)
     k_abc = {a_: float(np.nanquantile(std_err[test["abc"] == a_], q)) for a_, q in SERVICE.items()}
+    # the loss function of the standardized errors, per class: expected units
+    # short per cycle, in standard errors, for a buffer of k standard errors
+    k_grid = np.round(np.arange(0.0, 6.001, 0.01), 2)
+    loss = {}
+    for a_ in SERVICE:
+        z_ = std_err[test["abc"] == a_].dropna().to_numpy()
+        loss[a_] = np.array([np.maximum(z_ - k_, 0).mean() for k_ in k_grid])
+
+    def k_fill(abc, tier, sigma, q):
+        # the smallest buffer whose expected shortfall per cycle fits the fill-rate target
+        if sigma <= 0:
+            return 0.0
+        allow = (1.0 - FILL_TARGET[tier]) * q / sigma
+        ok = np.nonzero(loss.get(abc, loss["C"]) <= allow)[0]
+        k_ = float(k_grid[ok[0]]) if len(ok) else float(k_grid[-1])
+        return min(k_, K_MAX)
     seg_rows = []
     for sg in ["smooth", "erratic", "lumpy", "intermittent"]:
         g = test[test["segment"] == sg]
@@ -204,6 +242,16 @@ def run():
     V = float((pd.to_datetime(pj["completed_date"]) - pd.to_datetime(pj["release_date"])).dt.days.median())
     print(f"  MRP visibility horizon (median release to completion, 2025): {V:.0f} days")
 
+    # criticality: on a corrected production bill, issued to service orders, or neither
+    bom = pd.read_csv(RAW / "erp" / "bill_of_materials.csv")
+    restored = pd.read_csv(RAW / "remediation" / "bom_change_log.csv")
+    on_bill = set(bom["component_item"].map(lambda n: xw.get(n, n))) | set(restored["component_item"].map(lambda n: xw.get(n, n)))
+    svc = tx[tx["job_id"].astype(str).str.startswith("SO-") & (tx["txn_date"] >= "2024-01-01")
+             & (tx["txn_date"] < C.FORWARD_START.isoformat())]
+    on_service = set(svc["item_number"].map(lambda n: xw.get(n, n)))
+    tier_of = {i: ("line" if i in on_bill else "service" if i in on_service else "standard") for i in attrs.index}
+    print("  criticality:", pd.Series(tier_of).value_counts().to_dict())
+
     def level_of(fc, share, L, ss):
         return fc - (1.0 - share) * fc * min(L, V) / max(L, 1.0) + ss
 
@@ -234,15 +282,22 @@ def run():
             if np.isnan(sd_fc):
                 sd_fc = float(seg_resid.get(a["segment"], resid.median()))
             sd_fc *= np.sqrt(L / (7.0 * h)); sL = lt_sd(item)
-            ss = max(0.0, k_abc.get(a["abc"], 1.0)) * np.sqrt(sd_fc ** 2 + (d * sL) ** 2)
+            share = float(unsched.get(item, 1.0))
+            # the scheduled demand MRP already sees carries no forecast error
+            sd_fc *= np.sqrt(max(0.05, 1.0 - (1.0 - share) * min(L, V) / max(L, 1.0)))
+            sigma = float(np.sqrt(sd_fc ** 2 + (d * sL) ** 2))
+            cost = float(a["standard_cost"]) if pd.notna(a["standard_cost"]) and a["standard_cost"] > 0 else 1.0
+            eoq = np.sqrt(2.0 * d * 365.0 * ORDER_LINE_COST / (HOLDING_RATE * cost)) if d > 0 else 1.0
+            q_lot = float(max(1.0, np.clip(eoq, d * LOT_DAYS[0], d * LOT_DAYS[1])))
+            ss = k_fill(a["abc"], tier_of.get(item, "standard"), sigma, q_lot) * sigma
             share = float(unsched.get(item, 1.0))
             rop_raw = fc_lead + ss
             last = prev.get(item)
             if last is not None and last[5] > 0 and abs(rop_raw - last[5]) / last[5] <= HYSTERESIS:
-                entry = [o.date().isoformat(), last[1], last[2], round(pc, 3), 7 * h, last[5], last[6]]
+                entry = [o.date().isoformat(), last[1], last[2], round(pc, 3), 7 * h, last[5], last[6], last[7]]
             else:
                 entry = [o.date().isoformat(), round(level_of(fc_lead, share, L, ss), 2), round(ss, 2), round(pc, 3), 7 * h,
-                         round(rop_raw, 2), round(share, 3)]
+                         round(rop_raw, 2), round(share, 3), round(q_lot, 1)]
             prev[item] = entry
             model_sched.setdefault(item, []).append(entry)
             raw_pts.setdefault(item, []).append(rop_raw); app_pts.setdefault(item, []).append(entry[5])
@@ -271,10 +326,12 @@ def run():
     meta = {"origins": [o.date().isoformat() for o in origins], "hysteresis": HYSTERESIS, "model": winner,
             "mrp_visibility_days": V,
             "bias_correction": bias, "safety_factor": k_abc, "normal_z": Z_BY_ABC,
+            "fill_rate_target": FILL_TARGET, "criticality": tier_of, "order_line_cost": ORDER_LINE_COST, "holding_rate": HOLDING_RATE,
+            "lot_days": list(LOT_DAYS), "buyer_lot_days": C.ORDER_COVER_DAYS,
             "churn": {"raw_any_change": changed(raw_pts), "raw_over_20": churn(raw_pts),
                       "applied_any_change": changed(app_pts)},
             "entry_fields": ["date", "level", "safety_stock", "forecast_over_horizon", "horizon_days",
-                             "reorder_point", "unscheduled_share"]}
+                             "reorder_point", "unscheduled_share", "order_qty"]}
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "rop_schedule.json").write_text(json.dumps({**meta, "items": model_sched}, indent=1))
     (OUT / "rule_schedule.json").write_text(json.dumps({**meta, "items": rule_sched}, indent=1))

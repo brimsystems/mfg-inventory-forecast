@@ -166,8 +166,12 @@ def run():
         sch = json.loads(path.read_text())
         return {num: [(date.fromisoformat(e[0]), *e[1:]) for e in entries] for num, entries in sch["items"].items()}
     schedule, rule_schedule = _load("rop_schedule.json"), _load("rule_schedule.json")
+    _meta = C.REPO_ROOT / "ml" / "data" / "policy" / "rop_schedule.json"
+    if _meta.exists():
+        forward["critical"] = {n for n, t in json.loads(_meta.read_text()).get("criticality", {}).items() if t == "line"}
     if schedule:
-        forward["schedule"] = {n: [(e[0], e[1], e[2]) for e in es] for n, es in schedule.items()}
+        forward["schedule"] = {n: [(e[0], e[1], e[2], (e[7] if len(e) > 7 else None)) for e in es]
+                               for n, es in schedule.items()}
         print(f"      Forward window: the demand model's weekly reorder points ({len(schedule):,} items)")
     else:
         print("      Forward window: the remediation's recomputed reorder points (no model schedule yet)")
@@ -267,6 +271,9 @@ def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_
                      primary, production_orders, total, wide, rule_schedule=None):
     """The metric set over 1H25, 2H25 and the forward window, the latter three ways."""
     iid_of = {n: i for i, n in primary.items()}
+    _sp = C.REPO_ROOT / "ml" / "data" / "policy" / "rop_schedule.json"
+    _crit = json.loads(_sp.read_text()).get("criticality", {}) if _sp.exists() else {}
+    tier_by_iid = {iid_of[n]: t for n, t in _crit.items() if n in iid_of}
     seg_by_iid = {int(i): classify(wide.loc[i].to_numpy(dtype=float)) for i in wide.index}
     imx = item_master.set_index("item_number")
     ss_dirty = {}
@@ -301,18 +308,18 @@ def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_
     res = {"as_recorded": {}, "forward": {}, "schedule_used": bool(schedule)}
     for k, (a, b) in windows.items():
         res["as_recorded"][k] = window_metrics(sim, a, b, cost_by_item, abc_by_item, primary, production_orders,
-                                               ss_by_item=ss_dirty)
+                                               tier_by_item=tier_by_iid, ss_by_item=ss_dirty)
     for k, (a, b) in fw.items():
         res["forward"][k] = {
             "model" if schedule else "clean_rule": window_metrics(sim, a, b, cost_by_item, abc_by_item, primary,
-                                                                  production_orders, ss_by_item=ss_model(a, b),
+                                                                  production_orders, tier_by_item=tier_by_iid, ss_by_item=ss_model(a, b),
                                                                   schedule=schedule, segment_by_item=seg_by_iid),
             "dirty": window_metrics(sim_dirty, a, b, cost_by_item, abc_by_item, primary, production_orders,
-                                    ss_by_item=ss_dirty),
+                                    tier_by_item=tier_by_iid, ss_by_item=ss_dirty),
         }
         if schedule:
             res["forward"][k]["clean_rule"] = window_metrics(sim_rule, a, b, cost_by_item, abc_by_item, primary,
-                                                             production_orders,
+                                                             production_orders, tier_by_item=tier_by_iid,
                                                              ss_by_item=ss_of(rule_schedule, a, b, ss_rule))
     return res
 
