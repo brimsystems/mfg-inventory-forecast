@@ -392,8 +392,8 @@ def category_table():
              k(r.value), pct(r.value_share, 0)] for c, r in cat_tbl.iterrows()]
     rows.append(["<strong>All items</strong>", f"<strong>{int(cat_tbl['n'].sum()):,}</strong>", "", "", "<strong>100%</strong>",
                  f"<strong>{k(cat_tbl['value'].sum())}</strong>", "<strong>100%</strong>"])
-    return widths(B.data_table(["Category", "Items", "Median unit cost", "Median units used per item",
-                                "Share of units used", "Consumption value", "Share of value"], rows,
+    return widths(B.data_table(["Category", "Items", "Median unit cost", "Median units used per item (2025)",
+                                "Share of units used (2025)", "Consumption value (2025)", "Share of value (2025)"], rows,
                                right=[1, 2, 3, 4, 5, 6]), [20, 9, 14, 16, 13, 15, 13])
 
 
