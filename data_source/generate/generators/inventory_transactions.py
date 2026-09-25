@@ -66,6 +66,12 @@ def build_ledger(events, purchase_orders, sim_adjustments, job_delays,
         return rows[-1]["txn_id"]
 
     # ── consumption the ERP recorded ─────────────────────────────────────────
+    # from the forward start the duplicate records are retired, so every posting
+    # lands on the surviving number
+    events = events.copy()
+    after = pd.to_datetime(events["date"]).dt.date >= C.FORWARD_START
+    events.loc[after, "item_number"] = events.loc[after, "item_id"].map(lambda i: primary_num.get(int(i)))
+    events = events.dropna(subset=["item_number"])
     for r in events.itertuples(index=False):
         if not r.recorded:
             truth["t1_events"].append({"item_number": r.item_number, "item_id": int(r.item_id),

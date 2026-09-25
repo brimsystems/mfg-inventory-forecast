@@ -156,19 +156,24 @@ def run():
                "rop": imc["reorder_point"].fillna(0).to_dict(),
                "ss": imc["safety_stock"].fillna(0).to_dict(), "schedule": None,
                "abc": {int(k): v for k, v in abc_by_item.items()}}
-    schedule_path = C.REPO_ROOT / "ml" / "data" / "policy" / "rop_schedule.json"
-    schedule = None
-    if schedule_path.exists():
-        sched = json.loads(schedule_path.read_text())
-        schedule = {num: [(date.fromisoformat(e[0]), e[1], e[2], e[3], e[4]) for e in entries]
-                    for num, entries in sched["items"].items()}
-        forward["schedule"] = {n: [(d_, r_, s_) for (d_, r_, s_, *_x) in e] for n, e in schedule.items()}
-        print(f"      Forward window: the demand model's reorder points ({len(schedule):,} items, {len(sched['months'])} months)")
+    # a job's component requirements become visible to MRP on its release date
+    release_by_job = {r.order_id: pd.to_datetime(r.release_date).date() for r in production_orders.itertuples(index=False)}
+
+    def _load(name):
+        path = C.REPO_ROOT / "ml" / "data" / "policy" / name
+        if not path.exists():
+            return None
+        sch = json.loads(path.read_text())
+        return {num: [(date.fromisoformat(e[0]), *e[1:]) for e in entries] for num, entries in sch["items"].items()}
+    schedule, rule_schedule = _load("rop_schedule.json"), _load("rule_schedule.json")
+    if schedule:
+        forward["schedule"] = {n: [(e[0], e[1], e[2]) for e in es] for n, es in schedule.items()}
+        print(f"      Forward window: the demand model's weekly reorder points ({len(schedule):,} items)")
     else:
         print("      Forward window: the remediation's recomputed reorder points (no model schedule yet)")
     sim = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
                    buyer_nums, omit_items, rng, drift_rate=drift_rate,
-                   forward=forward)
+                   forward=forward, release_by_job=release_by_job)
     production_orders = apply_delays(production_orders, sim["job_delays"])
     purchase_orders, po_truth = assemble_purchase_orders(sim["po_lines"], suppliers, item_master, rng)
 
@@ -176,7 +181,7 @@ def run():
     print("      Counterfactual replay on corrected masters")
     sim_c = simulate(ev_c, im_c, meta_c, {}, plan, drift_supplier_id, sup_frag, buyer_nums, [],
                      np.random.default_rng(C.RANDOM_SEED + 11), drift_rate=drift_rate, never_closed=0.0,
-                     actual_base=base_lead)
+                     actual_base=base_lead, release_by_job=release_by_job)
     counterfactual = {
         "year": C.MODEL_SPAN_END.year,
         "as_is": replay_metrics(sim, cost_by_item, primary, production_orders, C.MODEL_SPAN_END.year),
@@ -188,14 +193,16 @@ def run():
     print("      Forward-window counterfactuals (nothing fixed; corrected masters without the model)")
     sim_dirty = simulate(events_dirty, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
                          buyer_nums, omit_items, np.random.default_rng(C.RANDOM_SEED + 12), drift_rate=drift_rate,
-                         fix_from=C.END_DATE)
-    fwd_rule = dict(forward); fwd_rule["schedule"] = None
+                         fix_from=C.END_DATE, release_by_job=release_by_job)
+    # the rule the shop would run without the model, netted and buffered the same way
+    fwd_rule = dict(forward)
+    fwd_rule["schedule"] = {n: [(e[0], e[1], e[2]) for e in es] for n, es in rule_schedule.items()} if rule_schedule else None
     sim_rule = simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
                         buyer_nums, omit_items, np.random.default_rng(C.RANDOM_SEED + 13), drift_rate=drift_rate,
-                        forward=fwd_rule)
+                        forward=fwd_rule, release_by_job=release_by_job)
     prod_for_windows = apply_delays(production_orders.drop(columns=["hold_reason", "delay_days"]), sim["job_delays"])
     forward_results = _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_by_item,
-                                       abc_by_item, primary, prod_for_windows, total, wide)
+                                       abc_by_item, primary, prod_for_windows, total, wide, rule_schedule)
 
     # ── Counts, ledger, spreadsheet ─────────────────────────────────────────
     print("[7/9] Inventory ledger   (ERP)")
@@ -257,7 +264,7 @@ def _half(year, half):
 
 
 def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_by_item, abc_by_item,
-                     primary, production_orders, total, wide):
+                     primary, production_orders, total, wide, rule_schedule=None):
     """The metric set over 1H25, 2H25 and the forward window, the latter three ways."""
     iid_of = {n: i for i, n in primary.items()}
     seg_by_iid = {int(i): classify(wide.loc[i].to_numpy(dtype=float)) for i in wide.index}
@@ -268,17 +275,20 @@ def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_
         ss_dirty[i] = 0.0 if pd.isna(v) else float(v)
     ss_rule = {i: float(imc["safety_stock"].get(n, 0.0) or 0.0) for n, i in iid_of.items() if n in imc.index}
 
-    def ss_model(start, end):
-        if not schedule:
-            return ss_rule
+    def ss_of(sch, start, end, fallback):
+        if not sch:
+            return fallback
         out = {}
-        for n, entries in schedule.items():
+        for n, entries in sch.items():
             i = iid_of.get(n)
             if i is None:
                 continue
             vals = [e[2] for e in entries if start <= e[0] <= end]
-            out[i] = float(np.mean(vals)) if vals else ss_rule.get(i, 0.0)
+            out[i] = float(np.mean(vals)) if vals else fallback.get(i, 0.0)
         return out
+
+    def ss_model(start, end):
+        return ss_of(schedule, start, end, ss_rule)
 
     y = C.MODEL_SPAN_END.year
     windows = {"1H25": _half(y, 1), "2H25": _half(y, 2)}
@@ -302,7 +312,8 @@ def _forward_results(sim, sim_dirty, sim_rule, schedule, item_master, imc, cost_
         }
         if schedule:
             res["forward"][k]["clean_rule"] = window_metrics(sim_rule, a, b, cost_by_item, abc_by_item, primary,
-                                                             production_orders, ss_by_item=ss_rule)
+                                                             production_orders,
+                                                             ss_by_item=ss_of(rule_schedule, a, b, ss_rule))
     return res
 
 

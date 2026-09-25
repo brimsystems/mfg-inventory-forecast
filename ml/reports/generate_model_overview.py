@@ -24,7 +24,7 @@ TRUTH = REPO / "data_source" / "truth"
 OUT = REPO / "docs" / "reports" / "model_overview.html"
 
 # ── data ──────────────────────────────────────────────────────────────────────
-metrics = json.loads((BACKTEST / "model_metrics.json").read_text(encoding="utf-8"))
+metrics = json.loads((BACKTEST / "weekly_metrics.json").read_text(encoding="utf-8"))
 tw = json.loads((BACKTEST / "threeway_overall.json").read_text(encoding="utf-8"))
 sched = json.loads((POLICY / "rop_schedule.json").read_text(encoding="utf-8"))
 fr = json.loads((TRUTH / "forward_results.json").read_text(encoding="utf-8"))
@@ -220,6 +220,8 @@ mod46, rule46, dirty46 = M46["model"], M46["clean_rule"], M46["dirty"]
 k_abc, z = sched["safety_factor"], sched["normal_z"]
 bias = sched["bias_correction"]
 churn = sched["churn"]
+V_days = int(round(sched["mrp_visibility_days"]))
+fb_max = max(abs(v) for v in (mod.get("forecast_bias_by_segment") or {"all": 0.0}).values())
 
 attrs = pd.read_parquet(REPO / "ml" / "data" / "marts" / "item_attributes.parquet")
 monthly = pd.read_parquet(REPO / "ml" / "data" / "marts" / "consumption_monthly.parquet")
@@ -303,13 +305,14 @@ FLOW_HTML = (
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div>'
-    '<div style="font-size:16px;line-height:1.55;">Once a month, one forecast per item: how many units the shop will use '
+    '<div style="font-size:16px;line-height:1.55;">Every Monday, one forecast per item: how many units the shop will use '
     'before a new order placed today could arrive.</div></div>'
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">3. What it produces</div>'
     '<div style="font-size:16px;line-height:1.55;">A reorder point per item, the forecast plus a safety buffer, loaded into '
-    'the ERP, which checks every item against it daily and flags what to order.</div></div></div>')
+    'the ERP, which adds the parts already committed to released jobs, checks every item daily and flags what to order.'
+    '</div></div></div>')
 
 import base64
 _png = REPO / "docs" / "screenshots" / "erp_queue.png"
@@ -337,15 +340,17 @@ points. Against the first half of 2025, run the same way the shop had always run
 freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}. The shop holds more stock to do it:
 {k(mod['avg_inventory_value'])} on average against {k(H1['avg_inventory_value'])}.</p>
 {B.chart("Stockouts, held jobs and rush spend by half-year", charts["halves"])}
-<p>Most of that improvement is the cleanup, not the model. Replaying the same six months of demand with nothing
-fixed gives {dirty['stockout_episodes']:,} stockouts; with the cleaned records and reorder points recomputed by
-the simple rule, {rule['stockout_episodes']:,}; with the model, {mod['stockout_episodes']:,}. The model adds
-service on top of the cleanup, but it pays for it with inventory: once the new policy has settled (months 4 to
-6), it lifts A-item fill from {pct(rule46['fill_rate_by_abc']['A'])} to {pct(mod46['fill_rate_by_abc']['A'])}
-against a 98% target, on {k(mod46['avg_inventory_value'])} of stock against {k(rule46['avg_inventory_value'])}.
-Held to the target, the simpler rule gets there more cheaply. The model's safety stock is sized for every order
-cycle, and the shop's large order quantities already protect most of them; sizing it against a fill-rate target
-instead is the next step (Section 3.4).</p>
+<p>Replaying the same six months of demand three ways shows where the gain comes from. With nothing fixed,
+or with the cleaned records and reorder points recomputed by the simple rule, the fill rate stays at about
+{(dirty46['fill_rate'] + rule46['fill_rate']) / 2 * 100:.0f}%. With the model it reaches {pct(mod46['fill_rate'])} once the new policy has settled
+(months 4 to 6), and meets the service target for A items ({pct(mod46['fill_rate_by_abc']['A'])} against 98%) and
+B items ({pct(mod46['fill_rate_by_abc']['B'])} against 95%). Stockout events fall from
+{rule46['stockout_episodes']:,} to {mod46['stockout_episodes']:,}, jobs held for material from
+{rule46['jobs_delayed']} to {mod46['jobs_delayed']}, and rush spend from {k(rule46['rush_spend'])} to
+{k(mod46['rush_spend'])}. The cleanup is what makes this possible: the model is only as good as the lead times,
+bills and consumption history it reads. The cost is inventory, {k(mod46['avg_inventory_value'])} against
+{k(rule46['avg_inventory_value'])}, and C items run well above their 90% target
+({pct(mod46['fill_rate_by_abc']['C'])}); trimming that overshoot is the next step (Section 3.4).</p>
 
 {B.kpi_row(
     B.kpi_card(f"{pct(H1['fill_rate'])} &rarr; {pct(mod['fill_rate'])}", "Fill rate", "1H25 to 1H26", DARK_BLUE),
@@ -357,26 +362,28 @@ instead is the next step (Section 3.4).</p>
 
 {B.section("what", "Section 2.1", "What This Model Does")}
 <p>Since January 2026 the demand forecasting model has been the shop's only source of reorder points. Every
-month it sets, for each of the {n_items:,} stocked items, the level of stock at which the ERP should reorder, and
+week it sets, for each of the {n_items:,} stocked items, the level of stock at which the ERP should reorder, and
 the ERP places its purchase suggestions against those points. The points rest on three things: a forecast of how
 much of the part the shop will use before a new order can arrive, learned from three years of cleaned
 consumption history; the part's corrected supplier lead time; and a safety buffer sized to how far off the
-forecast has been for parts like it.</p>
+forecast has been for parts like it and how much the supplier's deliveries vary.</p>
 <p>The model is built on XGBoost, a gradient-boosted decision-tree algorithm. It answers one question for every
-stocked item, once a month: <strong>how much of this part will the shop use before a new order placed today could
+stocked item, every week: <strong>how much of this part will the shop use before a new order placed today could
 arrive?</strong> That window differs by part. A fastener that arrives in two weeks and a gearmotor that takes two
 months are different questions, and the reorder decision only cares about the demand that lands before the next
 delivery does.</p>
 {FLOW_HTML}
-<p>The model makes one forecast per item per month; the ERP does the daily work. Each forecast becomes a reorder
-point: the expected usage over the lead time, plus a safety buffer for the months when demand runs above the
-forecast, larger for the high-value parts the shop can least afford to run out of. The ERP then compares every
-item's stock on hand and on order against its point each day, and suggests an order when an item falls to it.
-Points only change when the new forecast moves them meaningfully, so buyers are not chasing small month-to-month
-changes.</p>
+<p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month; the ERP
+does the daily work. Each forecast becomes a reorder point: the expected usage over the lead time, plus a safety
+buffer for the weeks when demand runs above the forecast or a delivery runs late, larger for the high-value parts
+the shop can least afford to run out of. Each day the ERP compares every item's stock on hand and on order, less
+the parts already committed to production jobs released to the floor, against its point, and suggests an order
+when an item falls to it. Points only change when the new forecast moves them by more than 20%, so buyers are
+not chasing small week-to-week changes.</p>
 <p>The model is embedded in the ERP's purchasing screen. The reorder queue below ranks every stocked item against
-this month's point: items at or below it are marked ORDER NOW, items within two weeks of it ORDER SOON, and each
-line shows the forecast, the safety stock and the suggested order quantity, with tags where the cleanup changed
+this week's point: items at or below it are marked ORDER NOW, items within two weeks of it ORDER SOON, and each
+line shows the stock on hand, allocated to released jobs and on order, the forecast, the safety stock and the
+suggested order quantity, with tags where the cleanup changed
 the item (a merged record, a corrected lead time or bill, restored history) so the buyer sees why a number moved.</p>
 <div class="chart-wrap" style="padding:6px;">
   <img src="data:image/png;base64,{erp_b64}" alt="ERP reorder queue with the demand model's reorder points"
@@ -384,7 +391,7 @@ the item (a merged record, a corrected lead time or bill, restored history) so t
 </div>
 
 {B.section("data", "Section 2.2", "Training Data Overview")}
-<p>The model learns from the shop's monthly consumption of every stocked item, January 2023 onward: parts
+<p>The model learns from the shop's weekly consumption of every stocked item, January 2023 onward: parts
 backflushed to production jobs, parts issued to service orders, and parts pulled by hand. This is the history the
 data quality audit cleaned, with duplicate records merged, free-text purchases returned to their items and the
 components missing from the bills restored, so each series is the part's actual usage. Over the three years
@@ -405,7 +412,7 @@ items, with the A items held to the highest service level.</p>
 {B.section("performance", "Section 3", "Model Performance")}
 
 {B.section("scoring", "Section 3.1", "Scoring Summary")}
-<p>From January to June 2026 the model set {n_items:,} reorder points every month. The table compares that half-
+<p>From January to June 2026 the model refreshed the reorder points of all {n_items:,} items every week. The table compares that half-
 year with the two halves of 2025, each as the shop actually ran it. The two 2025 halves are close to each
 other, which makes them a fair baseline; 2H25 includes the ten weeks of remediation, but the cleaned records and
 the new reorder points only took over on 1 January. A job counts as held for material when its production order
@@ -419,37 +426,44 @@ mix. Section 3.3 removes that by holding demand fixed.</p>
 
 {B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
 <p>Accuracy is measured as weighted absolute percentage error (WAPE) over each item's lead time, which reads like
-the familiar percentage error for a steady part and stays defined for the third of parts with months of zero
-demand. The model learned on the cleaned history through 2024, was tuned on a block of validation months, and
-was then scored on a held-out year of rolling forecasts in 2025. Three candidate algorithms were each tuned and
-compared on the validation months; XGBoost was carried forward.</p>
+the familiar percentage error for a steady part and stays defined for the many parts with weeks of zero demand.
+The model learned on the cleaned weekly history through 2024, was tuned on a block of validation weeks, and was
+then scored on a held-out year of weekly rolling forecasts in 2025. Three candidate algorithms were each tuned
+and compared on the validation weeks. The two tree methods finished within half a point of each other, and
+XGBoost was carried forward as the lighter of the two to retrain every month.</p>
 {candidate_table()}
 <p>The cleaning matters to what the model can learn.
-The same model, with the same features, was run on the history at three stages of cleaning. Across all items
+The same model, with the same features, was run on the history at three stages of cleaning (scored on monthly forecasts over the lead time). Across all items
 the error falls from {pct(tw['raw'])} to {pct(tw['fully'])}; on the {len(repaired)} items whose history the
 cleanup actually repaired (duplicates merged, unrecorded consumption restored) it falls from
 {pct(tw_rep['raw'])} to {pct(tw_rep['fully'])}, and on the merged duplicates alone from {pct(tw_dup['raw'], 0)} to
 {pct(tw_dup['fully'], 0)}. The gain is modest overall because only three of the sixteen errors touch the demand
-history; the other thirteen corrupt what the forecast is used for, which is why Section 3.3 is where the
-cleanup shows its value.</p>
+history. The other thirteen corrupt the lead times, bills and stock records the reorder point is built on, and
+the model's results in Section 3.3 rest on those corrections.</p>
 {B.chart("Forecast error at three stages of cleaning", charts["acc"])}
 <p>On the held-out year the model beats the best simple method for each demand pattern (a moving average, last
 year's month or Croston's method, whichever did best):</p>
 {accuracy_table()}
 <p>Bias is the diagnostic accuracy hides. Before correction the model ran
-{', '.join(f"{abs(s_['bias'])*100:.0f}% low on {s_['segment']}" for s_ in metrics['segments'])} parts; after the
-correction described in Section 2.1, the forecasts in the six forward months ran within a few percent of actual
-demand for every pattern.</p>
+{', '.join(f"{abs(s_['bias'])*100:.0f}% low on {s_['segment']}" for s_ in metrics['segments'])} parts. Each
+pattern's forecasts are scaled up by the ratio of actual to forecast demand in the 2025 backtest, and in the six
+forward months the corrected forecasts ran within {fb_max*100:.0f}% of actual demand for every pattern.</p>
+<p>The safety buffer is calibrated the same way. For each value class, the buffer multiple is set so that the
+2025 forecast errors would have been covered at the class's service level: {k_abc['A']:.2f} standard errors
+for A items, {k_abc['B']:.2f} for B and {k_abc['C']:.2f} for C, against {z['A']:.2f}, {z['B']:.2f} and
+{z['C']:.2f} if the errors were normally distributed. The errors have fatter tails than a normal curve, so the
+textbook multiples would leave the buffer short. The buffer also carries a term for delivery variability, from
+each item's own receipt history.</p>
 
 {B.section("source", "Section 3.3", "Where the Improvement Came From")}
 <p>To separate what the cleanup did from what the model did, the same January to June 2026 demand, with the same
 supplier deliveries, was replayed three ways. With nothing fixed, the shop keeps the stale lead times and
 reorder points, the duplicate records, the phantom on-order and the unrecorded pulls. With the cleaned records
-and the recomputed rule, it runs on the corrected masters with reorder points recomputed from twelve months of
-usage over the corrected lead time. With the demand model, the corrected masters are the same, and the reorder
-point each month comes from the model's forecast. The only difference between the last two is the forecast
-behind the reorder point. None of the three can see future demand: the reorder decision knows scheduled
-production and nothing else, as the ERP does.</p>
+and the recomputed rule, it runs on the corrected masters with reorder points recomputed each month from the
+last twelve months of usage over the corrected lead time, plus a standard buffer. With the demand model, the
+corrected masters are the same, and the reorder points come from the model's weekly forecasts and its
+calibrated buffer. In both cleaned variants the ERP nets the parts committed to released jobs, which it sees
+about {V_days} days ahead. None of the three can see future demand beyond that, as the ERP cannot.</p>
 {B.chart("The same demand three ways, months 4 to 6 (steady state)", charts["variants"])}
 <p>The first three months are a transition: stock is being rebuilt on items that were short, and the old stale
 orders are still arriving. The comparison that matters is months 4 to 6, once the new policy has settled.
@@ -459,13 +473,17 @@ Across the full six months:</p>
 {variants_table(M13)}
 {sub("Months 4 to 6 (steady state)")}
 {variants_table(M46)}
-<p>The cleanup does the heavy lifting: in steady state, stockout events fall from {dirty46['stockout_episodes']:,}
-with nothing fixed to {rule46['stockout_episodes']:,} on the cleaned records, and rush spend from
-{k(dirty46['rush_spend'])} to {k(rule46['rush_spend'])}. The model then cuts stockouts to
-{mod46['stockout_episodes']:,} and A-item days short from {rule46['stockout_days_by_abc']['A']:,} to
-{mod46['stockout_days_by_abc']['A']:,}, but with {k(mod46['safety_stock_value'] - rule46['safety_stock_value'])} more safety
-stock and {k(mod46['excess_value'] - rule46['excess_value'])} more excess. The order-line counts show the new policy
-does not buy its service with a flood of small orders: lines placed are within about ten percent across the three.</p>
+<p>The recomputed rule alone does not raise service. Its reorder points match recent usage, but the stale
+points they replace were padded by lead times that had drifted long, and the rule's standard buffer assumes
+steadier demand than the shop's parts show. It trims stockout events from {dirty46['stockout_episodes']:,} to
+{rule46['stockout_episodes']:,} and rush spend from {k(dirty46['rush_spend'])} to {k(rule46['rush_spend'])} on
+the same inventory, but fill stays near {pct(rule46['fill_rate'])}. The model, on the same cleaned records,
+cuts stockout events to {mod46['stockout_episodes']:,}, jobs held to {mod46['jobs_delayed']} and A-item days
+short from {rule46['stockout_days_by_abc']['A']:,} to {mod46['stockout_days_by_abc']['A']:,}. It does so with
+{k(mod46['safety_stock_value'] - rule46['safety_stock_value'])} more safety stock, and
+{k(mod46['excess_value'])} of stock on {mod46['excess_items']} items above twelve months of supply. It does not buy
+its service with a flood of small orders: it places {mod46['order_lines']:,} lines against the rule's
+{rule46['order_lines']:,}.</p>
 {sub("Purchases by month")}
 <p>Purchases should converge to consumption under any sound policy. The transition shows up as buying above
 consumption while stock is rebuilt, then settling.</p>
@@ -474,15 +492,20 @@ consumption while stock is rebuilt, then settling.</p>
 {B.section("limits", "Section 3.4", "What It Can and Cannot Predict")}
 <ul class="limitation-list">
   <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes the
-      supplier's lead time from the recomputed master and does not predict a late delivery.</li>
+      supplier's lead time from the recomputed master and does not predict a late delivery. The buffer covers
+      the usual spread of deliveries, not a supplier failure.</li>
   <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
       and supplier behaviour, not observed. Demand, deliveries and the forecast are identical across the three
       variants, so the differences between them are the policy; the size of each difference is an estimate.</li>
-  <li><strong>Safety stock is sized per cycle, not per unit filled.</strong> The model's buffer protects every
-      order cycle to the class's service level, and on items with large order quantities most cycles are already
-      protected by the order itself, so the model overshoots the A-item fill target. Setting safety stock against
-      a fill-rate target, which accounts for order quantity, would bring inventory down toward the rule's while
-      keeping the model's advantage on the parts that stop the line. That is the next change to make.</li>
+  <li><strong>C items are overstocked.</strong> The model runs C items at {pct(mod46['fill_rate_by_abc']['C'])}
+      against a 90% target. The
+      buffer protects every order cycle to the class's service level, and on items with large order quantities
+      most cycles are already protected by the order itself. Sizing the C buffer against a fill-rate target,
+      which accounts for order quantity, would release inventory without touching the A and B items. That is the
+      next change to make.</li>
+  <li><strong>The comparison rule is a textbook rule.</strong> The recomputed rule uses the standard buffer a
+      planner would set by hand. A planner could pad it further and buy more service with more stock; what the
+      model adds is putting that stock on the items and weeks that need it.</li>
   <li><strong>The first three months are a transition.</strong> Purchases run above consumption while stock is
       rebuilt; the steady-state comparison is months 4 to 6, and three months is a short steady state.</li>
 </ul>

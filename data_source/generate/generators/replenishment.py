@@ -44,7 +44,7 @@ def draw_drift_rates(item_meta, rng):
 
 def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, sup_frag,
              buyer_nums, omitted_item_ids, rng, drift_rate=None, never_closed=None, actual_base=None,
-             fix_from=None, forward=None):
+             fix_from=None, forward=None, release_by_job=None):
     """fix_from: the date the remediation's BOM corrections and controls take hold
     (chronic write-offs on omitted items stop). A world that never fixes them
     passes END_DATE.
@@ -101,26 +101,29 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         a = np.zeros(N); np.add.at(a, g["t"].to_numpy(), g["qty"].to_numpy())
         cum_by_iid[int(iid)] = np.concatenate([[0.0], np.cumsum(a)])
     fwd_t = day_idx.get(forward["start"]) if forward else None
-    # the look-ahead sees only what the ERP genuinely knows ahead of time:
-    # scheduled production (backflush on released jobs). Manual pulls and
-    # service orders are not known until they happen.
-    sched_t = 0
-    bf = ev[ev["recorded"] & (ev["channel"] == "BACKFLUSH")]
-    cum_bf_num, cum_bf_iid = {}, {}
-    for key, store in (("item_number", cum_bf_num), ("item_id", cum_bf_iid)):
+    # the look-ahead sees only what the ERP genuinely knows ahead of time: the
+    # component requirements of jobs already released to the floor, which it
+    # nets against stock (MRP). A job is invisible before its release date;
+    # manual pulls and service orders are not known until they happen.
+    bf = ev[ev["recorded"] & (ev["channel"] == "BACKFLUSH")].copy()
+    rel = release_by_job or {}
+    bf["r"] = bf["job_id"].map(lambda j: day_idx.get(rel.get(j), 0) if rel.get(j) in day_idx else 0).astype(int)
+    known_num, known_iid = {}, {}
+    for key, store in (("item_number", known_num), ("item_id", known_iid)):
         for k, g in bf.groupby(key):
-            a = np.zeros(N); np.add.at(a, g["t"].to_numpy(), g["qty"].to_numpy())
-            store[int(k) if key == "item_id" else k] = np.concatenate([[0.0], np.cumsum(a)])
+            g = g.sort_values("t")
+            store[int(k) if key == "item_id" else k] = (g["t"].to_numpy(), g["r"].to_numpy(), g["qty"].to_numpy(float))
 
     def ahead(n, t, L, iid=None):
         merged = fwd_t is not None and t >= fwd_t
-        if t >= sched_t:
-            c = cum_bf_iid.get(iid) if merged else cum_bf_num.get(n)
-        else:
-            c = cum_by_iid.get(iid) if merged else cum_by_num.get(n)
-        if c is None:
+        arr = known_iid.get(iid) if merged else known_num.get(n)
+        if arr is None:
             return 0.0
-        return c[min(t + L, N)] - c[t]
+        c, r, q = arr
+        lo = int(np.searchsorted(c, t, side="right")); hi = int(np.searchsorted(c, t + L, side="right"))
+        if hi <= lo:
+            return 0.0
+        return float(q[lo:hi][r[lo:hi] <= t].sum())
 
     jobs_by_iid_day = {}
     for r in ev[ev["channel"] == "BACKFLUSH"].itertuples(index=False):
@@ -151,7 +154,16 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
         rng = np.random.default_rng([C.RANDOM_SEED, 7, int(iid)])
         nc = never_closed                      # this item's share of short receipts left open
         phys_d = phys_by_iid.get(iid, np.zeros(N))
-        avg_daily = max(phys_d[-365:].mean(), phys_d.mean(), 0.02)
+        # usage the shop could know on the day: the trailing year of consumption
+        # (the first quarter of the history serves as a burn-in)
+        cum_u = np.concatenate([[0.0], np.cumsum(phys_d)])
+
+        def usage(t_):
+            if t_ < 90:
+                return max(cum_u[90] / 90.0, 0.02)
+            lo_ = max(0, t_ - 365)
+            return max((cum_u[t_] - cum_u[lo_]) / (t_ - lo_), 0.02)
+        avg_daily = usage(0)
         cost = float(cost_by_item.get(iid, 1.0))
         meta0 = item_meta[nums[0]]
         cls = meta0["cls"]
@@ -210,6 +222,10 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                 bseries = {prim: bseries.get(prim, np.zeros(N))}
                 learned = False
                 tracked = False                            # the spreadsheet is retired
+            if t % 7 == 0 or t == fwd_t:
+                avg_daily = usage(t)
+                q_each = max(1, int(round(avg_daily * C.ORDER_COVER_DAYS)))
+                q_order = max(1, int(round(q_each / conv))) if conv > 1 else q_each
             if t in sched_by_t:
                 rop[prim] = sched_by_t[t][0]
             if fwd_t is not None and t > fwd_t and days[t].day == 1:
@@ -321,10 +337,11 @@ def simulate(events, item_master, item_meta, dup_map, plan, drift_supplier_id, s
                     level = avg_daily * C.BUYER_SAFETY_DAYS
                     look = ahead(n, t, buyer_look, iid)
                 elif fwd_t is not None and t >= fwd_t:
-                    # on the corrected masters the decision is a plain reorder
-                    # point: the point already carries the lead-time demand
+                    # on the corrected masters the point covers the demand the ERP
+                    # cannot see (forecast unscheduled usage plus safety stock), and
+                    # MRP nets the requirements of released jobs on top of it
                     level = rop[n]
-                    look = 0.0
+                    look = ahead(n, t, mlead[n], iid)
                 else:
                     level = rop[n]
                     look = ahead(n, t, mlead[n], iid)

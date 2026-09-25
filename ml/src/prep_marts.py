@@ -151,6 +151,33 @@ def build():
     fully = fully.groupby(["canonical", "month"], as_index=False)["consumption"].sum()
     fully["consumption"] = fully["consumption"].clip(lower=0)
 
+    # ── the same fully-cleaned series in Monday weeks, for the weekly refresh ─
+    def _week(sr):
+        d = pd.to_datetime(sr)
+        return (d - pd.to_timedelta(d.dt.weekday, unit="D")).dt.normalize()
+    cw_ = cons.assign(week=_week(cons["txn_date"]), q=lambda d: d["qty"].abs())
+    wk = cw_.groupby(["canonical", "week"], as_index=False)["q"].sum().rename(columns={"q": "consumption"})
+    wadd = []
+    for r in t1:
+        c = canon.get(r["item_number"], r["item_number"]); annual = r.get("annual_unrecorded", 0)
+        sub_w = wk[wk["canonical"] == c]
+        if len(sub_w) and annual > 0:
+            shape = sub_w["consumption"] / max(1.0, sub_w["consumption"].sum())
+            wadd += [{"canonical": c, "week": w_, "consumption": annual * x_} for w_, x_ in zip(sub_w["week"], shape)]
+    wsub = []
+    for r in txn.get("t7", []) + [{"txn_id": x["txn_id"], "_dup": True} for x in txn.get("t8", [])]:
+        tid = r["txn_id"]
+        if tid in tx_lookup.index:
+            row = tx_lookup.loc[tid]; c = canon.get(row["item_number"])
+            if c is None or row["type"] not in ("ISSUE", "BACKFLUSH"):
+                continue
+            wkey = _week(pd.Series([row["txn_date"]]))[0]
+            q_ = -abs(row["qty"]) if r.get("_dup") else -(r["recorded_qty"] - r["true_qty"])
+            wsub.append({"canonical": c, "week": wkey, "consumption": q_})
+    weekly = pd.concat([wk, pd.DataFrame(wadd), pd.DataFrame(wsub)], ignore_index=True)
+    weekly = weekly.groupby(["canonical", "week"], as_index=False)["consumption"].sum()
+    weekly["consumption"] = weekly["consumption"].clip(lower=0)
+
     # ── Item attributes ─────────────────────────────────────────────────────
     lt = _corrected_lead()
     cost = im.set_index("item_number")["standard_cost"].to_dict()
@@ -178,6 +205,7 @@ def build():
     # the production consumption series the model trains and scores on is the
     # fully-cleaned tier
     fully.to_parquet(MARTS / "consumption_monthly.parquet", index=False)
+    weekly.to_parquet(MARTS / "consumption_weekly.parquet", index=False)
     attrs.to_parquet(MARTS / "item_attributes.parquet", index=False)
     return raw, master, fully, true, attrs
 
