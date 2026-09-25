@@ -342,25 +342,71 @@ cat_share = cat_seg.div(cat_seg.sum(axis=1), axis=0)
 
 def _avg_box(ax, text):
     ax.text(0.5, 0.97, text, transform=ax.transAxes, ha="center", va="top", fontsize=9.5, color=DARK_GREY,
-            bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#D5DCE1"))
+            linespacing=1.5,
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor=DARK_GREY, linestyle="--", linewidth=1.1))
 
 
-def chart_value_by_category():
-    """Monthly consumption at standard cost over the three years, by item category."""
+def _chart_by_category(col, scale, ylabel, avg_fmt):
+    """Monthly consumption over the three years, stacked by item category, with the trend in a callout."""
     fig, ax = B.make_fig(3.9)
-    w = hist.pivot_table(index="month", columns="category", values="value", aggfunc="sum").fillna(0)
-    w = w.reindex(columns=[c for c in CAT_ORDER if c in w.columns]) / 1000
+    w = hist.pivot_table(index="month", columns="category", values=col, aggfunc="sum").fillna(0)
+    w = w.reindex(columns=[c for c in CAT_ORDER if c in w.columns]) / scale
     ax.stackplot(w.index, [w[c] for c in w.columns], colors=[CAT_COL[c] for c in w.columns],
                  labels=list(w.columns), alpha=0.95)
     tot = w.sum(axis=1); x = np.arange(len(tot)); fit = np.polyfit(x, tot.to_numpy(), 1)
-    ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2, label="Trend")
-    ax.set_ylim(0, tot.max() * 1.35)
-    ax.set_ylabel("Consumption at cost ($000 / month)")
-    _avg_box(ax, f"Average: ${tot.mean():,.0f}K of parts consumed per month")
+    ax.plot(w.index, np.polyval(fit, x), color=DARK_GREY, linestyle="--", linewidth=1.2)
+    growth = fit[0] * 12 / tot.mean() * 100
+    ax.set_ylim(0, tot.max() * 1.4)
+    ax.set_ylabel(ylabel)
+    _avg_box(ax, avg_fmt.format(tot.mean()) + f"\nTrend: {growth:+.1f}% a year")
     B.chart_style(ax)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=5, fontsize=8.5)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), frameon=False, ncol=4, fontsize=8.5)
     fig.tight_layout()
     return B.b64(fig)
+
+
+def chart_value_by_category():
+    return _chart_by_category("value", 1000, "Consumption at cost ($000 / month)",
+                              "Average: ${:,.0f}K of parts consumed per month")
+
+
+def chart_units_by_category():
+    return _chart_by_category("consumption", 1000, "Units consumed (000 / month)",
+                              "Average: {:,.1f}K units consumed per month")
+
+
+# cost and usage by category, 2025
+_h25 = hist[(hist["month"] >= "2025-01-01") & (hist["month"] < "2026-01-01")]
+_u25 = _h25.groupby("canonical").agg(units=("consumption", "sum"), value=("value", "sum"))
+_u25 = _u25.join(attrs.set_index("canonical_item_number")[["category", "standard_cost"]])
+cat_tbl = _u25.groupby("category").agg(n=("units", "size"), med_cost=("standard_cost", "median"),
+                                       med_units=("units", "median"), units=("units", "sum"), value=("value", "sum"))
+cat_tbl = cat_tbl.reindex([c for c in CAT_ORDER if c in cat_tbl.index])
+cat_tbl["unit_share"] = cat_tbl["units"] / cat_tbl["units"].sum()
+cat_tbl["value_share"] = cat_tbl["value"] / cat_tbl["value"].sum()
+cat_tbl["item_share"] = cat_tbl["n"] / cat_tbl["n"].sum()
+
+
+def category_table():
+    rows = [[c, f"{int(r['n'])}", f"${r.med_cost:,.2f}", f"{r.med_units:,.0f}", pct(r.unit_share, 0),
+             k(r.value), pct(r.value_share, 0)] for c, r in cat_tbl.iterrows()]
+    rows.append(["<strong>All items</strong>", f"<strong>{int(cat_tbl['n'].sum()):,}</strong>", "", "", "<strong>100%</strong>",
+                 f"<strong>{k(cat_tbl['value'].sum())}</strong>", "<strong>100%</strong>"])
+    return widths(B.data_table(["Category", "Items", "Median unit cost", "Median units used per item",
+                                "Share of units used", "Consumption value", "Share of value"], rows,
+                               right=[1, 2, 3, 4, 5, 6]), [20, 9, 14, 16, 13, 15, 13])
+
+
+_hi = cat_tbl.loc[[c for c in ["Mechanical", "Electrical"] if c in cat_tbl.index]]
+_lo = cat_tbl.loc[[c for c in ["Fasteners", "Hardware"] if c in cat_tbl.index]]
+TBL_TEXT = (f"Cost and usage run in opposite directions across the categories. Mechanical and electrical parts "
+            f"(motors, gearboxes, drives, controls) are {pct(_hi['item_share'].sum(), 0)} of items and "
+            f"{pct(_hi['value_share'].sum(), 0)} of consumption value, with median unit costs of "
+            f"${cat_tbl.loc['Mechanical', 'med_cost']:,.0f} and ${cat_tbl.loc['Electrical', 'med_cost']:,.0f}, but only "
+            f"{pct(_hi['unit_share'].sum(), 0)} of the units used. Fasteners and hardware are the reverse: "
+            f"{pct(_lo['unit_share'].sum(), 0)} of the units used but {pct(_lo['value_share'].sum(), 0)} of the value, "
+            f"at median unit costs under ${max(cat_tbl.loc['Fasteners', 'med_cost'], cat_tbl.loc['Hardware', 'med_cost']) + 0.5:,.0f}. "
+            f"The shop's money is tied up in a few hundred expensive, slower-moving parts, not in the high-volume floor stock.")
 
 
 def chart_category_patterns():
@@ -388,11 +434,11 @@ def _top(seg, n=2):
     return " and ".join(f"{c.lower()} ({v*100:.0f}%)" for c, v in s_.items())
 
 
-CAT_TEXT = (f"Demand pattern follows the kind of part, though every category carries all four. Smooth demand is most "
-            f"common among {_top('smooth')}, the floor stock pulled week in, week out. Erratic demand is spread "
-            f"widely, highest among {_top('erratic')}. Lumpy demand concentrates in {_top('lumpy')}, whose use "
-            f"follows the job mix, and intermittent demand in {_top('intermittent')}, parts used a few to a job or "
-            f"sold as occasional spares.")
+CAT_TEXT = (f"Individual demand patterns are informed by the kind of part, though every category carries all four "
+            f"patterns. Smooth demand is most common among {_top('smooth')}, the floor stock used consistently every "
+            f"week. Erratic demand is spread widely, and is highest among {_top('erratic')}. Lumpy demand concentrates "
+            f"in {_top('lumpy')}. Intermittent demand is highest in {_top('intermittent')}, where just a few of these "
+            f"high-cost items are used for a job or sold as occasional spares.")
 
 
 def chart_history_value():
@@ -473,6 +519,7 @@ erp_b64 = base64.b64encode(_png.read_bytes()).decode() if _png.exists() else ""
 
 charts = {"halves": chart_halves(), "variants": chart_variants(), "acc": chart_accuracy(),
           "invm": chart_inventory_months(), "valcat": chart_value_by_category(), "catseg": chart_category_patterns(),
+          "unitcat": chart_units_by_category(),
           "hist": chart_history_value(), "examples": chart_examples(), "pareto": chart_pareto()}
 
 toc = ('<a href="#summary">Executive Summary</a><hr>'
@@ -537,18 +584,20 @@ stock and the suggested order quantity, as seen in the screenshot of the ERP sys
 
 {B.section("data", "Section 2.2", "Training Data Overview")}
 <p>The model learns from the shop's weekly consumption of every stocked item. It was originally trained on three
-years of this consumption data (2023 through 2025), and is continually trained on every new month of data.</p>
-{B.chart("Monthly consumption in value, January 2023 to December 2025, by item category", charts["valcat"])}
-<p>Demand is steady in aggregate and roughly flat over the three years, but individual items exhibit very different
-behavior. We've categorized the individual demand patterns of items into four patterns, which the model treats
-differently: {seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but
-variable), {seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent
-(many months with no demand at all). The model is calibrated against these demand patterns. One representative item
-within each pattern is shown below.</p>
+years of this consumption data (2023 through 2025, as shown below), and is continually trained on every new month
+of data.</p>
+<p>{TBL_TEXT}</p>
+{category_table()}
+{B.chart("MONTHLY CONSUMPTION IN VALUE, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["valcat"])}
+{B.chart("MONTHLY CONSUMPTION IN UNITS, BY ITEM CATEGORY (JAN. 2023 to DEC. 2025)", charts["unitcat"])}
+<p>Demand is steady in aggregate over the three years, but individual items exhibit very different demand patterns.
+We've categorized these individual item demand patterns into four groups, which the model is calibrated against:
+{seg_n.get('smooth', 0)} smooth (regular and steady), {seg_n.get('erratic', 0)} erratic (regular but variable),
+{seg_n.get('lumpy', 0)} lumpy (irregular and variable) and {seg_n.get('intermittent', 0)} intermittent (many months
+with no demand at all). One representative item within each pattern is shown below.</p>
 {B.chart("Three years of monthly consumption, one representative item per demand pattern", charts["examples"])}
 <p>{CAT_TEXT}</p>
 {B.chart("Items in each category, by demand pattern", charts["catseg"])}
-{B.chart("Monthly consumption in units, January 2023 to December 2025, by demand pattern", charts["hist"])}
 <p>Value is concentrated. A small share of items carries most of the consumption value: {abc_n.get('A', 0)} A
 items, {abc_n.get('B', 0)} B items and {abc_n.get('C', 0)} C items. That concentration is why order quantities are
 set by cost: buying the A items in smaller, more frequent lots frees most of the working capital, while the
