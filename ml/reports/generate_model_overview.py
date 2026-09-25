@@ -281,27 +281,60 @@ def purchases_table():
     return widths(B.data_table(["Month"] + [n for _, n in VARIANTS], rows, right=[1, 2, 3]), [22, 26, 26, 26])
 
 
-def accuracy_table():
-    seg = {s["segment"]: s for s in metrics["segments"]}
-    fbias = F["model"].get("forecast_bias_by_segment") or {}
+def _live_accuracy():
+    """Score every weekly forecast the model made in 1H26 against the usage that followed, alongside the
+    simple method chosen for each demand pattern before go-live. Forecasts whose horizon runs past June 30
+    are left out."""
+    wk = pd.read_parquet(REPO / "ml" / "data" / "marts" / "consumption_weekly.parquet")
+    wide = wk.pivot(index="canonical", columns="week", values="consumption").fillna(0)
+    widx = {pd.Timestamp(x): i for i, x in enumerate(wide.columns)}
+    end = pd.Timestamp(C_END) - pd.Timedelta(days=1)
+    seg_attr = attrs.set_index("canonical_item_number")["segment"]
+    meth = {r["segment"]: r["baseline_method"] for r in metrics["segments"]}
     rows = []
-    for s in SEG_ORDER:
-        if s not in seg:
+    for item, entries in sched["items"].items():
+        if item not in wide.index:
             continue
-        r = seg[s]
-        fb = fbias.get(s)
-        rows.append([s.capitalize(), pct(r["wape_model"], 0), pct(r["wape_baseline"], 0), f"{r['lift']*100:+.0f}%",
-                     f"{r['bias']*100:+.0f}%", f"{fb*100:+.0f}%" if fb is not None else "n/a"])
-    rows.append(["<strong>All items</strong>", f"<strong>{pct(metrics['overall']['model'], 0)}</strong>",
-                 f"<strong>{pct(metrics['overall']['baseline'], 0)}</strong>",
-                 f"<strong>{(metrics['overall']['baseline']-metrics['overall']['model'])/metrics['overall']['baseline']*100:+.0f}%</strong>", "", ""])
+        sr = wide.loc[item].to_numpy(float)
+        seg = seg_attr.get(item, "smooth")
+        for e in entries:
+            o = pd.Timestamp(e[0]); mon = o - pd.Timedelta(days=o.weekday())
+            h = int(round(e[4] / 7)); t = widx.get(mon)
+            if t is None or t < 52 or mon + pd.Timedelta(days=7 * h) > end:
+                continue
+            base = {"ma4": sr[t - 4:t].sum() / 4 * h, "ma13": sr[t - 13:t].sum() / 13 * h,
+                    "ma52": sr[t - 52:t].sum() / 52 * h, "snaive": sr[t - 52:t - 52 + h].sum()}[meth.get(seg, "ma52")]
+            rows.append((seg, sr[t:t + h].sum(), float(e[3]), base))
+    return pd.DataFrame(rows, columns=["segment", "actual", "forecast", "base"])
+
+
+def _wape(a, f):
+    return float(np.abs(a - f).sum() / a.sum())
+
+
+def accuracy_table():
+    seg25 = {s_["segment"]: s_ for s_ in metrics["segments"]}
+    rows = []
+    for s_ in SEG_ORDER:
+        g = live[live["segment"] == s_]
+        if g.empty:
+            continue
+        wm, wb = _wape(g["actual"], g["forecast"]), _wape(g["actual"], g["base"])
+        bias = (g["forecast"].sum() - g["actual"].sum()) / g["actual"].sum()
+        rows.append([s_.capitalize(), pct(wm, 0), pct(wb, 0), f"{(wb - wm) / wb * 100:+.0f}%",
+                     f"{seg25[s_]['bias'] * 100:+.0f}%" if s_ in seg25 else "", f"{bias * 100:+.0f}%"])
+    rows.append(["<strong>All items</strong>", f"<strong>{pct(live_model, 0)}</strong>",
+                 f"<strong>{pct(live_base, 0)}</strong>",
+                 f"<strong>{(live_base - live_model) / live_base * 100:+.0f}%</strong>", "",
+                 f"<strong>{live_bias * 100:+.0f}%</strong>"])
     return widths(B.data_table(["Demand pattern", "Model error", "Best simple method", "Improvement",
-                                "Bias before correction", "Bias in 1H26, corrected"], rows, right=[1, 2, 3, 4, 5]),
-                  [20, 15, 18, 15, 16, 16])
+                                "Bias before correction (2025)", "Bias after correction"], rows,
+                               right=[1, 2, 3, 4, 5]), [20, 14, 17, 15, 18, 16])
 
 
 # ── report ────────────────────────────────────────────────────────────────────
 mod, rule, dirty = F["model"], F["clean_rule"], F["dirty"]
+C_END = "2026-06-30"
 mod46, rule46, dirty46 = M46["model"], M46["clean_rule"], M46["dirty"]
 k_abc, z = sched["safety_factor"], sched["normal_z"]
 bias = sched["bias_correction"]
@@ -351,6 +384,10 @@ monthly = pd.read_parquet(REPO / "ml" / "data" / "marts" / "consumption_monthly.
 seg_n = attrs["segment"].value_counts().to_dict(); abc_n = attrs["abc"].value_counts().to_dict()
 n_items = len(attrs)
 cand = metrics["candidates"]
+live = _live_accuracy()
+live_model, live_base = _wape(live["actual"], live["forecast"]), _wape(live["actual"], live["base"])
+live_bias = (live["forecast"].sum() - live["actual"].sum()) / live["actual"].sum()
+live_bias_max = max(abs((g["forecast"].sum() - g["actual"].sum()) / g["actual"].sum()) for _, g in live.groupby("segment"))
 CAND_LABEL = {"Linear": "Linear regression (ridge)", "RandomForest": "Random forest", "XGBoost": "XGBoost"}
 WIN = metrics["winner"]
 WIN_DESC = {"RandomForest": "a random forest, an ensemble of several hundred decision trees whose forecasts are averaged",
@@ -370,7 +407,7 @@ def candidate_table():
     rows = [[CAND_LABEL[c], pct(cand[c]["val_wape"]), pct(cand[c]["test_wape"]),
              f'<span style="color:{GREEN};font-weight:700;">&#10004;</span> Selected' if c == metrics["winner"] else ""]
             for c in order]
-    return widths(B.data_table(["Candidate", "Validation error (WAPE)", "Test error (WAPE)", ""], rows, right=[1, 2]),
+    return widths(B.data_table(["Candidate", "Validation error (WAPE)", "Held-out 2025 error (WAPE)", ""], rows, right=[1, 2]),
                   [34, 24, 24, 18])
 
 
@@ -673,22 +710,25 @@ before the model when reordering decisions were done manually (showing both half
 
 {B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
 <p>The model's forecasts are scored with weighted absolute percentage error (WAPE): the total gap between forecast
-and actual usage over each item's lead time, as a share of total actual usage. On a held-out year of weekly
-forecasts in 2025, the selected {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model scored
-<strong>{pct(metrics['overall']['model'], 0)}</strong>. In practical terms, for every 100 units an item actually
-used over its lead time, the forecast was off by about {metrics['overall']['model'] * 100:.0f} units, high or low,
-against about {metrics['overall']['baseline'] * 100:.0f} for the best simple method. The error is large because
-most items are used unevenly: a single job or spare-parts order can double an item's usage in a week. That is why
-each reorder point adds a safety buffer sized to the item's own forecast error, rather than trusting the forecast
-alone.</p>
+and actual usage over each item's lead time, as a share of total actual usage. In live use from January to June
+2026, the model's {len(live):,} forecasts (one per item, each week) scored <strong>{pct(live_model, 0)}</strong>. In practical terms,
+for every 100 units an item actually used over its lead time, the forecast was off by about
+{live_model * 100:.0f} units, high or low, against about {live_base * 100:.0f} for the best simple method. The
+errors largely cancel out across items: in total, the forecasts came within {abs(live_bias) * 100:.1f}% of actual
+usage. The error on any one item is large because most items are used unevenly: a single job or spare-parts order
+can double an item's usage in a week. That is why each reorder point adds a safety buffer sized to the item's own
+forecast error, rather than trusting the forecast alone.</p>
+<p>Before go-live, three candidate algorithms were tuned and compared on forecasts for a held-out year of 2025,
+which the model had not seen. The {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model scored
+{pct(metrics['overall']['model'], 0)} there and was selected:</p>
 {candidate_table()}
-<p>On the held-out year the model beats the best simple method for each demand pattern (a moving average, last
-year's month or Croston's method, whichever did best):</p>
+<p>In live use the model beat the best simple method for each demand pattern (a moving average or last year's same
+weeks, whichever did best on 2025):</p>
 {accuracy_table()}
-<p>Bias is the diagnostic accuracy hides. Before correction the model ran
+<p>Bias is the diagnostic accuracy hides. On the 2025 held-out year, before correction, the model ran
 {', '.join(f"{abs(s_['bias'])*100:.0f}% low on {s_['segment']}" for s_ in metrics['segments'])} items. Each
-pattern's forecasts are scaled up by the ratio of actual to forecast demand in the 2025 backtest, and in the six
-forward months the corrected forecasts ran within {fb_max*100:.0f}% of actual demand for every pattern.</p>
+pattern's forecasts are scaled up by the ratio of actual to forecast demand in the 2025 backtest, and in live use
+the corrected forecasts ran within {live_bias_max * 100:.0f}% of actual usage for every pattern.</p>
 <p>The safety buffer is calibrated on the same backtest. The buffer is set so that the units an item is expected to
 run short between deliveries stay within its fill-rate target, measured on the model's actual 2025 errors rather
 than on a normal curve. Those errors have fatter tails than a normal curve, so textbook multiples would leave the
