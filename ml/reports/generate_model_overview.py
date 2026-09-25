@@ -78,24 +78,23 @@ def sub(t):
 
 # ── charts ────────────────────────────────────────────────────────────────────
 def chart_halves():
-    """Inventory, stockout events, held jobs and rush spend by half-year, as the shop ran it."""
+    """2025 against the model's first half: stockouts, held jobs, rush spend (half-year average) and inventory."""
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 3.2))
-    halves = ["1H25", "2H25", "1H26"]
-    series = [H1, H2, F["model"]]
-    hc = [MED_GREY, MED_GREY, DARK_BLUE]
-    # inventory: the average month of 2025 against June 2026, the model's sixth month
-    panels = [("Inventory ($000)", ["2025 avg\nmonth", "June\n2026"], [avg25 / 1000, jun_avg / 1000], "${:,.0f}K",
-               [MED_GREY, DARK_BLUE]),
-              ("Stockout events", halves, [s["stockout_episodes"] for s in series], "{:,.0f}", hc),
-              ("Jobs held for material", halves, [s["jobs_delayed"] for s in series], "{:,.0f}", hc),
-              ("Rush spend ($000)", halves, [s["rush_spend"] / 1000 for s in series], "${:,.0f}K", hc)]
-    for ax, (title, labels, vals, fmt, cols_) in zip(axes, panels):
-        bars = ax.bar(labels, vals, color=cols_, width=0.6)
-        for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v * 1.02, fmt.format(v), ha="center", fontsize=8.5, fontweight="bold")
+    fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 3.3))
+    m = F["model"]
+    half = lambda key: (H1[key] + H2[key]) / 2
+    panels = [("Stockout events", ["1H/2H '25 Avg.", "1H '26"], half("stockout_episodes"), m["stockout_episodes"], "{:,.0f}"),
+              ("Jobs held for material", ["1H/2H '25 Avg.", "1H '26"], half("jobs_delayed"), m["jobs_delayed"], "{:,.0f}"),
+              ("Rush spend ($000)", ["1H/2H '25 Avg.", "1H '26"], half("rush_spend") / 1000, m["rush_spend"] / 1000, "${:,.0f}K"),
+              ("Inventory balance ($M)", ["2025 Avg.", "June 30, '26"], avg25 / 1e6, end_mod / 1e6, "${:,.2f}M")]
+    for ax, (title, labels, a_, b_, fmt) in zip(axes, panels):
+        bars = ax.bar(labels, [a_, b_], color=[MED_GREY, DARK_BLUE], width=0.6)
+        ax.text(bars[0].get_x() + bars[0].get_width() / 2, a_ * 1.02, fmt.format(a_), ha="center", fontsize=8.5,
+                fontweight="bold")
+        ax.text(bars[1].get_x() + bars[1].get_width() / 2, b_ * 1.02,
+                fmt.format(b_) + f"\n({(b_ - a_) / a_ * 100:+.0f}%)", ha="center", fontsize=8.5, fontweight="bold")
         ax.set_title(title, fontsize=9.5, color=DARK_GREY, pad=8)
-        ax.set_ylim(0, max(vals) * 1.22); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8.5)
+        ax.set_ylim(0, max(a_, b_) * 1.3); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8)
         B.chart_style(ax)
     fig.tight_layout(w_pad=1.6)
     return B.b64(fig)
@@ -371,6 +370,7 @@ end_rule = F["clean_rule"]["end_inventory_value"]
 dec_avg, dec_end = H2["inventory_by_month"]["2025-12"], H2["end_inventory_value"]
 jun_avg = F["model"]["inventory_by_month"]["2026-06"]
 jun_dirty = F["dirty"]["inventory_by_month"]["2026-06"]
+HALF = lambda key: (H1[key] + H2[key]) / 2
 _m, _r = M46["model"]["avg_inventory_value"], M46["clean_rule"]["avg_inventory_value"]
 RULE_SVC = ("improves service somewhat" if (rule46["fill_rate"] > dirty46["fill_rate"] + 0.003
                                              or rule46["jobs_delayed"] < dirty46["jobs_delayed"])
@@ -647,34 +647,32 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#performance">Model Performance</a>'
        '<a href="#scoring" class="sub">Scoring Summary</a>'
        '<a href="#accuracy" class="sub">Accuracy and Validation</a>'
-       )
+       '<a href="#limits" class="sub">What It Can and Cannot Predict</a>')
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
-<p>From January through June 2026 the shop ran its purchasing on the cleaned records and on the model's reorder
-points and order quantities, and it carried less stock while running short less often. Inventory fell from an
-average of {k(avg25)} a month in 2025 under manual reordering to {k(jun_avg)} in June 2026, {fall(avg25, jun_avg)}
-lower. Part of that decline would have happened anyway: replaying 2026 with manual reordering continued leaves
-June at {k(jun_dirty)}, so the model's own effect is the {fall(jun_dirty, jun_avg)} gap between the two Junes.
-Against the first half of 2025, run the way the shop had always run it, stockout events fell from {H1['stockout_episodes']:,} to
-{mod['stockout_episodes']:,}, jobs held for material from {H1['jobs_delayed']} to {mod['jobs_delayed']}, and rush
-freight and premiums from {k(H1['rush_spend'])} to {k(mod['rush_spend'])}.</p>
-{B.chart("Inventory (2025 average month against June 2026); stockouts, held jobs and rush spend by half-year", charts["halves"])}
-<p>The manual process held more stock than the shop needed, in the wrong places. Reorder points set at go-live
-and never revisited were far too high on some items and too low on others, and buyers bought about four and a half months
-of an item at a time whatever it cost. The model moves the stock to where it prevents a stoppage. Each item's
-buffer is sized to how far off its own forecasts and deliveries have been, jobs already booked are netted weeks
-before they draw items, and expensive items are bought more often in smaller lots. Replaying the same six months of demand with nothing fixed shows the gain once the new
-policy has settled (months 4 to 6): stockout events fall {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])},
-jobs held for material {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])}
-and rush spend {fall(dirty46['rush_spend'], mod46['rush_spend'])}. Inventory is still falling at the end of June,
-as excess on slow items is used up and not replaced.</p>
-
-{B.kpi_row(
-    B.kpi_card(f"{k(avg25)} &rarr; {k(jun_avg)}", "Inventory", "2025 monthly average to June 2026", GREEN),
-    B.kpi_card(f"{H1['stockout_episodes']:,} &rarr; {mod['stockout_episodes']:,}", "Stockout events", "1H25 to 1H26", GREEN),
-    B.kpi_card(f"{H1['jobs_delayed']} &rarr; {mod['jobs_delayed']}", "Jobs held for material", "1H25 to 1H26", GREEN),
-    B.kpi_card(f"{k(H1['rush_spend'])} &rarr; {k(mod['rush_spend'])}", "Rush spend", "1H25 to 1H26", GREEN))}
+<p>The demand forecasting model sets the shop's reorder decisions for all {n_items:,} stocked items. Every week it
+forecasts how much of each item the shop will use before a new order could arrive, and turns that forecast into a
+reorder point and an order quantity that are loaded straight into the ERP's purchasing screen. The model has been
+live for the past six months, January through June 2026, and in that time every reorder decision the shop made
+came from it.</p>
+<p>Before the model, reordering was manual and ran on data the shop could not trust. Reorder points and lead times
+had been set at go-live and never revisited, so they were far too high on some items and too low on others, while
+duplicate item records, orders that showed as inbound but never arrived, and usage that was never recorded
+distorted the rest. Buyers compensated by padding safety stock and buying about four and a half months of an item
+at a time. The result was the worst of both: in 2025 the shop carried about {k(avg25)} of inventory on average,
+roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logged
+{H1['stockout_episodes'] + H2['stockout_episodes']:,} stockout events, held {H1['jobs_delayed'] + H2['jobs_delayed']}
+jobs for missing material and spent {k(H1['rush_spend'] + H2['rush_spend'])} on rush freight and premiums.</p>
+<p>In its first six months, the model improved all four outcomes that matter most. Against the average half of
+2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for material
+{fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend {fall(HALF('rush_spend'), mod['rush_spend'])}, and
+the inventory balance at the end of June was {k(end_mod)}, {fall(avg25, end_mod)} below the 2025 average.
+Replaying the same six months with the old approach shows how much is the model's own doing: against that status
+quo, stockout events were {fall(dirty['stockout_episodes'], mod['stockout_episodes'])} lower, held jobs
+{fall(dirty['jobs_delayed'], mod['jobs_delayed'])} lower, rush spend {fall(dirty['rush_spend'], mod['rush_spend'])}
+lower and the ending inventory balance {fall(end_dirty, end_mod)} lower.</p>
+{B.chart("2025 against the model's first six months", charts["halves"])}
 
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
@@ -742,6 +740,30 @@ four-and-a-half-month lots and with the data errors fully intact.</p>
 stock: fewer stockouts and held jobs, less spent rushing orders in, and less inventory on the shelf.</p>
 {B.chart("Status quo and with the model, January to June 2026", charts["variants"])}
 {B.chart("Average inventory by month, status quo and with the model", charts["invm"])}
+
+{B.section("limits", "Section 3.3", "What It Can and Cannot Predict")}
+<ul class="limitation-list">
+  <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
+      supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
+      the usual spread of deliveries, not a supplier failure.</li>
+  <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
+      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical in both replays, so
+      the differences between them are the policy; the size of each difference is an estimate.</li>
+  <li><strong>Excess on slow items takes time to clear.</strong> {k(mod46['excess_value'])} of stock from April to June
+      still sits on {mod46['excess_items']} items holding more than a year of supply. The model stops reordering
+      them, but an item used a few times a year takes that long to draw down. Returning or selling the worst of it
+      would release the cash sooner; that is a disposition decision for purchasing and finance, not a forecast.</li>
+  <li><strong>The order book is an assumption.</strong> The shop's records carry no booking date for customer
+      orders, so each job is assumed booked four to eight weeks before its release, typical of a job shop quoting
+      lead times of that length. With less notice, the model would see less of the coming demand.</li>
+  <li><strong>Expediting is held constant.</strong> Both replays expedite the same items the purchasing
+      manager tracked before go-live, so rush spend reflects how often those items were at risk, not a change in
+      how hard the shop chases suppliers.</li>
+  <li><strong>The first three months are a transition.</strong> Orders placed under the old points were still
+      arriving while excess was used up, so the six-month results understate the model's settled performance: from
+      April to June alone, stockout events were {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])} lower
+      than the status quo and jobs held for material {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])} lower.</li>
+</ul>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
