@@ -171,26 +171,26 @@ PAIR = [("dirty", "Without the model"), ("model", "With the model")]
 
 
 def chart_variants():
-    """The same 1H26 demand three ways, in steady state (months 4 to 6)."""
+    """Status quo against the model on the same 1H26 demand: the four headline measures."""
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 3, figsize=(B.CHART_W, 3.3))
-    names = ["Without\nthe model", "With\nthe model"]
+    fig, axes = plt.subplots(1, 4, figsize=(B.CHART_W, 3.3))
+    names = ["Status\nquo", "With the\nmodel"]
     cols = [MED_GREY, DARK_BLUE]
-    vals = [M46[v] for v, _ in PAIR]
-    panels = [("Stockout events", [x["stockout_episodes"] for x in vals], "{:,.0f}", False),
-              ("Jobs held for material", [x["jobs_delayed"] for x in vals], "{:,.0f}", False),
-              ("Rush spend ($000)", [x["rush_spend"] / 1000 for x in vals], "${:,.0f}K", False)]
-    for ax, (title, v, fmt, zoom) in zip(axes, panels):
-        bars = ax.bar(names, v, color=cols, width=0.62)
-        lo = min(v) - 3 if zoom else 0
-        for b, x in zip(bars, v):
-            ax.text(b.get_x() + b.get_width() / 2, x + (max(v) - lo) * 0.02, fmt.format(x), ha="center", fontsize=9, fontweight="bold")
-        if zoom:
-            ax.axhline(98, color=GREEN, linewidth=1, linestyle="--"); ax.text(-0.45, 98.15, "target 98%", fontsize=8, color=GREEN, ha="left", va="bottom")
-        ax.set_title(title, fontsize=10, color=DARK_GREY, pad=8)
-        ax.set_ylim(lo, max(v) + (max(v) - lo) * 0.18); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8.5)
+    d_, m_ = F["dirty"], F["model"]
+    panels = [("Stockout events", d_["stockout_episodes"], m_["stockout_episodes"], "{:,.0f}"),
+              ("Jobs held for material", d_["jobs_delayed"], m_["jobs_delayed"], "{:,.0f}"),
+              ("Rush spend ($000)", d_["rush_spend"] / 1000, m_["rush_spend"] / 1000, "${:,.0f}K"),
+              ("Ending inventory ($M)", d_["end_inventory_value"] / 1e6, m_["end_inventory_value"] / 1e6, "${:,.2f}M")]
+    for ax, (title, a_, b_, fmt) in zip(axes, panels):
+        bars = ax.bar(names, [a_, b_], color=cols, width=0.6)
+        ax.text(bars[0].get_x() + bars[0].get_width() / 2, a_ * 1.02, fmt.format(a_), ha="center", fontsize=8.5,
+                fontweight="bold")
+        ax.text(bars[1].get_x() + bars[1].get_width() / 2, b_ * 1.02,
+                fmt.format(b_) + f"\n({(b_ - a_) / a_ * 100:+.0f}%)", ha="center", fontsize=8.5, fontweight="bold")
+        ax.set_title(title, fontsize=9.5, color=DARK_GREY, pad=8)
+        ax.set_ylim(0, max(a_, b_) * 1.3); ax.set_yticks([]); ax.tick_params(axis="x", labelsize=8.5)
         B.chart_style(ax)
-    fig.tight_layout(w_pad=2.0)
+    fig.tight_layout(w_pad=1.6)
     return B.b64(fig)
 
 
@@ -738,11 +738,9 @@ status quo scenario assumes the shop operated
 in 1H 2026 as it did throughout 2025, including with stale lead times and reorder points, the buyers'
 four-and-a-half-month lots and with the data errors fully intact.</p>
 {compare_table(F)}
-<p>The model improves results across the board. Against the status quo, stockout events fell by
-{dirty['stockout_episodes'] - mod['stockout_episodes']:,} ({fall(dirty['stockout_episodes'], mod['stockout_episodes'])}),
-jobs held for material by {dirty['jobs_delayed'] - mod['jobs_delayed']:,} ({fall(dirty['jobs_delayed'], mod['jobs_delayed'])}),
-rush spend by {k(dirty['rush_spend'] - mod['rush_spend'])} ({fall(dirty['rush_spend'], mod['rush_spend'])}), and the
-ending inventory balance by {k(end_dirty - end_mod)} ({fall(end_dirty, end_mod)}).</p>
+<p>The model improves results across the board, underscoring its effectiveness at keeping the right items in
+stock: fewer stockouts and held jobs, less spent rushing orders in, and less inventory on the shelf.</p>
+{B.chart("Status quo and with the model, January to June 2026", charts["variants"])}
 {B.chart("Average inventory by month, without and with the model", charts["invm"])}
 """
 
