@@ -290,7 +290,7 @@ def compare_table(window):
         ("Purchases", lambda x: money(x["purchases"]), lambda: chg_(d_["purchases"], m_["purchases"])),
     ]
     rows = [[label, fn(d_), fn(m_), ch()] for label, fn, ch in spec]
-    return widths(B.data_table(["Measure", "Without the model", "With the model", "Change"], rows, right=[1, 2, 3]),
+    return widths(B.data_table(["Measure", "Status quo", "With the model", "Change"], rows, right=[1, 2, 3]),
                   [40, 21, 21, 18])
 
 
