@@ -726,16 +726,17 @@ those {n_weeks} weekly refreshes it made {n_scored:,} predictions: <strong>{stat
 a short, ranked list for the buyers to work through.</p>
 {B.chart("Predictions by Reorder Action, January to June 2026", charts["actions"])}
 {B.chart("Average Weekly Predictions by Reorder Action, by Month", charts["actions_m"])}
-<p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
-before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
-{halves_table()}
 
 {B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
 <p>The model was chosen and calibrated before go-live on a held-out year of 2025, which it had not seen during
 training. Three candidate algorithms were tuned and compared on their forecasts for that year, and the
 {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model, with the lowest error, was selected. Every
-other result in this section measures how the model then performed in live use, from January to June 2026.</p>
+other result in this section measures how the model then performed in live use, from January to June 2026,
+against how the shop performed before it.</p>
 {candidate_table()}
+<p>The table below compares the model's performance in the first half of 2026 to the performance of the shop
+before the model when reordering decisions were done manually (showing both half-year periods of 2025).</p>
+{halves_table()}
 <p>To measure what the model changed, the same January to June 2026 demand and supplier deliveries were replayed
 twice: once with the shop's manual reordering continued (its stale lead times and reorder points, the buyers'
 four-and-a-half-month lots and the data errors), and once with the model setting reorder points and order
