@@ -733,7 +733,8 @@ algorithms were tuned and compared on their forecasts for that year, and the
 {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model, with the lowest error, was selected.</p>
 {candidate_table()}
 <p>To understand how well the model performed against baseline, we'll compare the model's performance in the
-1H 2026 to the same period of time under a status quo scenario. This status quo scenario assumes the shop operated
+1H 2026 to the same period of time under a status quo scenario where the shop did not use the model. This
+status quo scenario assumes the shop operated
 in 1H 2026 as it did throughout 2025, including with stale lead times and reorder points, the buyers'
 four-and-a-half-month lots and with the data errors fully intact.</p>
 {compare_table(F)}
