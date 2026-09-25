@@ -459,7 +459,7 @@ FLOW_HTML = (
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
     '<div style="font-weight:700;color:#322B4B;margin-bottom:6px;">2. What it predicts</div>'
-    '<div style="font-size:16px;line-height:1.55;">Every Monday, one forecast per item: how many units the shop will use '
+    '<div style="font-size:16px;line-height:1.55;">Every week, one forecast per item: how many units the shop will use '
     'before a new order placed today could arrive.</div></div>'
     '<div style="align-self:center;font-size:26px;color:#8093A4;padding:0 12px;">&rarr;</div>'
     '<div style="flex:1;min-width:190px;background:#F3F5F7;border-radius:8px;padding:16px 18px;border-top:4px solid #381FA1;">'
