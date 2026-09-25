@@ -521,12 +521,13 @@ directly into the ERP for each of the {n_items:,} stocked items. The model's reo
 current stock on hand and on order for each item, the forecasted consumption over each supplier's delivery time,
 and a safety buffer based on how unpredictable each part's demand and deliveries have been.</p>
 {FLOW_HTML}
-<p>The model refreshes its forecasts every Monday and is retrained on the latest history once a month. The
+<p>The model refreshes its forecasts every week and is retrained on the latest history once a month. The
 model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
 to order. To keep working capital low, the recommendations for how much to order are informed by the item's cost:
 expensive items are bought every few weeks in small lots, and cheap items a few times a year in larger lots.</p>
 <p>The ERP's reorder queue ranks every stocked item against the model's weekly reorder point: items at or below it
-are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items outside of it "OK". Each line also
+are marked "ORDER NOW", items within two weeks of it "ORDER SOON", and items more than two weeks outside of
+it "OK". Each line also
 shows the part's criticality, the stock on hand, allocated to released jobs and on order, the forecast, the safety
 stock and the suggested order quantity, as seen in the screenshot of the ERP system below:</p>
 <div class="chart-wrap" style="padding:6px;">
