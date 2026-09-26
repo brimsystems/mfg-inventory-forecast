@@ -41,6 +41,7 @@ attrs = pd.read_parquet(MARTS / "item_attributes.parquet").set_index("canonical_
 weekly = pd.read_parquet(MARTS / "consumption_weekly.parquet")
 
 WIN = metrics["winner"]
+N_TRIALS = 12          # Optuna trials per candidate (forward_policy.N_TRIALS)
 LABEL = {"Linear": "Linear regression (ridge)", "RandomForest": "Random forest", "XGBoost": "XGBoost"}
 SEG_ORDER = ["smooth", "erratic", "lumpy", "intermittent"]
 TIERS = [("line", "Production items"), ("service", "Spare parts"), ("standard", "Shop supplies")]
@@ -348,7 +349,7 @@ def candidate_table():
         r = metrics["candidates"][c]
         sel = c == WIN
         tick = f' <span style="color:{GREEN};font-weight:700;">&#10004; Selected</span>' if sel else ""
-        bg = f' style="background:{B.BG_GREY};font-weight:700;"' if sel else ""
+        bg = ' style="font-weight:700;"' if sel else ""
         params = ", ".join(f"{k} {v:.3g}" if isinstance(v, float) else f"{k} {v}" for k, v in r["params"].items())
         rows += (f'<tr{bg}><td>{LABEL[c]}{tick}</td><td style="text-align:right;">{pct(r["val_wape"])}</td>'
                  f'<td style="text-align:right;">{pct(r["test_wape"])}</td><td style="font-size:12.5px;">{params}</td></tr>')
@@ -463,7 +464,7 @@ body = f"""
   <div><div class="mc-label">Target</div><div class="mc-value">Units an item will use over its supplier lead time, from the forecast date</div></div>
   <div><div class="mc-label">Prediction Type</div><div class="mc-value">Regression on log(1 + usage), one forecast per item per week</div></div>
   <div><div class="mc-label">Features</div><div class="mc-value">{len(FEAT_DESC)} (rolling usage, calendar, item attributes)</div></div>
-  <div><div class="mc-label">Tuning</div><div class="mc-value">Optuna, {12} trials per candidate, validation WAPE objective</div></div>
+  <div><div class="mc-label">Tuning</div><div class="mc-value">Optuna, {N_TRIALS} trials per candidate, validation WAPE objective</div></div>
   <div><div class="mc-label">Cadence</div><div class="mc-value">Refreshed every Monday; retrained monthly</div></div>
   <div><div class="mc-label">Outputs</div><div class="mc-value">Reorder point and order quantity per item, loaded into the ERP</div></div>
   <div><div class="mc-label">Held-out 2025 WAPE</div><div class="mc-value">{pct(test_w)} (best simple method {pct(metrics['overall']['baseline'])})</div></div>
@@ -523,14 +524,15 @@ distribution is stable across the three splits, as shown below.</p>
 
 {B.section("selection", "Section 3.1", "Model Selection")}
 <p>Three candidates, a ridge regression, a random forest and an XGBoost gradient-boosted model, were each tuned
-with Optuna on the validation weeks (weighted absolute percentage error as the objective), then refit on train
-plus validation and scored once on the held-out 2025 year. The {LABEL[WIN].lower()} had the lowest validation
-error and was selected. The ridge regression, which cannot represent the zero-heavy, nonlinear relationship between
-recent usage and future usage, trails far behind.</p>
+with Optuna ({N_TRIALS} trials per model) on the validation weeks using weighted absolute percentage error (WAPE) as
+the objective. The models were then refit on train plus validation (i.e., full year 2024) and scored once on the
+held-out 2025 year. The {LABEL[WIN].lower()} had the lowest validation error and was selected.</p>
 {candidate_table()}
-<p>The selected forest has {p_.get('n_estimators')} trees with a maximum depth of {p_.get('max_depth')} and at least
-{p_.get('min_samples_leaf')} rows per leaf. The leaf-size floor keeps each tree from fitting individual spikes,
-which matters for lumpy items whose occasional large draws would otherwise be memorised.</p>
+<p>The best {LABEL[WIN].lower()} model has {p_.get('n_estimators')} trees with a maximum depth of
+{p_.get('max_depth')} and at least {p_.get('min_samples_leaf')} rows per leaf. The relatively large leaf-size floor
+keeps each tree from fitting individual spikes: every prediction averages at least {p_.get('min_samples_leaf')}
+similar training rows, so the model learns typical usage for items in similar situations rather than memorising
+one-off outliers.</p>
 
 {B.section("performance", "Section 3.2", "Model Performance")}
 <p>Accuracy is measured as weighted absolute percentage error (WAPE): the total absolute gap between forecast and
