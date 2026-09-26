@@ -131,8 +131,9 @@ above their 2025 levels (Investigate).</p>
 
 <div class="section-title-block sub" id="drift"><div class="section-label">Section 2.2</div><h2 class="section-title">Drift</h2></div>
 <p>Drift compares each month's data with a fixed reference calculated using the Jensen-Shannon distance, flagged at
-0.10. In other words, it checks for statistical similarity: whether this month's values fall across the
-same ranges, in similar proportions, as the reference, where 0 means the two are identical and 1 means they do not
+0.10. This calculation checks for statistical similarity: whether this month's values fall across the
+same ranges, in similar proportions, as the reference data (the 2024 training data for usage and features, and the
+held-out 2025 forecasts for the model's forecasts), where 0 means the two are identical and 1 means they do not
 overlap at all. It is checked three ways: on the targets (lead-time usage), on the model's forecasts, and on the
 model's features.</p>
 <p><strong>Target drift.</strong> Distance between each month's actual lead-time usage and the training rows. A
