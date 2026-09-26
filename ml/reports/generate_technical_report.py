@@ -348,7 +348,7 @@ def feature_table():
 def split_table():
     rows = [[name, split[k]["window"].replace(" to ", " to "), f"{split[k]['rows']:,}", f"{split[k]['items']:,}",
              f"{split[k]['target_median']:,.0f}", pct(split[k]["zero_share"], 0)]
-            for name, k in [("Train", "train"), ("Validation", "validation"), ("Held-out test", "test")]]
+            for name, k in [("Train", "train"), ("Validation", "validation"), ("Test", "test")]]
     rows.append(["Live", "2026-01-01 to 2026-06-29", f"{len(live):,}", f"{live['item'].nunique():,}",
                  f"{live['actual'].median():,.0f}", pct((live['actual'] == 0).mean(), 0)])
     return widths(B.data_table(["Split", "Forecast dates", "Forecasts", "Items", "Median target (units)", "Zero-usage share"],
@@ -508,7 +508,7 @@ model testing, because the bias correction for each demand pattern and the safet
 its errors, and both need a full year to reflect the seasonal demand of certain items.</p>
 <p>The first six months of 2026 are the model's live output. In live use the model is retrained monthly on every
 forecast date whose outcome is already known, which by June 2026 spans 2024 through early 2026. Because 2025 serves
-both to calibrate the policy and to report held-out accuracy, the fully out-of-sample test is the live performance
+both to calibrate the model and to report held-out accuracy, the fully out-of-sample test is the live performance
 from January to June 2026.</p>
 {split_table()}
 {B.chart("Weekly Usage by Split", charts["volume"])}
