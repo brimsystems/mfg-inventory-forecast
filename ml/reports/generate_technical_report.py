@@ -594,9 +594,8 @@ level and demand pattern already capture most of what distinguishes the categori
 
 {B.section("policy", "Section 5", "From Forecast to Reorder Decision")}
 <p>The model makes one prediction: the usage forecast, how many units each item will use over its supplier lead
-time. The reorder point and order quantity are not forecasts; they are decisions calculated from that usage forecast.
-Each week, for each item, the reorder policy turns the usage forecast into a reorder point and an order quantity
-using the rules below.</p>
+time. The reorder point and order quantity presented in the ERP are then calculated from that usage forecast using
+the rules below.</p>
 {policy_table()}
 <p><strong>Bias correction.</strong> Trained on log usage, the model's back-transformed forecasts estimate the
 median rather than the mean, so they run low, most of all for intermittent items. Each pattern's forecasts are then
