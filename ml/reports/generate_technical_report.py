@@ -543,9 +543,7 @@ held-out 2025 year. The {LABEL[WIN].lower()} had the lowest validation error and
 {candidate_table()}
 <p>The best {LABEL[WIN].lower()} model has {p_.get('n_estimators')} trees with a maximum depth of
 {p_.get('max_depth')} and at least {p_.get('min_samples_leaf')} rows per leaf. The relatively large leaf-size floor
-keeps each tree from fitting individual spikes: every prediction averages at least {p_.get('min_samples_leaf')}
-similar training rows, so the model learns typical usage for items in similar situations rather than memorising
-one-off outliers.</p>
+keeps the model from fitting individual spikes and instead learning the items' typical usage patterns.</p>
 
 {B.section("performance", "Section 3.2", "Model Performance")}
 <p>Accuracy is measured as WAPE: the total absolute gap between forecast and actual usage across all forecasts,
