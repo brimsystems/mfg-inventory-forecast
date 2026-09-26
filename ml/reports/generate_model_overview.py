@@ -742,23 +742,12 @@ stock: fewer stockouts and held jobs, less spent rushing orders in, and less inv
   <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
       supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
       the usual spread of deliveries, not a supplier failure.</li>
-  <li><strong>The forward window is a simulation.</strong> The six months are replayed from the generated demand
-      and supplier behaviour, not observed. Demand, deliveries and the forecast are identical in both replays, so
-      the differences between them are the policy; the size of each difference is an estimate.</li>
-  <li><strong>Excess on slow items takes time to clear.</strong> {k(mod46['excess_value'])} of stock from April to June
-      still sits on {mod46['excess_items']} items holding more than a year of supply. The model stops reordering
-      them, but an item used a few times a year takes that long to draw down. Returning or selling the worst of it
-      would release the cash sooner; that is a disposition decision for purchasing and finance, not a forecast.</li>
   <li><strong>The order book is an assumption.</strong> The shop's records carry no booking date for customer
       orders, so each job is assumed booked four to eight weeks before its release, typical of a job shop quoting
       lead times of that length. With less notice, the model would see less of the coming demand.</li>
   <li><strong>Expediting is held constant.</strong> Both replays expedite the same items the purchasing
       manager tracked before go-live, so rush spend reflects how often those items were at risk, not a change in
       how hard the shop chases suppliers.</li>
-  <li><strong>The first three months are a transition.</strong> Orders placed under the old points were still
-      arriving while excess was used up, so the six-month results understate the model's settled performance: from
-      April to June alone, stockout events were {fall(dirty46['stockout_episodes'], mod46['stockout_episodes'])} lower
-      than the status quo and jobs held for material {fall(dirty46['jobs_delayed'], mod46['jobs_delayed'])} lower.</li>
 </ul>
 """
 
