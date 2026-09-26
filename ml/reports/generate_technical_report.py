@@ -576,7 +576,7 @@ in both periods.</p>
 <p>Plotted against actual usage on log scales, the live forecasts cluster around the diagonal across four orders
 of magnitude, meaning the same model tracks items that use a handful of units per lead time as well as those that use
 thousands, rather than working only for high- or low-volume items. The spread around the diagonal is the item-level
-error that the safety buffer has to absorb.</p>
+error that the safety buffer absorbs.</p>
 <div style="max-width:520px;margin:18px auto;">{B.chart("Forecast vs Actual Usage, Live 1H 2026", charts["pva"])}</div>
 
 {B.section("shap", "Section 4", "Feature Importance (SHAP)")}
