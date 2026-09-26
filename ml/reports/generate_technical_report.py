@@ -472,28 +472,23 @@ body = f"""
 </div></div>
 
 {B.section("data", "Section 2", "Training Data")}
-<p>The model learns from the shop's weekly usage of each of its {attrs.shape[0]:,} stocked items: items backflushed
-to production jobs, issued to spare-parts orders and pulled by hand, recorded in the ERP and cleaned by the data
-quality audit (duplicate records merged, unrecorded usage restored, keying errors corrected). Each training row is
-one item on one forecast date. Its features describe the item's usage up to that date, and its target is the
+<p>The model learns from the shop's weekly usage of each of its {attrs.shape[0]:,} stocked items. Each training row
+is one item on one forecast date. Its features describe the item's usage up to that date, and its target is the
 usage over the following lead time, rounded to whole weeks. Because lead times run from a few weeks to a few
 months, the target covers a different window for each item, and the lead time (<code>h</code>) is itself a
 feature.</p>
-<p>The split is by forecast date and never shuffled: a forecast is only trained on rows whose target window closed
-before the next split begins, so no future usage leaks into training. The first 52 weeks of history are used only
-to build the rolling features. The 2025 year is held out entirely for model selection and calibration, and the
-January to June 2026 forecasts are the model's live output.</p>
-<p>The windows follow from the history available. Usage data begins in January 2023, and every forecast needs a
-full year of history behind it, so the first usable forecast date is January 2024. That left two years of forecast
-dates before go-live. The 2025 year is held out whole because it does more than score the candidates: the bias
-correction for each demand pattern and the safety-buffer multiples are calibrated on its errors, and both need a
-full seasonal cycle rather than half of one. That leaves 2024 for tuning, split into a January to June training
+<p>The historical data is split by date and never shuffled. The first 52 weeks of history (through 2023) are used
+only to build the rolling features, because every forecast needs a full year of history behind it, so the first
+usable forecast date is January 2024. The 2024 data was used for tuning, split into a January to June training
 window and a July to December validation window on which the three candidates were compared. Once the winner was
-chosen, it was refit on all of 2024 before being scored on 2025, so the six-month training window applies only to
-the comparison of candidates. In live use the model is retrained monthly on every forecast date whose outcome is
-already known, which by June 2026 spans 2024 through early 2026. Because 2025 serves both to calibrate the policy
-and to report held-out accuracy, the fully out-of-sample test is the live performance from January to June
-2026.</p>
+chosen, it was refit on all of 2024 before being scored on 2025 data. We chose to use the full 2025 year of data for
+model testing, because the bias correction for each demand pattern and the safety-buffer multiples are calibrated on
+its errors, and both need a full seasonal cycle rather than half of one to reflect the seasonal demand of certain
+items.</p>
+<p>The first six months of 2026 are the model's live output. In live use the model is retrained monthly on every
+forecast date whose outcome is already known, which by June 2026 spans 2024 through early 2026. Because 2025 serves
+both to calibrate the policy and to report held-out accuracy, the fully out-of-sample test is the live performance
+from January to June 2026.</p>
 {split_table()}
 {B.chart("Weekly Usage by Split", charts["volume"])}
 <p>The {len(FEAT_DESC)} features fall into three groups. Rolling usage windows (4, 13, 26 and 52 weeks), the count of
