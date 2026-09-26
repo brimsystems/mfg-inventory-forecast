@@ -535,13 +535,11 @@ similar training rows, so the model learns typical usage for items in similar si
 one-off outliers.</p>
 
 {B.section("performance", "Section 3.2", "Model Performance")}
-<p>Accuracy is measured as weighted absolute percentage error (WAPE): the total absolute gap between forecast and
-actual usage across all forecasts, divided by total actual usage. Unlike a mean of percentage errors, it stays
-defined for items with zero usage in a window and weights each item by its volume. Results are shown for the
-validation weeks used in tuning, the held-out 2025 year used for selection and calibration, and the live January to
-June 2026 forecasts, which are the honest test of the model in use. The reorder points use the bias-corrected forecast
-(Section 5), which trades a little accuracy ({pct(test_w)} to {pct(test_w_c)} on the held-out year) for forecasts
-that do not run systematically low.</p>
+<p>Accuracy is measured as WAPE: the total absolute gap between forecast and actual usage across all forecasts,
+divided by total actual usage. Results are shown for the validation weeks used in tuning, the held-out 2025 year
+used for selection and calibration, and the live January to June 2026 forecasts, which are the honest test of the
+model in use. The reorder points use the bias-corrected forecast (Section 5), which trades a little accuracy
+({pct(test_w)} to {pct(test_w_c)} on the held-out year) for forecasts that do not run systematically low.</p>
 {metrics_table()}
 <p>A live WAPE of {pct(live_w, 0)} means that for every 100 units an item used over its lead time, the forecast was
 off by about {live_w * 100:.0f} units in either direction. That is typical for item-level forecasts of lumpy,
