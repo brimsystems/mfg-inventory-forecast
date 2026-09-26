@@ -498,9 +498,7 @@ body = f"""
 {B.section("data", "Section 2", "Training Data")}
 <p>The model learns from the shop's weekly usage of each of its {attrs.shape[0]:,} stocked items. Each training row
 is one item on one forecast date. Its features describe the item's usage up to that date, and its target is the
-usage over the following lead time, rounded to whole weeks. Because lead times run from a few weeks to a few
-months, the target covers a different window for each item, and the lead time (<code>h</code>) is itself a
-feature.</p>
+usage over the following lead time, rounded to whole weeks.</p>
 <p>The historical data is split by date and never shuffled. The first 52 weeks of history (through 2023) are used
 only to build the rolling features, because every forecast needs a full year of history behind it, so the first
 usable forecast date is January 2024. The 2024 data was used for tuning, split into a January to June training
