@@ -600,8 +600,9 @@ Each week, for each item, the reorder policy turns the usage forecast into a reo
 using the rules below.</p>
 {policy_table()}
 <p><strong>Bias correction.</strong> Trained on log usage, the model's back-transformed forecasts estimate the
-median rather than the mean, so they run low, most of all for intermittent items. Each pattern's forecasts are
-scaled by the ratio of actual to forecast usage in the held-out 2025 year. The correction holds up in live use.</p>
+median rather than the mean, so they run low, most of all for intermittent items. Each pattern's forecasts are then
+scaled by the ratio of actual to forecast usage in the held-out 2025 year. This correction removes almost all of the
+systematic under-forecasting in live use, as shown below.</p>
 {bias_table()}
 <p><strong>Safety buffer.</strong> The buffer is k standard errors of the item's own forecast error, where the
 error combines the forecast's miss over the lead time with the variability of the supplier's delivery time. Two
