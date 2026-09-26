@@ -189,7 +189,7 @@ error that the safety buffer has to absorb.</p>
 
 <div class="section-title-block" id="shap"><div class="section-label">Section 4</div><h2 class="section-title">Feature Importance (SHAP)</h2></div>
 <p>SHAP values measure each feature's average contribution to a forecast, here on a sample of the held-out 2025
-forecasts and in units of log usage. The model leans most on usage in the same weeks last year, supplier lead time (days) and usage, last 13 weeks. Last year's usage
+forecasts and in units of log usage. The model leans most on usage in the same weeks last year, supplier lead time and the last 13 weeks of usage. Last year's usage
 over the same weeks is by far the strongest, because it is the only feature measured over exactly the window being
 forecast: the same number of weeks as the item's lead time, at the same time of year. Every other usage feature
 covers a fixed span (4, 13, 26 or 52 weeks) that the model has to rescale to the lead time, so last year's figure is

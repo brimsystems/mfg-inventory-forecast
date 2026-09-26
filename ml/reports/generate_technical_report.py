@@ -442,7 +442,12 @@ charts = {"volume": chart_volume(), "target": chart_target(), "corr": chart_corr
           "shap": chart_shap(), "loss": chart_loss(), "lots": chart_lots(), "coverage": chart_coverage()}
 
 p_ = metrics["candidates"][WIN]["params"]
-top3 = [FEAT_DESC.get(f, (f, ""))[0].lower() for f in imp["feature"].head(3)]
+PROSE = {"ly": "usage in the same weeks last year", "lead": "supplier lead time", "h": "the forecast horizon",
+         "s4": "the last 4 weeks of usage", "s13": "the last 13 weeks of usage", "s26": "the last 26 weeks of usage",
+         "s52": "the last 52 weeks of usage", "annual": "annual usage", "mean_all": "average weekly usage",
+         "seg_code": "the demand pattern", "nz13": "the weeks with usage in the last 13",
+         "since_nz": "the weeks since last usage", "std_cost": "unit cost"}
+top3 = [PROSE.get(f, FEAT_DESC.get(f, (f, ""))[0].lower()) for f in imp["feature"].head(3)]
 k_emp = {}
 zs = z_err.to_numpy()
 for kk in [1.0, 2.0, 3.0]:
