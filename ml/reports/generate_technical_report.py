@@ -400,8 +400,12 @@ def policy_table():
         ["Fill-rate targets", f"Production items {tgt(FT['line'])}, spare parts {tgt(FT['service'])}, shop supplies {tgt(FT['standard'])}"],
         ["Safety buffer", "k &times; &sigma;, with k the smallest multiple whose expected shortfall per cycle, on the "
                           "model's own error distribution, fits (1 - fill target) &times; order quantity"],
-        ["Forecast error &sigma;", "Each item's own 2025 forecast error, scaled to its lead time and reduced for the "
-                                    "share of demand visible on booked jobs; plus delivery-time variability"],
+        ["&sigma; (uncertainty, in units)", "The typical size of the gap between the usage forecast and actual usage "
+                                    "over the item's lead time (one standard deviation): &radic;(forecast error&sup2; + "
+                                    "(daily usage &times; lead-time standard deviation)&sup2;). The forecast error is the "
+                                    "standard deviation of the item's own 2025 forecast misses, scaled to its lead time "
+                                    "and reduced for the share of demand visible on booked jobs; the second term is the "
+                                    "variability of the supplier's delivery time"],
         ["Order-book visibility", f"Released jobs about {sched['mrp_visibility_days']:.0f} days ahead; booked jobs about "
                                   f"{sched['model_visibility_days']:.0f} days ahead"],
         ["Order quantity", f"Economic lot: &radic;(2 &times; annual usage &times; ${sched['order_line_cost']:.0f} per order line "
@@ -590,8 +594,10 @@ most of what distinguishes the categories.</p>
 {B.chart("Mean Absolute SHAP Value by Feature", charts["shap"])}
 
 {B.section("policy", "Section 5", "From Forecast to Reorder Decision")}
-<p>The forecast is one input to the reorder decision. Each week, for each item, the policy turns it into a reorder
-point and an order quantity using the rules below.</p>
+<p>The model makes one prediction: the usage forecast, how many units each item will use over its supplier lead
+time. The reorder point and order quantity are not forecasts; they are decisions calculated from that usage forecast.
+Each week, for each item, the reorder policy turns the usage forecast into a reorder point and an order quantity
+using the rules below.</p>
 {policy_table()}
 <p><strong>Bias correction.</strong> Trained on log usage, the model's back-transformed forecasts estimate the
 median rather than the mean, so they run low, most of all for intermittent items. Each pattern's forecasts are
