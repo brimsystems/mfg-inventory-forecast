@@ -500,14 +500,23 @@ be trusted, and the cost, value class and category how similar items tend to beh
 presented are calculated as Spearman rank correlations on the training rows, which suit the skewed, zero-heavy
 usage.</p>
 {feature_table()}
-<p>The rolling usage windows are strongly correlated with one another, since they overlap in time. Tree ensembles
-handle this well: correlated features compete for the same splits, which affects how importance is shared between
-them rather than the accuracy of the forecast. The weeks-since-last-usage and variability features move against
-the usage windows, as expected for intermittent items.</p>
+<p>The rolling usage windows are strongly correlated with one another, since they overlap in time. The
+weeks-since-last-usage and variability features move against the usage windows, as expected for intermittent items.
+Some features are near-duplicates: the 52-week window and the all-history average ({cmat.loc['s52', 'mean_all']:+.2f}),
+lead time and forecast horizon ({cmat.loc['lead', 'h']:+.2f}, since the horizon is the lead time in weeks), and annual
+usage and the long windows (about {cmat.loc['s52', 'annual']:+.2f}). A random forest's accuracy is unaffected by this;
+duplicate features simply share the importance between them. Unit cost runs against usage
+({cmat.loc['std_cost', 's13']:+.2f} to {cmat.loc['std_cost', 'mean_all']:+.2f}), because expensive items are used in
+smaller quantities. Lead time is unrelated to usage level ({cmat.loc['lead', 's52']:+.2f}) but correlates
+{cmat.loc['lead', 'ly']:+.2f} with last year's usage over the same weeks, because that figure is summed over a
+lead-time-long window and so captures both the item's level and the length of the window being forecast. Last
+year's usage correlates only {cmat.loc['s52', 'ly']:+.2f} with the 52-week total, so its timing adds information
+beyond the average level.</p>
 {B.chart("Feature Correlation Heatmap (numeric features, Spearman)", charts["corr"])}
 <p>The target is heavily right-skewed: most lead-time windows use a few dozen units, while fasteners and
-consumables run to thousands. The model is therefore trained on log(1 + usage), and its forecasts are transformed
-back before scoring. The distribution is stable across the three splits.</p>
+consumables run to thousands. The model is therefore trained on log(1 + usage), so the few very high-volume items do
+not dominate the fit and the model learns proportional patterns across items of very different sizes. This
+distribution is stable across the three splits, as shown below.</p>
 {B.chart("Target Distribution: Train / Validation / Held-out Test", charts["target"])}
 
 {B.section("modelperf", "Section 3", "Model Selection & Performance")}
