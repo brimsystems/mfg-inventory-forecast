@@ -492,7 +492,7 @@ body = f"""
   <div><div class="mc-label">Outputs</div><div class="mc-value">Reorder point and order quantity per item, loaded into the ERP</div></div>
   <div><div class="mc-label">Held-out 2025 WAPE</div><div class="mc-value">{pct(test_w)}</div></div>
   <div><div class="mc-label">Live 1H 2026 WAPE</div><div class="mc-value">{pct(live_w)}</div></div>
-  <div style="grid-column:1/-1;"><div class="mc-label">Purpose</div><div class="mc-value">Forecasts each stocked item's usage over its supplier lead time and turns it into a reorder point and order quantity for the ERP's reorder queue. Decision support for purchasing: buyers release the suggested orders.</div></div>
+  <div style="grid-column:1/-1;"><div class="mc-label">Purpose</div><div class="mc-value">Forecasts each stocked item's usage over its supplier lead time and turns it into a reorder point and order quantity for the ERP's reorder queue. Intended as decision support for reordering: buyers are required to release the suggested orders.</div></div>
 </div></div>
 
 {B.section("data", "Section 2", "Training Data")}
