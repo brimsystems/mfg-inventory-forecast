@@ -668,10 +668,9 @@ jobs held for material fell <strong>{fall(HALF('jobs_delayed'), mod['jobs_delaye
 <strong>{fall(dec_end, end_mod)}</strong> reduction, about <strong>{k(round((dec_end - end_mod) / 10000) * 10000)}</strong>,
 in inventory balance. This entire inventory reduction is a true release of working capital, freeing up significant
 cash used to run the business.</p>
-<p>The model reduced working capital in two ways. First, with more accurate and timely reads of when each item needs
-to be reordered, the shop needed less safety stock overall, sized to how unpredictable each item actually is rather
-than padded across the board, while stockouts and held jobs still fell. Second, the model sets order quantities so
-that expensive items are bought in smaller, more frequent lots, meaning fewer of them sit on the shelves.</p>
+<p>The model reduced working capital in two ways. First, through more accurate and timely reads of when each item needs to be reordered, less safety stock was
+needed to be held overall, while stockout events and held jobs still fell. Second, the model was specifically tuned
+to order expensive items in smaller, more frequent lots, meaning fewer of these items were held on shelves.</p>
 <div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
 <img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
