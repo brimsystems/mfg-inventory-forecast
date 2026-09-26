@@ -656,20 +656,22 @@ body = f"""
 time it has set every reorder decision for all {n_items:,} items the shop stocks. Every week the model forecasts how
 much of each item the shop will use before a new order could arrive, and turns that forecast into a reorder point
 and an order quantity that are loaded straight into the ERP's purchasing screen.</p>
-<p>Before the model, reordering was manual and ran on data that was messy and couldn't be trusted. Much of the
-reordering process was manual, labor-intensive and imprecise: stock levels and lead times were stale, stock on hand
-was unconfirmed and vague, safety stock was inflated, and rush orders were relied upon to compensate for
-shortfalls. The result was the shop carrying excess inventory, roughly
-{(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logging elevated stockout events,
-held jobs for missing material and rush freight spend.</p>
-<p>In its first six months, the model improved the four outcomes that matter most to production and purchasing.
-Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for
-material fell {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend fell
-{fall(HALF('rush_spend'), mod['rush_spend'])}. These outcomes were achieved alongside a
-{fall(dec_end, end_mod)} reduction, about {k(round((dec_end - end_mod) / 10000) * 10000)}, in inventory balance. The
-model reduced working capital by ordering expensive items in smaller, more frequent lots, holding off on reorders
-for items that already had more stock than they needed, and pushing back inbound orders until they were needed.
-This entire reduction is a true release of working capital, freeing up cash used to run the business.</p>
+<p>Before the model, reordering was done manually and ran on data that was messy and couldn't be trusted. Much of
+the reordering process was labor-intensive and imprecise: stock levels and lead times were stale, stock on hand was
+unverified, safety stock was inflated, and rush orders were relied upon to compensate for shortfalls. The result
+was the shop carrying excess inventory, roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of
+usage, yet still logging elevated stockout events, held jobs for missing material and rush freight spend.</p>
+<p>In its first six months, the model improved production and purchasing outcomes, including four of the most
+important. Compared to 2025, stockout events fell <strong>{fall(HALF('stockout_episodes'), mod['stockout_episodes'])}</strong>,
+jobs held for material fell <strong>{fall(HALF('jobs_delayed'), mod['jobs_delayed'])}</strong> and rush spend fell
+<strong>{fall(HALF('rush_spend'), mod['rush_spend'])}</strong>. These outcomes were achieved alongside a
+<strong>{fall(dec_end, end_mod)}</strong> reduction, about <strong>{k(round((dec_end - end_mod) / 10000) * 10000)}</strong>,
+in inventory balance. This entire inventory reduction is a true release of working capital, freeing up significant
+cash used to run the business.</p>
+<p>The model reduced working capital in two ways. First, with more accurate and timely reads of when each item needs
+to be reordered, the shop needed less safety stock overall, sized to how unpredictable each item actually is rather
+than padded across the board, while stockouts and held jobs still fell. Second, the model sets order quantities so
+that expensive items are bought in smaller, more frequent lots, meaning fewer of them sit on the shelves.</p>
 <div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
 <img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
