@@ -86,7 +86,7 @@ def chart_halves():
     panels = [("Stockout events", ["1H/2H '25\nAvg.", "1H '26"], half("stockout_episodes"), m["stockout_episodes"], "{:,.0f}"),
               ("Jobs held for material", ["1H/2H '25\nAvg.", "1H '26"], half("jobs_delayed"), m["jobs_delayed"], "{:,.0f}"),
               ("Rush spend ($000)", ["1H/2H '25\nAvg.", "1H '26"], half("rush_spend") / 1000, m["rush_spend"] / 1000, "${:,.0f}K"),
-              ("Inventory balance ($M)", ["2025\nAvg.", "June 30, '26"], avg25 / 1e6, end_mod / 1e6, "${:,.2f}M")]
+              ("Inventory balance ($M)", ["Dec 31, '25", "June 30, '26"], dec_end / 1e6, end_mod / 1e6, "${:,.2f}M")]
     for ax, (title, labels, a_, b_, fmt) in zip(axes, panels):
         bars = ax.bar(labels, [a_, b_], color=[MED_GREY, DARK_BLUE], width=0.6)
         ax.text(bars[0].get_x() + bars[0].get_width() / 2, a_ * 1.02, fmt.format(a_), ha="center", fontsize=8.5,
@@ -666,7 +666,7 @@ held jobs for missing material and rush freight spend.</p>
 Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for
 material fell {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend fell
 {fall(HALF('rush_spend'), mod['rush_spend'])}. These outcomes were achieved alongside a
-{fall(avg25, end_mod)} reduction, nearly {k(-(-(avg25 - end_mod) // 50000) * 50000)}, in inventory balance.</p>
+{fall(dec_end, end_mod)} reduction, about {k(round((dec_end - end_mod) / 10000) * 10000)}, in inventory balance.</p>
 <div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
 <img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
