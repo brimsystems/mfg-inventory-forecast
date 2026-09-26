@@ -666,7 +666,10 @@ held jobs for missing material and rush freight spend.</p>
 Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for
 material fell {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend fell
 {fall(HALF('rush_spend'), mod['rush_spend'])}. These outcomes were achieved alongside a
-{fall(dec_end, end_mod)} reduction, about {k(round((dec_end - end_mod) / 10000) * 10000)}, in inventory balance.</p>
+{fall(dec_end, end_mod)} reduction, about {k(round((dec_end - end_mod) / 10000) * 10000)}, in inventory balance. The
+model reduced working capital by ordering expensive items in smaller, more frequent lots, holding off on reorders
+for items that already had more stock than they needed, and pushing back inbound orders until they were needed.
+This entire reduction is a true release of working capital, freeing up cash used to run the business.</p>
 <div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
 <img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
