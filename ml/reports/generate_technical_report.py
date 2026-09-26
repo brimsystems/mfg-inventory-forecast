@@ -42,6 +42,8 @@ weekly = pd.read_parquet(MARTS / "consumption_weekly.parquet")
 
 WIN = metrics["winner"]
 N_TRIALS = 12          # Optuna trials per candidate (forward_policy.N_TRIALS)
+from data_source.generate import config as _GC
+SEASONAL_SHARE = _GC.SEASONAL_ITEM_SHARE
 LABEL = {"Linear": "Linear regression (ridge)", "RandomForest": "Random forest", "XGBoost": "XGBoost"}
 SEG_ORDER = ["smooth", "erratic", "lumpy", "intermittent"]
 TIERS = [("line", "Production items"), ("service", "Spare parts"), ("standard", "Shop supplies")]
@@ -570,10 +572,16 @@ error that the safety buffer has to absorb.</p>
 
 {B.section("shap", "Section 4", "Feature Importance (SHAP)")}
 <p>SHAP values measure each feature's average contribution to a forecast, here on a sample of the held-out 2025
-forecasts and in units of log usage. The model leans most on {top3[0]}, {top3[1]} and {top3[2]}. Last year's
-usage over the same weeks already spans the lead-time window, so it carries both the item's level and the length
-of the window; recent usage adjusts it, and the demand pattern tells the model how far to trust it. Calendar and
-category features contribute little, which is consistent with demand that is steady in aggregate.</p>
+forecasts and in units of log usage. The model leans most on {top3[0]}, {top3[1]} and {top3[2]}. Last year's usage
+over the same weeks is by far the strongest, because it is the only feature measured over exactly the window being
+forecast: the same number of weeks as the item's lead time, at the same time of year. Every other usage feature
+covers a fixed span (4, 13, 26 or 52 weeks) that the model has to rescale to the lead time, so last year's figure is
+the closest single stand-in for the answer. More recent usage then adjusts that starting point up or down, and the
+item's demand pattern tells the model how far to trust the recent weeks. Calendar and category features contribute
+little. About {SEASONAL_SHARE:.0%} of items are seasonal, but each peaks at its own time of year, and last year's
+same-weeks usage already carries each item's own seasonal timing; a shared week-of-year or month feature adds little
+on top of it. Category adds little for a similar reason, since cost, usage level and demand pattern already capture
+most of what distinguishes the categories.</p>
 {B.chart("Mean Absolute SHAP Value by Feature", charts["shap"])}
 
 {B.section("policy", "Section 5", "From Forecast to Reorder Decision")}
