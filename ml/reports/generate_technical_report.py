@@ -491,11 +491,14 @@ both to calibrate the policy and to report held-out accuracy, the fully out-of-s
 from January to June 2026.</p>
 {split_table()}
 {B.chart("Weekly Usage by Split", charts["volume"])}
-<p>The {len(FEAT_DESC)} features fall into three groups. Rolling usage windows (4, 13, 26 and 52 weeks), the count of
-weeks with any usage, the time since the last usage and the recent variability describe how an item has been used.
-The calendar features let the model learn seasonal patterns, and the item attributes (cost, lead time, demand
-pattern, value class and category) let a single model share what it learns across similar items. Correlations are
-Spearman rank correlations on the training rows, which suit the skewed, zero-heavy usage.</p>
+<p>The {len(FEAT_DESC)} features fall into three groups. The first is Rolling Usage, including usage windows (4, 13,
+26 and 52 weeks), the count of weeks with any usage, the time since the last usage and the recent variability. The
+second is Calendar Features, to let the model learn seasonal demand patterns. The third is Item Attributes,
+including cost, lead time, demand pattern, value class and category, to tell the model how to read each item's
+usage history: the lead time sets how long a window it is forecasting, the demand pattern how far recent usage can
+be trusted, and the cost, value class and category how similar items tend to behave. The correlation figures
+presented are calculated as Spearman rank correlations on the training rows, which suit the skewed, zero-heavy
+usage.</p>
 {feature_table()}
 <p>The rolling usage windows are strongly correlated with one another, since they overlap in time. Tree ensembles
 handle this well: correlated features compete for the same splits, which affects how importance is shared between
