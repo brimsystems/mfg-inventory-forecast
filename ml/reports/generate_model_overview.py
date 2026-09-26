@@ -726,6 +726,8 @@ a short, ranked list for the buyers to work through.</p>
 {B.chart("Average Weekly Predictions by Reorder Action, by Month", charts["actions_m"])}
 
 {B.section("accuracy", "Section 3.2", "Accuracy and Validation")}
+<p>Please see the <a href="technical_report.html">ML Model Technical Overview</a> report for more detail on the
+model's performance and validation metrics.</p>
 <p>The model was chosen and calibrated before go-live on held-out data for the full year of 2025. Three candidate
 algorithms were tuned and compared on their forecasts for that year, and the
 {CAND_LABEL[WIN].lower() if WIN != 'XGBoost' else 'XGBoost'} model, with the lowest error, was selected.</p>
