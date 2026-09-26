@@ -604,14 +604,15 @@ median rather than the mean, so they run low, most of all for intermittent items
 scaled by the ratio of actual to forecast usage in the held-out 2025 year. This correction removes almost all of the
 systematic under-forecasting in live use, as shown below.</p>
 {bias_table()}
-<p><strong>Safety buffer.</strong> The buffer is k standard errors of the item's own forecast error, where the
-error combines the forecast's miss over the lead time with the variability of the supplier's delivery time. Two
-refinements matter. First, the part of an item's demand already visible on booked production jobs carries no
-forecast error, so the error is scaled down by that share. Second, k is not taken from a normal curve. It is
-set on the model's actual 2025 errors so that the expected shortfall per replenishment cycle stays within the
-fill-rate target for the item's criticality. The errors have much fatter tails than a normal curve: at k = 2 the
-expected shortfall is {k_emp[2.0][0] / k_emp[2.0][1]:.1f} times what a normal distribution implies, and at k = 3,
-{k_emp[3.0][0] / k_emp[3.0][1]:.1f} times. Textbook multiples would leave the buffer short.</p>
+<p><strong>Safety buffer.</strong> The buffer is calculated as k standard errors of the item's own forecast
+error: k &times; &sigma;, where &sigma; combines the forecast's miss over the lead time with the variability of the
+supplier's delivery time, and k sets how many of those standard errors to hold. Two refinements are important to
+highlight here. First, the part of an item's demand already visible on booked production jobs carries no forecast
+error, so the error is scaled down by that share. Second, k is not taken from a normal curve. It is set on the
+model's actual 2025 errors so that the expected shortfall per replenishment cycle stays within the fill-rate target
+for the item's criticality group. The errors have much fatter tails than a normal curve: at k = 2 the expected
+shortfall is {k_emp[2.0][0] / k_emp[2.0][1]:.1f} times what a normal distribution implies, and at k = 3,
+{k_emp[3.0][0] / k_emp[3.0][1]:.1f} times. This is important to ensure an adequate buffer size.</p>
 {B.chart("Expected Shortfall vs Buffer Size: Actual Errors vs Normal", charts["loss"])}
 <p>Because the shortfall allowance scales with the order quantity, an item ordered in large lots needs less buffer
 (its own lot protects most of the cycle), and an item ordered often needs more.</p>
