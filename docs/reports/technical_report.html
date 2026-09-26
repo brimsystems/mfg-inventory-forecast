@@ -143,14 +143,15 @@ distribution is stable across the three splits, as shown below.</p>
 
 <div class="section-title-block sub" id="selection"><div class="section-label">Section 3.1</div><h2 class="section-title">Model Selection</h2></div>
 <p>Three candidates, a ridge regression, a random forest and an XGBoost gradient-boosted model, were each tuned
-with Optuna on the validation weeks (weighted absolute percentage error as the objective), then refit on train
-plus validation and scored once on the held-out 2025 year. The random forest had the lowest validation
-error and was selected. The ridge regression, which cannot represent the zero-heavy, nonlinear relationship between
-recent usage and future usage, trails far behind.</p>
-<table class="data-table" style="table-layout:fixed;"><colgroup><col style="width:26%;"><col style="width:16%;"><col style="width:18%;"><col style="width:40%;"></colgroup><thead><tr><th>Model</th><th style="text-align:right;">Validation WAPE</th><th style="text-align:right;">Held-out 2025 WAPE</th><th>Tuned hyperparameters</th></tr></thead><tbody><tr style="background:#F3F5F7;font-weight:700;"><td>Random forest <span style="color:#00A84C;font-weight:700;">&#10004; Selected</span></td><td style="text-align:right;">46.2%</td><td style="text-align:right;">44.1%</td><td style="font-size:12.5px;">n_estimators 400, max_depth 11, min_samples_leaf 8</td></tr><tr><td>XGBoost</td><td style="text-align:right;">46.9%</td><td style="text-align:right;">44.2%</td><td style="font-size:12.5px;">n_estimators 300, max_depth 4, learning_rate 0.0369, subsample 0.857, colsample_bytree 0.773, min_child_weight 3, reg_lambda 2.64</td></tr><tr><td>Linear regression (ridge)</td><td style="text-align:right;">88.1%</td><td style="text-align:right;">92.5%</td><td style="font-size:12.5px;">alpha 76.1</td></tr></tbody></table>
-<p>The selected forest has 400 trees with a maximum depth of 11 and at least
-8 rows per leaf. The leaf-size floor keeps each tree from fitting individual spikes,
-which matters for lumpy items whose occasional large draws would otherwise be memorised.</p>
+with Optuna (12 trials per model) on the validation weeks using weighted absolute percentage error (WAPE) as
+the objective. The models were then refit on train plus validation (i.e., full year 2024) and scored once on the
+held-out 2025 year. The random forest had the lowest validation error and was selected.</p>
+<table class="data-table" style="table-layout:fixed;"><colgroup><col style="width:26%;"><col style="width:16%;"><col style="width:18%;"><col style="width:40%;"></colgroup><thead><tr><th>Model</th><th style="text-align:right;">Validation WAPE</th><th style="text-align:right;">Held-out 2025 WAPE</th><th>Tuned hyperparameters</th></tr></thead><tbody><tr style="font-weight:700;"><td>Random forest <span style="color:#00A84C;font-weight:700;">&#10004; Selected</span></td><td style="text-align:right;">46.2%</td><td style="text-align:right;">44.1%</td><td style="font-size:12.5px;">n_estimators 400, max_depth 11, min_samples_leaf 8</td></tr><tr><td>XGBoost</td><td style="text-align:right;">46.9%</td><td style="text-align:right;">44.2%</td><td style="font-size:12.5px;">n_estimators 300, max_depth 4, learning_rate 0.0369, subsample 0.857, colsample_bytree 0.773, min_child_weight 3, reg_lambda 2.64</td></tr><tr><td>Linear regression (ridge)</td><td style="text-align:right;">88.1%</td><td style="text-align:right;">92.5%</td><td style="font-size:12.5px;">alpha 76.1</td></tr></tbody></table>
+<p>The best random forest model has 400 trees with a maximum depth of
+11 and at least 8 rows per leaf. The relatively large leaf-size floor
+keeps each tree from fitting individual spikes: every prediction averages at least 8
+similar training rows, so the model learns typical usage for items in similar situations rather than memorising
+one-off outliers.</p>
 
 <div class="section-title-block sub" id="performance"><div class="section-label">Section 3.2</div><h2 class="section-title">Model Performance</h2></div>
 <p>Accuracy is measured as weighted absolute percentage error (WAPE): the total absolute gap between forecast and
