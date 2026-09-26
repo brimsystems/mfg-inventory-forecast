@@ -616,9 +616,9 @@ shortfall is {k_emp[2.0][0] / k_emp[2.0][1]:.1f} times what a normal distributio
 quantity, an item ordered in large lots needs less buffer (its own lot protects most of the cycle), and an item
 ordered often needs more.</p>
 {B.chart("Expected Shortfall vs Buffer Size: Actual Errors vs Normal", charts["loss"])}
-<p><strong>Order quantity.</strong> Each item's lot balances the cost of placing an order line against the cost of
-holding stock. Expensive, heavily used items are ordered every few weeks, and cheap items a few times a year. The
-buyers had bought about {sched['buyer_lot_days']} days of every item at a time.</p>
+<p><strong>Order quantity.</strong> The recommended order quantity for each item, calculated from its usage
+forecast, balances the cost of placing an order line against the cost of holding stock. Expensive, heavily used items
+are ordered every few weeks, and cheap items a few times a year.</p>
 {B.chart("Order Quantity in Days of Usage, by Value Class", charts["lots"])}
 <p><strong>Coverage.</strong> In live use, actual usage over the lead time stayed within the forecast plus buffer
 in {live['covered'].mean() * 100:.0f}% of lead-time windows. The fill rate, the share of units supplied from stock,
