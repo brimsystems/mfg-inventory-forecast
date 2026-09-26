@@ -512,7 +512,7 @@ both to calibrate the model and to report held-out accuracy, the fully out-of-sa
 from January to June 2026.</p>
 {split_table()}
 {B.chart("Weekly Usage by Split", charts["volume"])}
-<p>The {len(FEAT_DESC)} features fall into three groups. The first is Rolling Usage, including usage windows (4, 13,
+<p>The model's {len(FEAT_DESC)} features fall into three groups. The first is Rolling Usage, including usage windows (4, 13,
 26 and 52 weeks), the count of weeks with any usage, the time since the last usage and the recent variability. The
 second is Calendar Features, to let the model learn seasonal demand patterns. The third is Item Attributes,
 including cost, lead time, demand pattern, value class and category, to tell the model how to read each item's
