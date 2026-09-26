@@ -661,8 +661,8 @@ the reordering process was labor-intensive and imprecise: stock levels and lead 
 unverified, safety stock was inflated, and rush orders were relied upon to compensate for shortfalls. The result
 was the shop carrying excess inventory, roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of
 usage, yet still logging elevated stockout events, held jobs for missing material and rush freight spend.</p>
-<p>In its first six months, the model improved production and purchasing outcomes, including four of the most
-important. Compared to 2025, stockout events fell <strong>{fall(HALF('stockout_episodes'), mod['stockout_episodes'])}</strong>,
+<p>In its first six months, the model improved production and purchasing outcomes across the board, including
+four of the most important. Compared to 2025, stockout events fell <strong>{fall(HALF('stockout_episodes'), mod['stockout_episodes'])}</strong>,
 jobs held for material fell <strong>{fall(HALF('jobs_delayed'), mod['jobs_delayed'])}</strong> and rush spend fell
 <strong>{fall(HALF('rush_spend'), mod['rush_spend'])}</strong>. These outcomes were achieved alongside a
 <strong>{fall(dec_end, end_mod)}</strong> reduction, about <strong>{k(round((dec_end - end_mod) / 10000) * 10000)}</strong>,
