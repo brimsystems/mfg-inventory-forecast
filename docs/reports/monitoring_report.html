@@ -79,9 +79,10 @@
 <div class="section-title-block" id="status"><div class="section-label">Section 1</div><h2 class="section-title">Status &amp; Retraining Decision</h2></div>
 <p>The demand forecasting model has been monitored monthly across its live window, January to June 2026. Forecast
 error and bias are the primary model triggers (i.e., when these fail in two consecutive months, the model must be
-retrained), while target, prediction and feature drift are leading indicators.</p>
+retrained), while target, prediction and feature drift are leading indicators. Business KPIs including fill rates,
+stockout events and jobs held are also tracked in this report.</p>
 <p>A forecast can only be scored once its lead-time window has closed, so each month is judged on accuracy once at
-least 80% of its forecasts have matured. By June 30 that covers January to April; May and June
+least 80% of its forecasts have matured. By June 30th that covers January to April; May and June
 are shown but not yet judged on accuracy.</p>
 <p>The flag reads RETRAIN RECOMMENDED. While the model is refit on new data every month as a matter of course, this
 recommendation is for a full re-tune, refreshing the bias corrections and hyperparameters on data through June. This
