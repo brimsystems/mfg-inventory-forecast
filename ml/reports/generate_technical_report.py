@@ -543,8 +543,8 @@ model in use. The reorder points use the bias-corrected forecast (Section 5), wh
 {metrics_table()}
 <p>A live WAPE of {pct(live_w, 0)} means that for every 100 units an item used over its lead time, the forecast was
 off by about {live_w * 100:.0f} units in either direction. That is typical for item-level forecasts of lumpy,
-job-driven demand, where a single job or spare-parts order can double an item's usage in a week. The errors
-largely cancel across items: total forecast usage was within {abs(live_bias) * 100:.1f}% of actual. The model's
+job-driven demand, where a single job or spare-parts order can double an item's usage in a week. <strong>The errors
+largely cancel across items: total forecast usage was within {abs(live_bias) * 100:.1f}% of actual.</strong> The model's
 gain over the best simple method ({pct(live_b, 0)}) is modest, as is usual for forecasts built from usage history
 alone. Most of the operational improvement comes from how the forecast is used, covered in Section 5.</p>
 <p>The learning curve refits the selected model on growing random shares of the training rows. The held-out error
