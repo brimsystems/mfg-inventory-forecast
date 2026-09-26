@@ -121,6 +121,17 @@ for item, entries in sched["items"].items():
         _last.append((attrs.loc[item, "abc"], e[7] / d, e[2] / d))
 lots = pd.DataFrame(_last, columns=["abc", "lot_days", "ss_days"])
 
+_m25 = pd.read_parquet(MARTS / "consumption_monthly.parquet")
+_u25 = _m25[(_m25["month"] >= "2025-01-01") & (_m25["month"] < "2026-01-01")].groupby("canonical")["consumption"].sum()
+_v = attrs.join(_u25.rename("u25")).fillna({"u25": 0})
+_v["v25"] = _v["u25"] * _v["standard_cost"]
+ABCV = _v.groupby("abc").agg(med_val=("v25", "median"), p10=("v25", lambda x: x.quantile(0.1)),
+                              med_cost=("standard_cost", "median"))
+
+
+def k_(x):
+    return f"${x / 1000:,.1f}K" if x >= 1000 else f"${x:,.0f}"
+
 
 # ── charts ──────────────────────────────────────────────────────────────────
 def chart_volume():
@@ -443,7 +454,7 @@ def ops_table():
 
 charts = {"volume": chart_volume(), "target": chart_target(), "corr": chart_corr(), "learning": chart_learning(),
           "calib": chart_calibration(), "pattern": chart_by_pattern(), "pva": chart_pred_actual(),
-          "shap": chart_shap(), "loss": chart_loss(), "lots": chart_lots(), "coverage": chart_coverage()}
+          "shap": chart_shap(), "loss": chart_loss(), "lots": chart_lots()}
 
 p_ = metrics["candidates"][WIN]["params"]
 PROSE = {"ly": "usage in the same weeks last year", "lead": "supplier lead time", "h": "the forecast horizon",
@@ -619,17 +630,14 @@ ordered often needs more.</p>
 <p><strong>Order quantity.</strong> The recommended order quantity for each item, calculated from its usage
 forecast, balances the cost of placing an order line against the cost of holding stock. Expensive, heavily used items
 are ordered every few weeks, and cheap items a few times a year.</p>
+<p>The chart below groups items by value class. The classes are set by annual usage value (units used &times; unit
+cost), not by unit price: A items are those that together make up the first 80% of usage value, B items the next 15%
+and C items the last 5%. In 2025 the typical A item used about {k_(ABCV.loc['A', 'med_val'])} of stock a year (most
+above {k_(ABCV.loc['A', 'p10'])}) at a median unit cost of ${ABCV.loc['A', 'med_cost']:,.0f}; a typical B item about
+{k_(ABCV.loc['B', 'med_val'])} a year at ${ABCV.loc['B', 'med_cost']:,.0f}; and a typical C item about
+{k_(ABCV.loc['C', 'med_val'])} a year at ${ABCV.loc['C', 'med_cost']:,.0f}. The A items, where most of the money sits,
+are bought in the smallest lots.</p>
 {B.chart("Order Quantity in Days of Usage, by Value Class", charts["lots"])}
-<p><strong>Coverage.</strong> In live use, actual usage over the lead time stayed within the forecast plus buffer
-in {live['covered'].mean() * 100:.0f}% of lead-time windows. The fill rate, the share of units supplied from stock,
-is higher, because when usage does run over, the shortfall is usually small and the next order arrives soon after.
-Achieved fill rates came in {min(FT[t] - MOD['fill_rate_by_tier'][t] for t, _ in TIERS) * 100:.1f} to
-{max(FT[t] - MOD['fill_rate_by_tier'][t] for t, _ in TIERS) * 100:.1f} points below their targets over the six
-months. The gap is widest in the first three months, while stock placed under the old reorder points was still
-being worked through; from April to June it narrows to
-{min(FT[t] - M46M['fill_rate_by_tier'][t] for t, _ in TIERS) * 100:.1f} to
-{max(FT[t] - M46M['fill_rate_by_tier'][t] for t, _ in TIERS) * 100:.1f} points.</p>
-{B.chart("Reorder-Point Coverage and Fill Rate by Criticality, Live 1H 2026", charts["coverage"])}
 
 {B.section("limits", "Section 6", "Known Limitations")}
 <ul class="limitation-list">
