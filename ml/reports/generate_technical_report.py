@@ -612,10 +612,10 @@ error, so the error is scaled down by that share. Second, k is not taken from a 
 model's actual 2025 errors so that the expected shortfall per replenishment cycle stays within the fill-rate target
 for the item's criticality group. The errors have much fatter tails than a normal curve: at k = 2 the expected
 shortfall is {k_emp[2.0][0] / k_emp[2.0][1]:.1f} times what a normal distribution implies, and at k = 3,
-{k_emp[3.0][0] / k_emp[3.0][1]:.1f} times. This is important to ensure an adequate buffer size.</p>
+{k_emp[3.0][0] / k_emp[3.0][1]:.1f} times. This is important to ensure an adequate buffer size. Because the shortfall allowance scales with the order
+quantity, an item ordered in large lots needs less buffer (its own lot protects most of the cycle), and an item
+ordered often needs more.</p>
 {B.chart("Expected Shortfall vs Buffer Size: Actual Errors vs Normal", charts["loss"])}
-<p>Because the shortfall allowance scales with the order quantity, an item ordered in large lots needs less buffer
-(its own lot protects most of the cycle), and an item ordered often needs more.</p>
 <p><strong>Order quantity.</strong> Each item's lot balances the cost of placing an order line against the cost of
 holding stock. Expensive, heavily used items are ordered every few weeks, and cheap items a few times a year. The
 buyers had bought about {sched['buyer_lot_days']} days of every item at a time.</p>
