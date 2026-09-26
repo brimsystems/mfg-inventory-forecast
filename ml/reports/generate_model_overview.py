@@ -648,7 +648,7 @@ toc = ('<a href="#summary">Executive Summary</a><hr>'
        '<a href="#performance">Model Performance</a>'
        '<a href="#scoring" class="sub">Scoring Summary</a>'
        '<a href="#accuracy" class="sub">Accuracy and Validation</a>'
-       '<a href="#limits" class="sub">What It Can and Cannot Predict</a>')
+       '<a href="#limits" class="sub">Assumptions &amp; Limitations</a>')
 
 body = f"""
 {B.section("summary", "Section 1", "Executive Summary")}
@@ -737,7 +737,7 @@ stock: fewer stockouts and held jobs, less spent rushing orders in, and less inv
 {B.chart("Status quo and with the model, January to June 2026", charts["variants"])}
 {B.chart("Average inventory by month, status quo and with the model", charts["invm"])}
 
-{B.section("limits", "Section 3.3", "What It Can and Cannot Predict")}
+{B.section("limits", "Section 3.3", "Assumptions &amp; Limitations")}
 <ul class="limitation-list">
   <li><strong>It forecasts demand, not supply.</strong> The model predicts how much the shop will use; it takes each
       supplier's lead time from its recent deliveries, refreshed monthly, and does not predict a late delivery. The buffer covers
