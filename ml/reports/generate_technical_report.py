@@ -447,7 +447,8 @@ def ops_table():
                          "rop_schedule.json &rarr; ERP reorder queue"],
         ["Retraining triggers", "Live WAPE for any demand pattern more than 5 points above its 2025 level for two "
                                 "consecutive months; corrected bias outside &plusmn;10% for a pattern; achieved fill "
-                                "rate more than 1 point below target for a criticality group"],
+                                "rate more than 1 point below target for a criticality group; stockout events or jobs "
+                                "held for material above their 1H 2026 monthly level for two consecutive months"],
     ]
     return widths(B.data_table(["Specification", "Detail"], rows), [22, 78])
 
@@ -647,8 +648,8 @@ are bought in the smallest lots.</p>
   <li><strong>Irreducible item-level error.</strong> Lumpy and intermittent demand carries randomness no model can
   learn; much of the item-level WAPE of {pct(live_w, 0)} reflects that rather than the fit.</li>
   <li><strong>Fill rate, not events.</strong> The buffer targets the share of units supplied. It does not directly
-  target the probability of a stockout event or of a job being held, which are the outcomes production feels
-  most.</li>
+  target the probability of a stockout event or of a job being held, though these important metrics are closely
+  monitored.</li>
   <li><strong>Supply is taken as given.</strong> Lead times are refreshed from recent receipts and their variability
   enters the buffer, but late deliveries are not forecast.</li>
   <li><strong>Order-book assumption.</strong> The records carry no booking date for customer orders; jobs are
