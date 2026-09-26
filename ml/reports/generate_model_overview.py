@@ -657,16 +657,17 @@ forecasts how much of each item the shop will use before a new order could arriv
 reorder point and an order quantity that are loaded straight into the ERP's purchasing screen. The model has been
 live for the past six months, January through June 2026, and in that time every reorder decision the shop has made
 came from it.</p>
-<p>Before the model, reordering was manual and ran on data that was messy and couldn't be trusted. Buyers
-compensated by padding safety stock, keeping their own spreadsheets of stock and lead times, checking the shelves by
-eye before ordering, and rushing orders in when stock ran short. The result was the shop carrying excess inventory,
-roughly {(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logging elevated stockout
-events, held jobs for missing material and rush freight spend.</p>
-<p>In its first six months, the model improved the four outcomes that matter most to keeping production running
-without tying up cash. Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])},
-jobs held for material {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend
-{fall(HALF('rush_spend'), mod['rush_spend'])}, and the inventory balance at the end of June was {k(end_mod)},
-{fall(avg25, end_mod)} below the 2025 average.</p>
+<p>Before the model, reordering was manual and ran on data that was messy and couldn't be trusted. Much of the
+process was manual, labor-intensive and imprecise: stock levels and lead times were tracked in separate
+spreadsheets, stock on hand was confirmed by walking the shelves, safety stock was set by rule of thumb, and
+shortfalls were made up with rush orders. The result was the shop carrying excess inventory, roughly
+{(H1['days_of_supply'] + H2['days_of_supply']) / 2:.0f} days of usage, yet still logging elevated stockout events,
+held jobs for missing material and rush freight spend.</p>
+<p>In its first six months, the model improved the four outcomes that matter most to production and purchasing.
+Compared to 2025, stockout events fell {fall(HALF('stockout_episodes'), mod['stockout_episodes'])}, jobs held for
+material fell {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend fell
+{fall(HALF('rush_spend'), mod['rush_spend'])}. These outcomes were achieved alongside a
+{fall(avg25, end_mod)} reduction, nearly {k(-(-(avg25 - end_mod) // 50000) * 50000)}, in inventory balance.</p>
 <div style="margin:18px 0;"><div class="chart-title" style="text-align:center;">Model Performance Summary, 2025 vs. 1H 2026</div>
 <img src="data:image/png;base64,{charts['halves']}" alt="Model Performance Summary, 2025 vs. 1H 2026" style="width:100%;height:auto;display:block;"></div>
 
