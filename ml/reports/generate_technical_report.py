@@ -418,10 +418,28 @@ def policy_table():
                                     "and reduced for the share of demand visible on booked jobs; the second term is the "
                                     "variability of the supplier's delivery time"],
         ["Order-book visibility", f"Released jobs about {sched['mrp_visibility_days']:.0f} days ahead; booked jobs about "
-                                  f"{sched['model_visibility_days']:.0f} days ahead"],
+                                  f"{sched['model_visibility_days']:.0f} days ahead.<br><em>Released:</em> a job's parts come off "
+                                  f"the shelf when it is completed, and the ERP sees the job from its release date, so "
+                                  f"{sched['mrp_visibility_days']:.0f} days is the median time from release to completion of "
+                                  f"2025 jobs that finished on time (delayed jobs are excluded, since their extra days are "
+                                  f"waiting on material). <em>Booked:</em> adds the time from booking the customer order to "
+                                  f"releasing the job. The records carry no booking date, so this is an assumption: jobs "
+                                  f"booked four to eight weeks before release, a median of about "
+                                  f"{sched['order_book_days']:.0f} days."],
         ["Order quantity", f"Economic lot: &radic;(2 &times; annual usage &times; ${sched['order_line_cost']:.0f} per order line "
                            f"&divide; ({sched['holding_rate'] * 100:.0f}% holding &times; unit cost)), kept between "
-                           f"{sched['lot_days'][0]} and {sched['lot_days'][1]} days of usage"],
+                           f"{sched['lot_days'][0]} and {sched['lot_days'][1]} days of usage.<br>"
+                           f"<em>Annual usage:</em> the model's usage forecast, at a yearly rate. "
+                           f"<em>Unit cost:</em> standard cost from the item master. "
+                           f"<em>${sched['order_line_cost']:.0f} per order line (assumption):</em> the fully loaded cost of "
+                           f"placing and processing one line (buyer time, receiving and inspection, putaway, invoice "
+                           f"matching); published estimates for manufacturers run roughly $20 to $100+ per purchase order, "
+                           f"less per line. <em>{sched['holding_rate'] * 100:.0f}% holding (assumption):</em> the usual "
+                           f"20 to 30% rule of thumb covering cost of capital, storage, handling, insurance and "
+                           f"obsolescence. <em>{sched['lot_days'][0]} to {sched['lot_days'][1]} days (judgment):</em> no "
+                           f"item ordered more often than about every two weeks, and no more than four months of a cheap "
+                           f"item at once, below the buyers' old {sched['buyer_lot_days']}-day lot. Supplier minimum "
+                           f"order quantities, price breaks and freight are not modelled."],
         ["Change threshold", f"A reorder point moves only when the new value differs by more than "
                              f"{sched['hysteresis'] * 100:.0f}%: {ch['raw_any_change'] * 100:.0f}% of item-weeks would "
                              f"otherwise change, {ch['applied_any_change'] * 100:.0f}% do"],
