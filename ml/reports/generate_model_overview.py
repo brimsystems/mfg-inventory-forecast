@@ -673,13 +673,11 @@ material fell {fall(HALF('jobs_delayed'), mod['jobs_delayed'])} and rush spend f
 {B.section("modeloverview", "Section 2", "Model Overview")}
 
 {B.section("what", "Section 2.1", "What This Model Does")}
-<p>The demand forecasting model is built on an ensemble decision-tree algorithm called a random
-forest. Over the past six
-months (January 2026 to June 2026), the demand forecasting model has set the shop's reorder
-decisions. Every week, the model predicts which items need to be reordered, and these predictions are then fed
-directly into the ERP for each of the {n_items:,} stocked items. The model's reorder decisions are based on the
-current stock on hand and on order for each item, the forecasted usage over each supplier's delivery time,
-and a safety buffer based on how unpredictable each item's demand and deliveries have been.</p>
+<p>The demand forecasting model is built on an ensemble decision-tree algorithm called a random forest. Every week,
+the model predicts which items need to be reordered, and these predictions are then fed directly into the ERP for
+each of the {n_items:,} stocked items. The model's reorder decisions are based on the current stock on hand and on
+order for each item, the forecasted usage over each supplier's delivery time, and a safety buffer based on how
+unpredictable each item's demand and deliveries have been.</p>
 {FLOW_HTML}
 <p>The model refreshes its forecasts every week and is retrained on the latest history once a month. The
 model's predictions are loaded directly into the ERP, which flags when each item should be reordered and how much
