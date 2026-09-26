@@ -669,6 +669,6 @@ this order quantity approach.</p>
 """
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text(B.page("ML Model Technical Overview: Demand Forecast and Reorder Policy", "", toc, body),
+OUT.write_text(B.page("ML Model Technical Overview: Demand Forecasting", "", toc, body),
                encoding="utf-8")
 print(f"Technical report written to {OUT}")
