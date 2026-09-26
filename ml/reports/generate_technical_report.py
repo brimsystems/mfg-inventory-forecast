@@ -584,13 +584,12 @@ error that the safety buffer absorbs.</p>
 forecasts and in units of log usage. The model leans most on {top3[0]}, {top3[1]} and {top3[2]}. Last year's usage
 over the same weeks is by far the strongest, because it is the only feature measured over exactly the window being
 forecast: the same number of weeks as the item's lead time, at the same time of year. Every other usage feature
-covers a fixed span (4, 13, 26 or 52 weeks) that the model has to rescale to the lead time, so last year's figure is
-the closest single stand-in for the answer. More recent usage then adjusts that starting point up or down, and the
-item's demand pattern tells the model how far to trust the recent weeks. Calendar and category features contribute
-little. About {SEASONAL_SHARE:.0%} of items are seasonal, but each peaks at its own time of year, and last year's
-same-weeks usage already carries each item's own seasonal timing; a shared week-of-year or month feature adds little
-on top of it. Category adds little for a similar reason, since cost, usage level and demand pattern already capture
-most of what distinguishes the categories.</p>
+covers a fixed span (4, 13, 26 or 52 weeks) that the model has to rescale. More recent usage then adjusts that
+starting point up or down, and the item's demand pattern tells the model how reliably this can be trusted.</p>
+<p>Calendar and category features contribute little. About {SEASONAL_SHARE:.0%} of items are seasonal, but each peaks
+at its own time of year, and last year's same-weeks usage already carries each item's own seasonal timing; a shared
+week-of-year or month feature adds little on top of it. Category adds little for a similar reason, since cost, usage
+level and demand pattern already capture most of what distinguishes the categories.</p>
 {B.chart("Mean Absolute SHAP Value by Feature", charts["shap"])}
 
 {B.section("policy", "Section 5", "From Forecast to Reorder Decision")}
