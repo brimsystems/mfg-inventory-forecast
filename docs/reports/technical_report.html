@@ -154,13 +154,11 @@ similar training rows, so the model learns typical usage for items in similar si
 one-off outliers.</p>
 
 <div class="section-title-block sub" id="performance"><div class="section-label">Section 3.2</div><h2 class="section-title">Model Performance</h2></div>
-<p>Accuracy is measured as weighted absolute percentage error (WAPE): the total absolute gap between forecast and
-actual usage across all forecasts, divided by total actual usage. Unlike a mean of percentage errors, it stays
-defined for items with zero usage in a window and weights each item by its volume. Results are shown for the
-validation weeks used in tuning, the held-out 2025 year used for selection and calibration, and the live January to
-June 2026 forecasts, which are the honest test of the model in use. The reorder points use the bias-corrected forecast
-(Section 5), which trades a little accuracy (44.1% to 45.7% on the held-out year) for forecasts
-that do not run systematically low.</p>
+<p>Accuracy is measured as WAPE: the total absolute gap between forecast and actual usage across all forecasts,
+divided by total actual usage. Results are shown for the validation weeks used in tuning, the held-out 2025 year
+used for selection and calibration, and the live January to June 2026 forecasts, which are the honest test of the
+model in use. The reorder points use the bias-corrected forecast (Section 5), which trades a little accuracy
+(44.1% to 45.7% on the held-out year) for forecasts that do not run systematically low.</p>
 <table class="data-table" style="table-layout:fixed;"><colgroup><col style="width:40%;"><col style="width:20%;"><col style="width:20%;"><col style="width:20%;"></colgroup><thead><tr><th style="text-align:left;">Metric</th><th style="text-align:right;">Validation</th><th style="text-align:right;">Held-out 2025</th><th style="text-align:right;">Live 1H 2026</th></tr></thead><tbody><tr><td style="text-align:left;">WAPE, raw forecast</td><td style="text-align:right;">46.2%</td><td style="text-align:right;">44.1%</td><td style="text-align:right;">n/a</td></tr><tr><td style="text-align:left;">WAPE, bias-corrected forecast (used for reorder points)</td><td style="text-align:right;">n/a</td><td style="text-align:right;">45.7%</td><td style="text-align:right;"><strong>46.1%</strong></td></tr><tr><td style="text-align:left;">Best simple method, WAPE</td><td style="text-align:right;">n/a</td><td style="text-align:right;">48.7%</td><td style="text-align:right;">49.8%</td></tr><tr><td style="text-align:left;">Forecast bias, after correction</td><td style="text-align:right;">n/a</td><td style="text-align:right;">+0.0%</td><td style="text-align:right;">+0.5%</td></tr><tr><td style="text-align:left;">Forecasts scored</td><td style="text-align:right;">25,670</td><td style="text-align:right;">58,170</td><td style="text-align:right;">25,759</td></tr></tbody></table>
 <p>A live WAPE of 46% means that for every 100 units an item used over its lead time, the forecast was
 off by about 46 units in either direction. That is typical for item-level forecasts of lumpy,
