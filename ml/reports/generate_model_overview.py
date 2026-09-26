@@ -86,7 +86,7 @@ def chart_halves():
     panels = [("Stockout events", ["1H/2H '25\nAvg.", "1H '26"], half("stockout_episodes"), m["stockout_episodes"], "{:,.0f}"),
               ("Jobs held for material", ["1H/2H '25\nAvg.", "1H '26"], half("jobs_delayed"), m["jobs_delayed"], "{:,.0f}"),
               ("Rush spend ($000)", ["1H/2H '25\nAvg.", "1H '26"], half("rush_spend") / 1000, m["rush_spend"] / 1000, "${:,.0f}K"),
-              ("Inventory balance ($M)", ["Dec. '25", "June 30, '26"], dec_end / 1e6, end_mod / 1e6, "${:,.2f}M")]
+              ("Inventory balance ($M)", ["Dec. '25", "Jun. '26"], dec_end / 1e6, end_mod / 1e6, "${:,.2f}M")]
     for ax, (title, labels, a_, b_, fmt) in zip(axes, panels):
         bars = ax.bar(labels, [a_, b_], color=[MED_GREY, DARK_BLUE], width=0.6)
         ax.text(bars[0].get_x() + bars[0].get_width() / 2, a_ * 1.02, fmt.format(a_), ha="center", fontsize=8.5,
