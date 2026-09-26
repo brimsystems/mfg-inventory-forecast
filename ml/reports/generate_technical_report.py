@@ -636,12 +636,13 @@ ordered often needs more.</p>
 forecast, balances the cost of placing an order line against the cost of holding stock. Expensive, heavily used items
 are ordered every few weeks, and cheap items a few times a year.</p>
 <p>The chart below groups items by value class. The classes are set by annual usage value (units used &times; unit
-cost), not by unit price: A items are those that together make up the first 80% of usage value, B items the next 15%
-and C items the last 5%. In 2025 the typical A item used about {k_(ABCV.loc['A', 'med_val'])} of stock a year (most
-above {k_(ABCV.loc['A', 'p10'])}) at a median unit cost of ${ABCV.loc['A', 'med_cost']:,.0f}; a typical B item about
+cost): A items are those that together make up the first 80% of usage value, B items the next 15% and C items the
+last 5%. In 2025 the typical A item used about {k_(ABCV.loc['A', 'med_val'])} of stock a year (most above
+{k_(ABCV.loc['A', 'p10'])}) at a median unit cost of ${ABCV.loc['A', 'med_cost']:,.0f}; a typical B item about
 {k_(ABCV.loc['B', 'med_val'])} a year at ${ABCV.loc['B', 'med_cost']:,.0f}; and a typical C item about
 {k_(ABCV.loc['C', 'med_val'])} a year at ${ABCV.loc['C', 'med_cost']:,.0f}. The A items, where most of the money sits,
-are bought in the smallest lots.</p>
+are bought in the smallest lots. See the <a href="model_overview.html">ML Model Overview</a> report for more detail on
+this order quantity approach.</p>
 {B.chart("Order Quantity in Days of Usage, by Value Class", charts["lots"])}
 
 {B.section("limits", "Section 6", "Known Limitations")}
