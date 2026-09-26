@@ -101,8 +101,7 @@ usable forecast date is January 2024. The 2024 data was used for tuning, split i
 window and a July to December validation window on which the three candidates were compared. Once the winner was
 chosen, it was refit on all of 2024 before being scored on 2025 data. We chose to use the full 2025 year of data for
 model testing, because the bias correction for each demand pattern and the safety-buffer multiples are calibrated on
-its errors, and both need a full seasonal cycle rather than half of one to reflect the seasonal demand of certain
-items.</p>
+its errors, and both need a full year to reflect the seasonal demand of certain items.</p>
 <p>The first six months of 2026 are the model's live output. In live use the model is retrained monthly on every
 forecast date whose outcome is already known, which by June 2026 spans 2024 through early 2026. Because 2025 serves
 both to calibrate the policy and to report held-out accuracy, the fully out-of-sample test is the live performance
