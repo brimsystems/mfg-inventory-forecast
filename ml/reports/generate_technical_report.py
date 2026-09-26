@@ -490,8 +490,8 @@ body = f"""
   <div><div class="mc-label">Tuning</div><div class="mc-value">Optuna, {N_TRIALS} trials per candidate, validation WAPE objective</div></div>
   <div><div class="mc-label">Cadence</div><div class="mc-value">Refreshed every Monday; retrained monthly</div></div>
   <div><div class="mc-label">Outputs</div><div class="mc-value">Reorder point and order quantity per item, loaded into the ERP</div></div>
-  <div><div class="mc-label">Held-out 2025 WAPE</div><div class="mc-value">{pct(test_w)} (best simple method {pct(metrics['overall']['baseline'])})</div></div>
-  <div><div class="mc-label">Live 1H 2026 WAPE</div><div class="mc-value">{pct(live_w)} (best simple method {pct(live_b)})</div></div>
+  <div><div class="mc-label">Held-out 2025 WAPE</div><div class="mc-value">{pct(test_w)}</div></div>
+  <div><div class="mc-label">Live 1H 2026 WAPE</div><div class="mc-value">{pct(live_w)}</div></div>
   <div style="grid-column:1/-1;"><div class="mc-label">Purpose</div><div class="mc-value">Forecasts each stocked item's usage over its supplier lead time and turns it into a reorder point and order quantity for the ERP's reorder queue. Decision support for purchasing: buyers release the suggested orders.</div></div>
 </div></div>
 
